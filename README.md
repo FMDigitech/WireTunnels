@@ -60,6 +60,37 @@ Use the menu bar for quick actions, open the dashboard for full visibility, impo
 
 </p>
 
+<p align="center">
+
+  <img src="./assets/screenshot-advanced-editor.png" width="850" alt="WireTunnels Config Editor" />
+
+</p>
+
+
+<p align="center">
+
+  <img src="./assets/screenshot-editor-template.png" width="850" alt="WireTunnels Config Editor" />
+
+</p>
+
+
+<p align="center">
+
+  <img src="./assets/settings" width="850" alt="WireTunnels Config Editor" />
+
+</p>
+
+<p align="center">
+
+  <img src="./assets/logs-errors" width="850" alt="WireTunnels Config Editor" />
+
+</p>
+
+<p align="center">
+
+  <img src="./assets/import" width="850" alt="WireTunnels Config Editor" />
+
+</p>
 ---
 
 ## Highlights
