@@ -44,53 +44,61 @@ Use the menu bar for quick actions, open the dashboard for full visibility, impo
 
 <p align="center">
 
-  <img src="./assets/screenshot-dashboard.png" width="850" alt="WireTunnels Dashboard" />
+  <img src="./assets/dashboard.png" width="850" alt="WireTunnels Dashboard" />
 
 </p>
 
 <p align="center">
 
-  <img src="./assets/screenshot-menubar.png" width="450" alt="WireTunnels Menu Bar" />
+  <img src="./assets/menubar-disconnected.png" width="450" alt="WireTunnels Menu Bar Disconencted" />
 
 </p>
 
 <p align="center">
 
-  <img src="./assets/screenshot-editor.png" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/menubar-connected.png" width="850" alt="WireTunnels Menu Bar Connected" />
 
 </p>
 
 <p align="center">
 
-  <img src="./assets/screenshot-advanced-editor.png" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/basic-editor.png" width="850" alt="WireTunnels Config Editor" />
+
+</p>
+
+<p align="center">
+
+  <img src="./assets/advanced-editor.png" width="850" alt="WireTunnels Config Editor Advanced" />
 
 </p>
 
 
 <p align="center">
 
-  <img src="./assets/screenshot-editor-template.png" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/template.png" width="850" alt="WireTunnels Editor Template" />
 
 </p>
 
 
 <p align="center">
 
-  <img src="./assets/settings" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/settings" width="850" alt="WireTunnels Settings" />
 
 </p>
 
 <p align="center">
 
-  <img src="./assets/logs-errors" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/logs-errors" width="850" alt="WireTunnels Logs and Errors" />
 
 </p>
 
 <p align="center">
 
-  <img src="./assets/import" width="850" alt="WireTunnels Config Editor" />
+  <img src="./assets/import" width="850" alt="WireTunnels Import" />
 
 </p>
+
+
 ---
 
 ## Highlights
@@ -117,27 +125,15 @@ WireTunnels helps identify common problems such as full-tunnel conflicts, overla
 
 ---
 
-## Screenshots
-
-<p align="center">
-  <img src="./assets/screenshot-dashboard.png" width="850" alt="Dashboard" />
-</p>
-
-<p align="center">
-  <img src="./assets/screenshot-editor.png" width="850" alt="Config Editor" />
-</p>
-
-<p align="center">
-  <img src="./assets/screenshot-menubar.png" width="450" alt="Menu Bar" />
-</p>
-
----
 
 ## Installation
 
-Download the latest version from the Releases page.
+1. Download the latest version from the Releases page.
+2. Open the downloaded `.zip` file. It will unzip into an app.
+3. Drag the WireTunnels app into the `Applications` folder.
+4. Open the app from `Applications` and start using it.
 
-> Detailed installation steps will be added soon.
+> The app comes as a simple zip file for macOS. Unzip it and move it to Applications.
 
 ---
 
@@ -146,6 +142,14 @@ Download the latest version from the Releases page.
 WireTunnels is currently focused on WireGuard tunnel management for macOS.
 
 Future versions may include additional diagnostics, improved routing analysis and extended automation features.
+
+---
+
+## Support
+
+For any request, information, or to report errors, write to: f.tontaro@fmdigitech.com
+
+If you prefer, you can also open an issue on the project's repository.
 
 ---
 

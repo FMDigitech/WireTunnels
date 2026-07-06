@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>WireTunnels Changelog</title>
+        <link>https://github.com/FMDigitech/WireTunnels</link>
+        <description>WireTunnels update feed</description>
+        <language>en</language>
+        <item>
+            <title>Version 1.0</title>
+            <pubDate>Sun, 06 Jul 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>Initial release of WireTunnels</li>
+                    <li>Manage WireGuard tunnels from the menu bar and dashboard</li>
+                    <li>Privileged helper for secure tunnel management</li>
+                    <li>Import, create, and edit tunnel configurations</li>
+                    <li>Auto-connect on network changes</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.0/WireTunnels-1.0.zip"
+                sparkle:edSignature="IiJ6SHwcho4P0fRndIol0YS5cPpI5FX0JhM2NCHI0hehy9rgD7JV4yqwdJKJU2wWN2OEv4KBqYu3NF1onWC3Dw=="
+                length="10592013"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <!--
+        Next release: bump CFBundleVersion (integer) and MARKETING_VERSION in Xcode,
+        run sign_update on the new zip, add a new <item> above this comment.
+        -->
+    </channel>
+</rss>

@@ -1,0 +1,552 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AAAA000B2FDC11AA0000000B /* com.fmdigitech.WireTunnels.helper in Embed Helper */ = {isa = PBXBuildFile; fileRef = AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DCF55BF22FDC20EE00D04703 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DCF55BF12FDC20EE00D04702 /* Sparkle */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AAAA000D2FDC11AA0000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DCF55B982FDC10DD00D04602 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAAA00052FDC11AA00000005;
+			remoteInfo = WireTunnelsHelper;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AAAA000A2FDC11AA0000000A /* Embed Helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchDaemons;
+			dstSubfolderSpec = 1;
+			files = (
+				AAAA000B2FDC11AA0000000B /* com.fmdigitech.WireTunnels.helper in Embed Helper */,
+			);
+			name = "Embed Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.fmdigitech.WireTunnels.helper; sourceTree = BUILT_PRODUCTS_DIR; };
+		DCF55BA02FDC10DD00D04602 /* WireTunnels.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WireTunnels.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DC6DAE0E2FFBAB4D00512A94 /* Exceptions for "WireTunnels" folder in "WireTunnels" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = DCF55B9F2FDC10DD00D04602 /* WireTunnels */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AAAA00012FDC11AA00000001 /* WireTunnelsHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WireTunnelsHelper;
+			sourceTree = "<group>";
+		};
+		DCF55BA22FDC10DD00D04602 /* WireTunnels */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DC6DAE0E2FFBAB4D00512A94 /* Exceptions for "WireTunnels" folder in "WireTunnels" target */,
+			);
+			path = WireTunnels;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAAA00042FDC11AA00000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DCF55B9D2FDC10DD00D04602 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DCF55BF22FDC20EE00D04703 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DCF55B972FDC10DD00D04602 = {
+			isa = PBXGroup;
+			children = (
+				DCF55BA22FDC10DD00D04602 /* WireTunnels */,
+				AAAA00012FDC11AA00000001 /* WireTunnelsHelper */,
+				DCF55BA12FDC10DD00D04602 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DCF55BA12FDC10DD00D04602 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DCF55BA02FDC10DD00D04602 /* WireTunnels.app */,
+				AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAAA00052FDC11AA00000005 /* WireTunnelsHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAAA00082FDC11AA00000008 /* Build configuration list for PBXNativeTarget "WireTunnelsHelper" */;
+			buildPhases = (
+				AAAA00032FDC11AA00000003 /* Sources */,
+				AAAA00042FDC11AA00000004 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AAAA00012FDC11AA00000001 /* WireTunnelsHelper */,
+			);
+			name = WireTunnelsHelper;
+			packageProductDependencies = (
+			);
+			productName = com.fmdigitech.WireTunnels.helper;
+			productReference = AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */;
+			productType = "com.apple.product-type.tool";
+		};
+		DCF55B9F2FDC10DD00D04602 /* WireTunnels */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DCF55BAB2FDC10E000D04602 /* Build configuration list for PBXNativeTarget "WireTunnels" */;
+			buildPhases = (
+				AAAA00092FDC11AA00000009 /* Build Wireguard Binaries */,
+				DCF55B9C2FDC10DD00D04602 /* Sources */,
+				DCF55B9D2FDC10DD00D04602 /* Frameworks */,
+				DCF55B9E2FDC10DD00D04602 /* Resources */,
+				AAAA000A2FDC11AA0000000A /* Embed Helper */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AAAA000C2FDC11AA0000000C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DCF55BA22FDC10DD00D04602 /* WireTunnels */,
+			);
+			name = WireTunnels;
+			packageProductDependencies = (
+				DCF55BF12FDC20EE00D04702 /* Sparkle */,
+			);
+			productName = WireTunnels;
+			productReference = DCF55BA02FDC10DD00D04602 /* WireTunnels.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DCF55B982FDC10DD00D04602 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					AAAA00052FDC11AA00000005 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					DCF55B9F2FDC10DD00D04602 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = DCF55B9B2FDC10DD00D04602 /* Build configuration list for PBXProject "WireTunnels" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DCF55B972FDC10DD00D04602;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DCF55BF02FDC20EE00D04701 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DCF55BA12FDC10DD00D04602 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DCF55B9F2FDC10DD00D04602 /* WireTunnels */,
+				AAAA00052FDC11AA00000005 /* WireTunnelsHelper */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DCF55B9E2FDC10DD00D04602 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AAAA00092FDC11AA00000009 /* Build Wireguard Binaries */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Scripts/build_wireguard_binaries.sh",
+				"$(SRCROOT)/Scripts/wireguard-versions.env",
+				"$(SRCROOT)/Scripts/test_wg_quick_bash3.sh",
+				"$(SRCROOT)/Scripts/test_wg_quick_dns_cleanup.sh",
+				"$(SRCROOT)/Scripts/test_wg_quick_validator_path.sh",
+				"$(SRCROOT)/Scripts/wg-quick-bash3.patch",
+				"$(SRCROOT)/Scripts/wg-quick-dns-cleanup.patch",
+				"$(SRCROOT)/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist",
+			);
+			name = "Build Wireguard Binaries";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/wireguard/wg",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/wireguard/wg-quick",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/wireguard/wireguard-go",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/wireguard/manifest.json",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/LaunchDaemons/com.fmdigitech.WireTunnels.helper.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "# Build and bundle wireguard binaries\nbash \"${SRCROOT}/Scripts/build_wireguard_binaries.sh\"\n\n# Copy launchd plist for SMAppService daemon registration\nLAUNCH_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"\nmkdir -p \"$LAUNCH_DIR\"\ncp \"${SRCROOT}/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist\" \\\n   \"$LAUNCH_DIR/com.fmdigitech.WireTunnels.helper.plist\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AAAA00032FDC11AA00000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DCF55B9C2FDC10DD00D04602 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AAAA000C2FDC11AA0000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAAA00052FDC11AA00000005 /* WireTunnelsHelper */;
+			targetProxy = AAAA000D2FDC11AA0000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AAAA00062FDC11AA00000006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WireTunnelsHelper/WireTunnelsHelper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				INFOPLIST_FILE = "WireTunnelsHelper/com.fmdigitech.WireTunnels.helper-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels.helper;
+				PRODUCT_NAME = com.fmdigitech.WireTunnels.helper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AAAA00072FDC11AA00000007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WireTunnelsHelper/WireTunnelsHelper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "WireTunnelsHelper/com.fmdigitech.WireTunnels.helper-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels.helper;
+				PRODUCT_NAME = com.fmdigitech.WireTunnels.helper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		DCF55BA92FDC10E000D04602 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DCF55BAA2FDC10E000D04602 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		DCF55BAC2FDC10E000D04602 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WireTunnels/WireTunnels.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WireTunnels/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WireTunnels;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSUserNotificationAlertStyle = alert;
+				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/FMDigitech/WireTunnels/main/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "YFTXWuQkChzuy1Zhc2i2oJX3qunpBrIS7JZTWcZFobw=";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DCF55BAD2FDC10E000D04602 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WireTunnels/WireTunnels.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 48W4Z4X56T;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WireTunnels/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WireTunnels;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSUserNotificationAlertStyle = alert;
+				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/FMDigitech/WireTunnels/main/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "YFTXWuQkChzuy1Zhc2i2oJX3qunpBrIS7JZTWcZFobw=";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AAAA00082FDC11AA00000008 /* Build configuration list for PBXNativeTarget "WireTunnelsHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAAA00062FDC11AA00000006 /* Debug */,
+				AAAA00072FDC11AA00000007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DCF55B9B2FDC10DD00D04602 /* Build configuration list for PBXProject "WireTunnels" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DCF55BA92FDC10E000D04602 /* Debug */,
+				DCF55BAA2FDC10E000D04602 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DCF55BAB2FDC10E000D04602 /* Build configuration list for PBXNativeTarget "WireTunnels" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DCF55BAC2FDC10E000D04602 /* Debug */,
+				DCF55BAD2FDC10E000D04602 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DCF55BF02FDC20EE00D04701 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DCF55BF12FDC20EE00D04702 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DCF55BF02FDC20EE00D04701 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = DCF55B982FDC10DD00D04602 /* Project object */;
+}
