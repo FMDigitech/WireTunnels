@@ -30,6 +30,25 @@
             />
         </item>
 
+        <item>
+            <title>Version 1.0.1</title>
+            <pubDate>Tue, 07 Jul 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>Fixed privileged helper detection: the app could report the helper as "not installed" or stuck requiring approval even when it was actually enabled, because status was read from a long-lived cached handle instead of a fresh system query</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.0.1/WireTunnels-1.0.1.zip"
+                sparkle:edSignature="kJASHs6VYyE+ojQVeNXpHewbqyO9+mbH645zR/FLHZO/zNL8q33FnRoxD/Aa9MiZTmyziiMpDyVf1PU4kiOkDA=="
+                length="10787005"
+                type="application/octet-stream"
+            />
+        </item>
+
         <!--
         Next release: bump CFBundleVersion (integer) and MARKETING_VERSION in Xcode,
         run sign_update on the new zip, add a new <item> above this comment.

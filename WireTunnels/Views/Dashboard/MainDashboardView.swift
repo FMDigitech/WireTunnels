@@ -4,6 +4,7 @@ import Combine
 enum SidebarItem: String, CaseIterable, Hashable {
     case all = "All Tunnels"
     case active = "Active"
+    case shared = "Shared"
     case favorites = "Favorites"
     case warnings = "Warnings"
     case settings = "Settings"
@@ -13,6 +14,7 @@ enum SidebarItem: String, CaseIterable, Hashable {
         switch self {
         case .all:       return "list.bullet"
         case .active:    return "bolt.fill"
+        case .shared:    return "person.2.fill"
         case .favorites: return "star.fill"
         case .warnings:  return "exclamationmark.triangle.fill"
         case .settings:  return "gear"
@@ -22,7 +24,7 @@ enum SidebarItem: String, CaseIterable, Hashable {
 
     var usesTunnelDetail: Bool {
         switch self {
-        case .all, .active, .favorites:
+        case .all, .active, .shared, .favorites:
             return true
         case .warnings, .settings, .log:
             return false
@@ -263,6 +265,16 @@ private struct SidebarView: View {
                     .padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.2), in: Capsule())
             }
+        case .shared:
+            let count = tunnelManager.sharedTunnels.count
+            if count > 0 {
+                Text("\(count)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.2), in: Capsule())
+            }
         default:
             EmptyView()
         }
@@ -271,6 +283,7 @@ private struct SidebarView: View {
     private func iconColor(for item: SidebarItem) -> Color {
         switch item {
         case .active:    return .green
+        case .shared:    return .purple
         case .favorites: return .yellow
         case .warnings:  return .orange
         case .settings:  return .gray

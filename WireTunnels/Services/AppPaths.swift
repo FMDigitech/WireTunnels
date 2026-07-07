@@ -6,6 +6,10 @@ enum AppPaths {
     static let runtimeConfigDir = systemRoot.appendingPathComponent("runtime", isDirectory: true)
     static let systemMetadataDir = systemRoot.appendingPathComponent("metadata", isDirectory: true)
     static let installedManifest = systemMetadataDir.appendingPathComponent("manifest.json")
+    static let managedRoot = systemRoot.appendingPathComponent("managed", isDirectory: true)
+    static let managedConfigDir = managedRoot.appendingPathComponent("configs", isDirectory: true)
+    static let managedMetadataDir = managedRoot.appendingPathComponent("metadata", isDirectory: true)
+    static let managedMetadataFile = managedMetadataDir.appendingPathComponent("tunnels.json")
 
     static let legacySystemRoot = URL(fileURLWithPath: "/Library/Application Support/WireguardTunnels")
     static let legacyRuntimeConfigDir = legacySystemRoot.appendingPathComponent("runtime", isDirectory: true)

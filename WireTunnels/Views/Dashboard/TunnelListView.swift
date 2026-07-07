@@ -11,6 +11,8 @@ struct TunnelListView: View {
             return tunnelManager.tunnels
         case .active:
             return tunnelManager.tunnels.filter { $0.isActive }
+        case .shared:
+            return tunnelManager.sharedTunnels
         case .favorites:
             return tunnelManager.favoriteTunnels
         case .warnings:
@@ -34,6 +36,7 @@ struct TunnelListView: View {
         switch filter {
         case .all:       return "No Tunnels"
         case .active:    return "No Active Tunnels"
+        case .shared:    return "No Shared Tunnels"
         case .favorites: return "No Favorites"
         case .warnings:  return "No Warnings"
         case .settings, .log: return ""
@@ -46,6 +49,8 @@ struct TunnelListView: View {
             return "Import a .conf file or create a new tunnel to get started."
         case .active:
             return "Connect a tunnel to see it here."
+        case .shared:
+            return "Make a tunnel shared to show it to all users on this Mac."
         case .favorites:
             return "Star a tunnel to mark it as a favorite."
         case .warnings:
@@ -59,6 +64,7 @@ struct TunnelListView: View {
         switch filter {
         case .all:       return "network"
         case .active:    return "bolt.slash"
+        case .shared:    return "person.2"
         case .favorites: return "star"
         case .warnings:  return "checkmark.shield"
         case .settings, .log: return "gear"
@@ -111,6 +117,8 @@ struct TunnelListView: View {
             return "\(count) tunnel\(count == 1 ? "" : "s"), \(active) active"
         case .active:
             return "\(count) connected"
+        case .shared:
+            return "\(count) shared"
         case .favorites:
             return "\(count) favorite\(count == 1 ? "" : "s")"
         case .warnings:

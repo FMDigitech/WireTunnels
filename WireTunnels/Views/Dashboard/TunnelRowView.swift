@@ -44,6 +44,12 @@ struct TunnelRowView: View {
         )
     }
 
+    private var connectionDisabled: Bool {
+        isProcessing
+            || (tunnel.scope == .managed && tunnel.isActive && tunnel.managedPolicy?.usersCanDisconnect == false)
+            || (tunnel.scope == .managed && !tunnel.isActive && tunnel.managedPolicy?.usersCanConnect == false)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             // Status indicator
@@ -71,6 +77,12 @@ struct TunnelRowView: View {
                         Image(systemName: "star.fill")
                             .font(.caption2)
                             .foregroundStyle(.yellow)
+                    }
+
+                    if tunnel.scope == .managed {
+                        Label("Shared", systemImage: "lock.fill")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
 
                     if hasWarning {
@@ -101,21 +113,23 @@ struct TunnelRowView: View {
             // Action buttons
             HStack(spacing: 6) {
                 // Favorite toggle
-                Button {
-                    tunnelManager.toggleFavorite(tunnel)
-                } label: {
-                    Image(systemName: tunnel.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(tunnel.isFavorite ? .yellow : .secondary)
+                if tunnel.scope == .personal {
+                    Button {
+                        tunnelManager.toggleFavorite(tunnel)
+                    } label: {
+                        Image(systemName: tunnel.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(tunnel.isFavorite ? .yellow : .secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(tunnel.isFavorite ? "Remove from favorites" : "Add to favorites")
                 }
-                .buttonStyle(.borderless)
-                .help(tunnel.isFavorite ? "Remove from favorites" : "Add to favorites")
 
                 Toggle(isOn: connectionBinding) {
                     Text("Connection")
                 }
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .disabled(isProcessing)
+                .disabled(connectionDisabled)
                 .controlSize(.small)
                 .accessibilityLabel("Connection for \(tunnel.name)")
             }

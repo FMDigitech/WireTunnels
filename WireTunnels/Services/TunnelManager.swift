@@ -17,6 +17,7 @@ final class TunnelManager: ObservableObject {
     @Published var isDashboardOpen: Bool = false
     @Published var isInitialized: Bool = false
     @Published var trafficHistory: [UUID: [TrafficSample]] = [:]
+    let currentUserIsAdministrator = TunnelManager.currentUserIsAdministrator()
 
     private var trafficSnapshots: [UUID: (rx: Int64, tx: Int64, time: Date)] = [:]
     private let maxTrafficSamples = 20
@@ -68,8 +69,8 @@ final class TunnelManager: ObservableObject {
 
         log.info("App initializing")
 
-        // Load persisted tunnels first
-        tunnels = repository.load()
+        // Load persisted personal tunnels first
+        tunnels = repository.load().filter { $0.scope == .personal }
         log.info("Loaded \(tunnels.count) tunnels from storage")
 
         // Backfill publicKey / address for tunnels saved before these fields were populated
@@ -86,15 +87,16 @@ final class TunnelManager: ObservableObject {
                 }
             }
         }
-        if needsSave { repository.save(tunnels) }
+        if needsSave { savePersonalTunnelsOnly() }
 
         // Detect environment
         setupStatus = "Detecting environment…"
         errorMessage = nil
         bundledRuntimeStatus = toolLocator.inspectBundledRuntime()
         environment = toolLocator.detect()
-        environment.helperInstalled = commandService.isHelperInstalled()
-        helperRequiresApproval = commandService.helperRequiresApproval()
+        let helperStatus = await effectiveHelperStatus()
+        environment.helperInstalled = helperStatus.installed
+        helperRequiresApproval = helperStatus.requiresApproval
 
         if helperRequiresApproval {
             let message = "Enable the privileged helper in System Settings, then run Re-detect."
@@ -103,16 +105,21 @@ final class TunnelManager: ObservableObject {
             return
         }
 
-        var helperNeedsReplacement = false
+        var shouldReplaceHelper = false
         if environment.helperInstalled {
             setupStatus = "Checking privileged helper…"
             do {
-                let version = try await commandService.helperVersion()
+                let version: String
+                if let knownVersion = helperStatus.version {
+                    version = knownVersion
+                } else {
+                    version = try await commandService.helperVersion()
+                }
                 log.info("Privileged helper reachable (version \(version))")
-                if version != WireGuardCommandService.expectedHelperVersion {
-                    helperNeedsReplacement = true
+                if await helperNeedsReplacement(version: version) {
+                    shouldReplaceHelper = true
                     log.warning(
-                        "Privileged helper version \(version) is stale; expected \(WireGuardCommandService.expectedHelperVersion)"
+                        "Privileged helper version/protocol is stale; version \(version), expected \(WireGuardCommandService.expectedHelperVersion)"
                     )
                 }
             } catch {
@@ -122,34 +129,38 @@ final class TunnelManager: ObservableObject {
                 do {
                     let version = try await commandService.helperVersion()
                     log.info("Privileged helper reachable after retry (version \(version))")
-                    if version != WireGuardCommandService.expectedHelperVersion {
-                        helperNeedsReplacement = true
+                    if await helperNeedsReplacement(version: version) {
+                        shouldReplaceHelper = true
                         log.warning(
-                            "Privileged helper version \(version) is stale; expected \(WireGuardCommandService.expectedHelperVersion)"
+                            "Privileged helper version/protocol is stale; version \(version), expected \(WireGuardCommandService.expectedHelperVersion)"
                         )
                     }
                 } catch {
-                    helperNeedsReplacement = true
+                    shouldReplaceHelper = true
                     log.error("Registered helper is unreachable: \(error.localizedDescription)")
+                    logHelperLaunchdDiagnostics()
                 }
             }
         }
 
         // Install helper if needed, replacing stale registrations that cannot launch.
-        if !environment.helperInstalled || helperNeedsReplacement {
+        if !environment.helperInstalled || shouldReplaceHelper {
             setupStatus = "Installing privileged helper (system prompt may appear)…"
             do {
-                log.info(helperNeedsReplacement
+                log.info(shouldReplaceHelper
                          ? "Replacing stale privileged helper"
                          : "Installing privileged helper")
-                try await commandService.installHelper(replacingExisting: helperNeedsReplacement)
+                try await commandService.installHelper(replacingExisting: shouldReplaceHelper)
                 environment.helperInstalled = true
                 helperRequiresApproval = false
                 log.info("Helper installed successfully")
             } catch {
                 helperRequiresApproval = commandService.helperRequiresApproval()
                 log.error("Helper installation failed: \(error.localizedDescription)")
-                errorMessage = error.localizedDescription
+                let stale = logHelperLaunchdDiagnostics()
+                errorMessage = stale
+                    ? WireGuardCommandService.staleRegistrationRecoveryMessage
+                    : error.localizedDescription
                 return
             }
         }
@@ -160,6 +171,8 @@ final class TunnelManager: ObservableObject {
             log.warning("WireGuard tools require explicit installation or reinstallation in Settings")
             return
         }
+
+        await loadManagedTunnels()
 
         // Initial status refresh — retry once for login-at-startup timing where
         // the helper XPC channel may still be settling after launchd activation.
@@ -200,8 +213,9 @@ final class TunnelManager: ObservableObject {
         log.info("Environment re-detection started")
         bundledRuntimeStatus = toolLocator.inspectBundledRuntime()
         environment = toolLocator.detect()
-        environment.helperInstalled = commandService.isHelperInstalled()
-        helperRequiresApproval = commandService.helperRequiresApproval()
+        let helperStatus = await effectiveHelperStatus()
+        environment.helperInstalled = helperStatus.installed
+        helperRequiresApproval = helperStatus.requiresApproval
         toolInstallRequired = !environment.binariesInstalled
             || !toolLocator.bundledBinariesMatchInstalled()
 
@@ -222,7 +236,11 @@ final class TunnelManager: ObservableObject {
         commandService.invalidateConnection()
         var verifiedVersion: String
         do {
-            verifiedVersion = try await commandService.helperVersion()
+            if let knownVersion = helperStatus.version {
+                verifiedVersion = knownVersion
+            } else {
+                verifiedVersion = try await commandService.helperVersion()
+            }
         } catch {
             // Daemon may still be starting after approval — wait 2s and retry once
             log.info("Helper check failed, retrying in 2s… (\(error.localizedDescription))")
@@ -230,15 +248,48 @@ final class TunnelManager: ObservableObject {
             do {
                 verifiedVersion = try await commandService.helperVersion()
             } catch {
-                errorMessage = error.localizedDescription
-                log.error("Environment re-detection failed: \(error.localizedDescription)")
-                return
+                log.error("Helper still unreachable: \(error.localizedDescription)")
+                let stale = logHelperLaunchdDiagnostics()
+                // Unregister + re-register clears stale BTM/launchd records left
+                // behind when the app bundle was replaced after registration.
+                do {
+                    log.info("Attempting helper re-registration to repair launchd record")
+                    setupStatus = "Repairing privileged helper registration…"
+                    try await commandService.installHelper(replacingExisting: true)
+                    commandService.invalidateConnection()
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    verifiedVersion = try await commandService.helperVersion()
+                    log.info("Helper reachable after re-registration (version \(verifiedVersion))")
+                } catch {
+                    helperRequiresApproval = commandService.helperRequiresApproval()
+                    logHelperLaunchdDiagnostics()
+                    errorMessage = stale
+                        ? WireGuardCommandService.staleRegistrationRecoveryMessage
+                        : error.localizedDescription
+                    log.error("Environment re-detection failed: \(error.localizedDescription)")
+                    return
+                }
             }
         }
-        guard verifiedVersion == WireGuardCommandService.expectedHelperVersion else {
-            errorMessage = "Privileged helper version \(verifiedVersion) is stale. Reinstall the helper."
-            log.error(errorMessage ?? "Privileged helper version is stale")
-            return
+        if await helperNeedsReplacement(version: verifiedVersion) {
+            do {
+                log.info("Replacing stale same-version privileged helper")
+                setupStatus = "Updating privileged helper…"
+                try await commandService.installHelper(replacingExisting: true)
+                commandService.invalidateConnection()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                verifiedVersion = try await commandService.helperVersion()
+                let replacementStillNeeded = await helperNeedsReplacement(version: verifiedVersion)
+                guard !replacementStillNeeded else {
+                    errorMessage = "Privileged helper is stale. Reinstall the helper."
+                    log.error(errorMessage ?? "Privileged helper is stale")
+                    return
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                log.error("Privileged helper replacement failed: \(error.localizedDescription)")
+                return
+            }
         }
 
         guard !toolInstallRequired else {
@@ -246,17 +297,36 @@ final class TunnelManager: ObservableObject {
             return
         }
 
+        await loadManagedTunnels()
+
         setupStatus = "Refreshing tunnel status…"
         await refreshStatus()
         startPolling()
         log.info("Environment re-detection complete; environment ready")
     }
 
+    /// Logs SMAppService + launchd views of the helper daemon. Returns true when
+    /// launchd holds a stale registration it refuses to spawn — the state where
+    /// the UI shows "Helper: active" but every XPC call times out.
+    @discardableResult
+    private func logHelperLaunchdDiagnostics() -> Bool {
+        log.info("SMAppService helper status: \(commandService.helperStatusDescription)")
+        let diag = WireGuardCommandService.launchdDiagnostics()
+        log.error("launchd state for helper: \(diag.summary)")
+        if diag.staleRegistration {
+            log.error(
+                "Diagnosis: stale launchd/BTM registration — launchd keeps the XPC endpoint alive but refuses to spawn the helper (EX_CONFIG / spawn scheduled). Usually caused by replacing the app bundle after registration."
+            )
+        }
+        return diag.staleRegistration
+    }
+
     func refreshHelperRegistrationStatus() async {
         let wasInstalled = environment.helperInstalled
         let requiredApproval = helperRequiresApproval
-        let isInstalled = commandService.isHelperInstalled()
-        let nowRequiresApproval = commandService.helperRequiresApproval()
+        let helperStatus = await effectiveHelperStatus()
+        let isInstalled = helperStatus.installed
+        let nowRequiresApproval = helperStatus.requiresApproval
 
         if environment.helperInstalled != isInstalled {
             environment.helperInstalled = isInstalled
@@ -294,7 +364,10 @@ final class TunnelManager: ObservableObject {
             } catch {
                 helperRequiresApproval = commandService.helperRequiresApproval()
                 log.error("Helper installation failed: \(error.localizedDescription)")
-                errorMessage = error.localizedDescription
+                let stale = logHelperLaunchdDiagnostics()
+                errorMessage = stale
+                    ? WireGuardCommandService.staleRegistrationRecoveryMessage
+                    : error.localizedDescription
                 return
             }
         }
@@ -338,7 +411,10 @@ final class TunnelManager: ObservableObject {
             await handleNetworkChange()
         } catch {
             log.error("WireGuard tool installation failed: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
+            let stale = logHelperLaunchdDiagnostics()
+            errorMessage = stale
+                ? WireGuardCommandService.staleRegistrationRecoveryMessage
+                : error.localizedDescription
         }
     }
 
@@ -349,6 +425,12 @@ final class TunnelManager: ObservableObject {
         let liveTunnel = tunnels[index]
         guard environment.isReady else {
             errorMessage = "Install and verify the bundled WireGuard tools in Settings before connecting."
+            return
+        }
+        if liveTunnel.autoConnectRule.enabled,
+           liveTunnel.autoConnectRule.action == .disconnect,
+           networkMonitor.matchesTunnel(liveTunnel) {
+            errorMessage = "This tunnel is blocked by its on-demand disconnect rule for the current network."
             return
         }
         // Prevent double-connect race: NWPathMonitor fires when wireguard-go creates
@@ -368,16 +450,35 @@ final class TunnelManager: ObservableObject {
             .appendingPathComponent(URL(fileURLWithPath: liveTunnel.configPath).lastPathComponent).path
 
         do {
-            try await commandService.copyConfig(from: liveTunnel.configPath, to: runtimePath)
-            try await commandService.startTunnel(configPath: runtimePath)
+            if liveTunnel.scope == .managed {
+                guard liveTunnel.managedPolicy?.usersCanConnect ?? true else {
+                    throw CommandError.managedTunnelFailed("Users are not allowed to connect this managed tunnel")
+                }
+            }
+
+            let stagedRuntimePath: String
+            if liveTunnel.scope == .managed {
+                stagedRuntimePath = try await commandService.stageManagedConfig(id: liveTunnel.id)
+            } else {
+                try await commandService.copyConfig(from: liveTunnel.configPath, to: runtimePath)
+                stagedRuntimePath = runtimePath
+            }
+            try await commandService.startTunnel(configPath: stagedRuntimePath)
+            if liveTunnel.scope == .managed {
+                do {
+                    try await commandService.markManagedTunnelConnected(id: liveTunnel.id)
+                } catch {
+                    log.warning("Unable to record connected user for \(liveTunnel.name): \(error.localizedDescription)")
+                }
+            }
 
             tunnels[index].isActive = true
             tunnels[index].connectedAt = Date()
-            tunnels[index].runtimeConfigPath = runtimePath
-            tunnels[index].interfaceName = URL(fileURLWithPath: liveTunnel.configPath)
+            tunnels[index].runtimeConfigPath = stagedRuntimePath
+            tunnels[index].interfaceName = URL(fileURLWithPath: stagedRuntimePath)
                 .deletingPathExtension().lastPathComponent
             tunnels[index].updatedAt = Date()
-            repository.save(tunnels)
+            savePersonalTunnelsOnly()
             updateWarnings()
             await refreshStatus()
             log.info("Tunnel \(liveTunnel.name) connected")
@@ -401,7 +502,18 @@ final class TunnelManager: ObservableObject {
         let configPath = liveTunnel.runtimeConfigPath ?? liveTunnel.configPath
 
         do {
+            if liveTunnel.scope == .managed,
+               liveTunnel.managedPolicy?.usersCanDisconnect == false {
+                throw CommandError.managedTunnelFailed("Users are not allowed to disconnect this managed tunnel")
+            }
             try await commandService.stopTunnel(configPath: configPath)
+            if liveTunnel.scope == .managed {
+                do {
+                    try await commandService.markManagedTunnelDisconnected(id: liveTunnel.id)
+                } catch {
+                    log.warning("Unable to clear connected user for \(liveTunnel.name): \(error.localizedDescription)")
+                }
+            }
             tunnels[index].isActive = false
             tunnels[index].connectedAt = nil
             tunnels[index].runtimeConfigPath = nil
@@ -412,7 +524,7 @@ final class TunnelManager: ObservableObject {
             tunnels[index].updatedAt = Date()
             trafficHistory.removeValue(forKey: liveTunnel.id)
             trafficSnapshots.removeValue(forKey: liveTunnel.id)
-            repository.save(tunnels)
+            savePersonalTunnelsOnly()
             updateWarnings()
             log.info("Tunnel \(liveTunnel.name) disconnected")
             try? await notificationService.postDisconnected(tunnelName: liveTunnel.name)
@@ -445,9 +557,42 @@ final class TunnelManager: ObservableObject {
         tunnel.publicKey = parsed.peerPublicKey
 
         tunnels.append(tunnel)
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
         updateWarnings()
         log.info("Imported tunnel: \(name)")
+    }
+
+    func importManagedConfig(from url: URL) async throws {
+        log.info("Importing managed config: \(url.lastPathComponent)")
+        let parsed = try parser.parse(contentsOf: url)
+        guard parsed.isValid else {
+            throw ConfigManagementError.invalidConfiguration(parsed.validationErrors)
+        }
+        let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+        try await commandService.installManagedTunnel(
+            name: url.deletingPathExtension().lastPathComponent,
+            contents: contents
+        )
+        await loadManagedTunnels()
+        updateWarnings()
+        log.info("Imported managed tunnel: \(url.lastPathComponent)")
+    }
+
+    func makeTunnelShared(_ tunnel: Tunnel) async throws {
+        guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }),
+              liveTunnel.scope == .personal else { return }
+        guard !liveTunnel.isActive else {
+            throw CommandError.managedTunnelFailed("Disconnect this tunnel before making it shared")
+        }
+        let configURL = URL(fileURLWithPath: liveTunnel.configPath)
+        let contents = try Data(contentsOf: configURL, options: .mappedIfSafe)
+        try await commandService.installManagedTunnel(name: liveTunnel.name, contents: contents)
+        tunnels.removeAll { $0.id == liveTunnel.id }
+        try? configStorage.deleteConfig(at: configURL)
+        savePersonalTunnelsOnly()
+        await loadManagedTunnels()
+        updateWarnings()
+        log.info("Made tunnel shared for all users: \(liveTunnel.name)")
     }
 
     func createTunnel(name: String, configContent: String) async throws {
@@ -466,13 +611,16 @@ final class TunnelManager: ObservableObject {
         tunnel.publicKey = parsed.peerPublicKey
 
         tunnels.append(tunnel)
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
         log.info("Created tunnel: \(storedName)")
     }
 
     func updateTunnel(_ tunnel: Tunnel, name: String, configContent: String) async throws {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
         let liveTunnel = tunnels[index]
+        guard liveTunnel.scope == .personal else {
+            throw CommandError.managedTunnelFailed("Managed tunnels must be edited by an administrator")
+        }
         let parsed = parser.parse(string: configContent)
         guard parsed.isValid else {
             throw ConfigManagementError.invalidConfiguration(parsed.validationErrors)
@@ -495,24 +643,64 @@ final class TunnelManager: ObservableObject {
         tunnels[index].endpoint = parsed.endpoint
         tunnels[index].publicKey = parsed.peerPublicKey
         tunnels[index].updatedAt = Date()
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
         updateWarnings()
         log.info("Updated tunnel: \(name)")
     }
 
     func deleteTunnel(_ tunnel: Tunnel) {
         guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }) else { return }
+        guard liveTunnel.scope == .personal else { return }
         tunnels.removeAll { $0.id == tunnel.id }
         try? configStorage.deleteConfig(at: URL(fileURLWithPath: liveTunnel.configPath))
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
         updateWarnings()
         log.info("Deleted tunnel: \(liveTunnel.name)")
     }
 
+    func deleteManagedTunnel(_ tunnel: Tunnel) async {
+        guard tunnel.scope == .managed else { return }
+        do {
+            try await commandService.deleteManagedTunnel(id: tunnel.id)
+            tunnels.removeAll { $0.id == tunnel.id }
+            updateWarnings()
+            log.info("Deleted managed tunnel: \(tunnel.name)")
+        } catch {
+            errorMessage = error.localizedDescription
+            log.error("Failed to delete managed tunnel \(tunnel.name): \(error.localizedDescription)")
+        }
+    }
+
+    func replaceManagedConfig(_ tunnel: Tunnel, with url: URL) async throws {
+        guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }),
+              liveTunnel.scope == .managed else { return }
+        let parsed = try parser.parse(contentsOf: url)
+        guard parsed.isValid else {
+            throw ConfigManagementError.invalidConfiguration(parsed.validationErrors)
+        }
+        let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+        try await commandService.updateManagedTunnel(
+            id: liveTunnel.id,
+            name: url.deletingPathExtension().lastPathComponent,
+            contents: contents,
+            policy: liveTunnel.managedPolicy ?? ManagedTunnelPolicy(),
+            autoConnectRule: liveTunnel.autoConnectRule
+        )
+        await loadManagedTunnels()
+        updateWarnings()
+        log.info("Replaced managed tunnel config: \(liveTunnel.name)")
+    }
+
+    func connectedUsers(for tunnel: Tunnel) async throws -> [ManagedTunnelUserSession] {
+        guard tunnel.scope == .managed else { return [] }
+        return try await commandService.listManagedTunnelUsers(id: tunnel.id)
+    }
+
     func toggleFavorite(_ tunnel: Tunnel) {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        guard tunnels[index].scope == .personal else { return }
         tunnels[index].isFavorite.toggle()
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
     }
 
     // MARK: - Status
@@ -621,7 +809,13 @@ final class TunnelManager: ObservableObject {
         for tunnel in tunnels {
             guard tunnel.autoConnectRule.enabled else { continue }
             let matches = networkMonitor.matchesTunnel(tunnel)
-            if matches {
+            if tunnel.autoConnectRule.action == .disconnect {
+                if matches, tunnel.isActive {
+                    log.info("Auto-disconnect blacklist triggered for \(tunnel.name)")
+                    networkMonitor.markAutoDisconnected(tunnel.id)
+                    await disconnectTunnel(tunnel, isAutoDisconnect: true)
+                }
+            } else if matches {
                 if !tunnel.isActive && !networkMonitor.isSuppressed(tunnel.id) && !connectingTunnels.contains(tunnel.id) {
                     log.info("Auto-connect triggered for \(tunnel.name)")
                     networkMonitor.markAutoConnected(tunnel.id)
@@ -641,9 +835,10 @@ final class TunnelManager: ObservableObject {
 
     func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        guard tunnels[index].scope == .personal else { return }
         tunnels[index].autoConnectRule = rule
         tunnels[index].updatedAt = Date()
-        repository.save(tunnels)
+        savePersonalTunnelsOnly()
         log.info("Auto-connect rule updated for \(tunnels[index].name): enabled=\(rule.enabled)")
         Task { await handleNetworkChange() }
     }
@@ -686,13 +881,93 @@ final class TunnelManager: ObservableObject {
 
     // MARK: - Helpers
 
+    private func helperNeedsReplacement(version: String) async -> Bool {
+        guard version == WireGuardCommandService.expectedHelperVersion else { return true }
+        do {
+            let revision = try await commandService.helperProtocolRevision()
+            if revision != WireGuardCommandService.expectedHelperProtocolRevision {
+                log.warning(
+                    "Privileged helper protocol revision \(revision) is stale; expected \(WireGuardCommandService.expectedHelperProtocolRevision)"
+                )
+                return true
+            }
+            return false
+        } catch {
+            log.warning("Privileged helper protocol check failed: \(error.localizedDescription)")
+            return true
+        }
+    }
+
+    private func effectiveHelperStatus() async -> (installed: Bool, requiresApproval: Bool, version: String?) {
+        var installed = commandService.isHelperInstalled()
+        var requiresApproval = commandService.helperRequiresApproval()
+        var version: String?
+        if requiresApproval || !installed {
+            version = try? await commandService.helperVersion()
+            if version != nil {
+                // ponytail: SMAppService can lag behind launchd; a working XPC ping wins.
+                installed = true
+                requiresApproval = false
+            }
+        }
+        return (installed, requiresApproval, version)
+    }
+
+    private func savePersonalTunnelsOnly() {
+        repository.save(tunnels.filter { $0.scope == .personal })
+    }
+
+    private func loadManagedTunnels() async {
+        do {
+            var managed = try await commandService.listManagedTunnels()
+            let existingByID = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
+            for index in managed.indices {
+                managed[index].scope = .managed
+                if let existing = existingByID[managed[index].id] {
+                    managed[index].isActive = existing.isActive
+                    managed[index].runtimeConfigPath = existing.runtimeConfigPath
+                    managed[index].interfaceName = existing.interfaceName
+                    managed[index].lastHandshake = existing.lastHandshake
+                    managed[index].rxBytes = existing.rxBytes
+                    managed[index].txBytes = existing.txBytes
+                    managed[index].connectedAt = existing.connectedAt
+                }
+            }
+            tunnels = tunnels.filter { $0.scope == .personal } + managed
+            log.info("Loaded \(managed.count) managed tunnels")
+        } catch {
+            log.warning("Unable to load managed tunnels: \(error.localizedDescription)")
+        }
+    }
+
     var needsSetup: Bool {
         helperRequiresApproval || !environment.helperInstalled || toolInstallRequired
     }
 
     var hasActiveTunnels: Bool { tunnels.contains { $0.isActive } }
     var activeTunnelCount: Int { tunnels.filter { $0.isActive }.count }
-    var favoriteTunnels: [Tunnel] { tunnels.filter { $0.isFavorite } }
+    var sharedTunnels: [Tunnel] { tunnels.filter { $0.scope == .managed } }
+    var favoriteTunnels: [Tunnel] { tunnels.filter { $0.isFavorite && $0.scope == .personal } }
+
+    private nonisolated static func currentUserIsAdministrator() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/id")
+        process.arguments = ["-Gn"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+        guard process.terminationStatus == 0,
+              let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) else {
+            return false
+        }
+        return output.split(whereSeparator: \.isWhitespace).contains("admin")
+    }
 
     func openHelperApprovalSettings() {
         commandService.openHelperApprovalSettings()
@@ -739,8 +1014,9 @@ final class TunnelManager: ObservableObject {
         }
 
         do {
+            let managed = tunnels.filter { $0.scope == .managed }
             try resetService.reset()
-            tunnels = []
+            tunnels = managed
             activeWarnings = []
             trafficHistory = [:]
             trafficSnapshots = [:]

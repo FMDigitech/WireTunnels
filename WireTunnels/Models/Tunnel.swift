@@ -1,5 +1,23 @@
 import Foundation
 
+enum TunnelScope: String, Codable, Hashable {
+    case personal
+    case managed
+}
+
+struct ManagedTunnelPolicy: Codable, Equatable, Hashable {
+    var usersCanConnect: Bool = true
+    var usersCanDisconnect: Bool = true
+}
+
+struct ManagedTunnelUserSession: Identifiable, Codable, Equatable, Hashable {
+    var uid: Int
+    var username: String
+    var connectedAt: Date
+
+    var id: Int { uid }
+}
+
 struct Tunnel: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var name: String
@@ -21,6 +39,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
     var connectedAt: Date?
     var createdAt: Date
     var updatedAt: Date
+    var scope: TunnelScope
+    var managedPolicy: ManagedTunnelPolicy?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -43,6 +63,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         case connectedAt
         case createdAt
         case updatedAt
+        case scope
+        case managedPolicy
     }
 
     init(name: String, configPath: String) {
@@ -62,8 +84,11 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         self.lastHandshake = nil
         self.rxBytes = 0
         self.txBytes = 0
+        self.connectedAt = nil
         self.createdAt = Date()
         self.updatedAt = Date()
+        self.scope = .personal
+        self.managedPolicy = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -90,5 +115,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         connectedAt = try container.decodeIfPresent(Date.self, forKey: .connectedAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        scope = try container.decodeIfPresent(TunnelScope.self, forKey: .scope) ?? .personal
+        managedPolicy = try container.decodeIfPresent(ManagedTunnelPolicy.self, forKey: .managedPolicy)
     }
 }

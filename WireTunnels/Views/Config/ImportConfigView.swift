@@ -1,6 +1,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum ImportDestination: String, CaseIterable, Identifiable {
+    case personal = "My Tunnels"
+    case managed = "Visible to All Users"
+
+    var id: Self { self }
+}
+
 struct ImportConfigView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     @Environment(\.dismiss) var dismiss
@@ -12,6 +19,7 @@ struct ImportConfigView: View {
     @State private var selectedURL: URL? = nil
     @State private var selectedWarnings: [ConfigWarning] = []
     @State private var isDragTargeted = false
+    @State private var destination: ImportDestination = .personal
 
     private var confType: UTType {
         UTType(filenameExtension: "conf") ?? .plainText
@@ -42,6 +50,20 @@ struct ImportConfigView: View {
 
                         Text("Choose a WireGuard configuration file (.conf) to import. The file will be validated and added to your tunnel list.")
                             .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Picker("Destination", selection: $destination) {
+                        ForEach(ImportDestination.allCases) { destination in
+                            Text(destination.rawValue).tag(destination)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .disabled(isProcessing)
+
+                    if destination == .managed {
+                        Label("Stored once for this Mac. Any local user can see it; only administrators can modify it.", systemImage: "lock.fill")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -193,7 +215,7 @@ struct ImportConfigView: View {
             }
             .padding()
         }
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: 580)
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers: providers)
         }
@@ -266,7 +288,12 @@ struct ImportConfigView: View {
 
         Task {
             do {
-                try await tunnelManager.importConfig(from: url)
+                switch destination {
+                case .personal:
+                    try await tunnelManager.importConfig(from: url)
+                case .managed:
+                    try await tunnelManager.importManagedConfig(from: url)
+                }
                 selectedWarnings = try tunnelManager.inspectConfig(at: url).warnings
                 let name = url.deletingPathExtension().lastPathComponent
                 successName = name

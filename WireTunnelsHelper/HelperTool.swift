@@ -1,13 +1,20 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 
-private let helperVersionNumber = "1.0"
+private let helperVersionNumber = "1.0.1"
+private let helperProtocolRevisionValue = "managed-users-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
 private let systemBinDir = systemRoot.appendingPathComponent("bin", isDirectory: true)
 private let runtimeConfigDir = systemRoot.appendingPathComponent("runtime", isDirectory: true)
+private let managedRoot = systemRoot.appendingPathComponent("managed", isDirectory: true)
+private let managedConfigDir = managedRoot.appendingPathComponent("configs", isDirectory: true)
+private let managedMetadataDir = managedRoot.appendingPathComponent("metadata", isDirectory: true)
+private let managedMetadataFile = managedMetadataDir.appendingPathComponent("tunnels.json", isDirectory: false)
+private let managedConnectedUsersFile = managedMetadataDir.appendingPathComponent("connected-users.json", isDirectory: false)
 private let legacySystemRoot = URL(fileURLWithPath: "/Library/Application Support/WireguardTunnels")
 private let legacyRuntimeConfigDirs = [
     legacySystemRoot.appendingPathComponent("runtime", isDirectory: true),
@@ -28,10 +35,104 @@ private struct RuntimeManifest: Decodable {
     let artifacts: [Artifact]
 }
 
+private enum ManagedAutoConnectInterface: String, Codable {
+    case ethernet
+    case wifi
+    case both
+}
+
+private enum ManagedAutoConnectAction: String, Codable {
+    case connect
+    case disconnect
+}
+
+private struct ManagedAutoConnectRule: Codable, Equatable {
+    var enabled: Bool = false
+    var interface: ManagedAutoConnectInterface = .wifi
+    var action: ManagedAutoConnectAction = .connect
+    var wifiSSIDs: [String] = []
+}
+
+private struct ManagedTunnelPolicy: Codable, Equatable {
+    var usersCanConnect: Bool = true
+    var usersCanDisconnect: Bool = true
+}
+
+private struct ManagedTunnelRecord: Codable, Equatable, Identifiable {
+    let id: UUID
+    var name: String
+    var configPath: String
+    var runtimeConfigPath: String?
+    var interfaceName: String?
+    var isActive: Bool
+    var isFavorite: Bool
+    var autostart: Bool
+    var autoConnectRule: ManagedAutoConnectRule
+    var address: [String]?
+    var allowedIPs: [String]
+    var dns: [String]
+    var endpoint: String?
+    var publicKey: String?
+    var lastHandshake: Date?
+    var rxBytes: Int64
+    var txBytes: Int64
+    var connectedAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+    var scope: String
+    var managedPolicy: ManagedTunnelPolicy?
+}
+
+private struct ManagedTunnelUserSession: Codable, Equatable {
+    var uid: Int
+    var username: String
+    var connectedAt: Date
+}
+
+private struct SanitizedConfigMetadata {
+    var address: [String]
+    var allowedIPs: [String]
+    var dns: [String]
+    var endpoint: String?
+    var publicKey: String?
+}
+
+private struct ClientUser {
+    let uid: Int
+    let username: String
+}
+
+private enum ConfigName {
+    static func sanitize(_ name: String) -> String {
+        let rawName = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_=+.-"
+        )
+        let sanitized = rawName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .unicodeScalars
+            .map { allowed.contains($0) ? Character($0) : "_" }
+            .reduce("") { $0 + String($1) }
+            .replacingOccurrences(of: "..", with: "__")
+        return String(sanitized.prefix(15))
+    }
+
+    static func nonEmptyList(_ value: String) -> [String] {
+        value.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+}
+
 private struct ValidatedClient {
     let bundleURL: URL
+    let user: ClientUser
 
     init?(connection: NSXPCConnection) {
+        guard let user = Self.user(for: connection.processIdentifier) else {
+            return nil
+        }
+
         let attributes = [
             kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)
         ] as CFDictionary
@@ -92,6 +193,27 @@ private struct ValidatedClient {
             return nil
         }
         bundleURL = candidateBundle
+        self.user = user
+    }
+
+    private static func user(for pid: pid_t) -> ClientUser? {
+        var info = proc_bsdinfo()
+        let size = proc_pidinfo(
+            pid,
+            PROC_PIDTBSDINFO,
+            0,
+            &info,
+            Int32(MemoryLayout<proc_bsdinfo>.size)
+        )
+        guard size == MemoryLayout<proc_bsdinfo>.size else { return nil }
+        let uid = Int(info.pbi_uid)
+        let username: String
+        if let passwd = getpwuid(uid_t(uid)) {
+            username = String(cString: passwd.pointee.pw_name)
+        } else {
+            username = "uid \(uid)"
+        }
+        return ClientUser(uid: uid, username: username)
     }
 }
 
@@ -114,7 +236,7 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
             return false
         }
 
-        let session = HelperSession(clientBundleURL: client.bundleURL)
+        let session = HelperSession(clientBundleURL: client.bundleURL, clientUser: client.user)
         connection.exportedInterface = NSXPCInterface(with: WireguardHelperProtocol.self)
         connection.exportedObject = session
         connection.invalidationHandler = { _ = session }
@@ -125,14 +247,20 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
 
 private final class HelperSession: NSObject, WireguardHelperProtocol {
     private let clientBundleURL: URL
+    private let clientUser: ClientUser
     private let fileManager = FileManager.default
 
-    init(clientBundleURL: URL) {
+    init(clientBundleURL: URL, clientUser: ClientUser) {
         self.clientBundleURL = clientBundleURL
+        self.clientUser = clientUser
     }
 
     func helperVersion(reply: @escaping (String) -> Void) {
         reply(helperVersionNumber)
+    }
+
+    func helperProtocolRevision(reply: @escaping (String) -> Void) {
+        reply(helperProtocolRevisionValue)
     }
 
     func startTunnel(named name: String, reply: @escaping (Bool, String?) -> Void) {
@@ -248,6 +376,257 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             reply(true, nil)
         } catch {
             reply(false, error.localizedDescription)
+        }
+    }
+
+    func listManagedTunnels(reply: @escaping (Data?, String?) -> Void) {
+        do {
+            try ensureManagedStore()
+            let records = try loadManagedRecords()
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            reply(try encoder.encode(records), nil)
+        } catch {
+            reply(nil, error.localizedDescription)
+        }
+    }
+
+    func installManagedTunnel(
+        named name: String,
+        contents: Data,
+        authorization: Data,
+        reply: @escaping (Bool, String?) -> Void
+    ) {
+        do {
+            try validateAdminAuthorization(authorization)
+            guard contents.count <= maximumConfigSize else { throw HelperError.invalidConfig }
+            try validateConfigContents(contents)
+            let safeBaseName = ConfigName.sanitize(name)
+            guard let safeName = validatedConfigName("\(safeBaseName).conf") else {
+                throw HelperError.invalidConfigName
+            }
+            try ensureManagedStore()
+
+            var records = try loadManagedRecords()
+            guard !records.contains(where: { URL(fileURLWithPath: $0.configPath).lastPathComponent == safeName }) else {
+                throw HelperError.managedTunnelExists
+            }
+
+            let configURL = managedConfigDir.appendingPathComponent(safeName, isDirectory: false)
+            guard !fileManager.fileExists(atPath: configURL.path) else {
+                throw HelperError.managedTunnelExists
+            }
+            try writeManagedConfig(contents, to: configURL)
+            let metadata = try sanitizedMetadata(from: contents)
+            let now = Date()
+            records.append(ManagedTunnelRecord(
+                id: UUID(),
+                name: safeBaseName,
+                configPath: configURL.path,
+                runtimeConfigPath: nil,
+                interfaceName: nil,
+                isActive: false,
+                isFavorite: false,
+                autostart: false,
+                autoConnectRule: ManagedAutoConnectRule(),
+                address: metadata.address,
+                allowedIPs: metadata.allowedIPs,
+                dns: metadata.dns,
+                endpoint: metadata.endpoint,
+                publicKey: metadata.publicKey,
+                lastHandshake: nil,
+                rxBytes: 0,
+                txBytes: 0,
+                connectedAt: nil,
+                createdAt: now,
+                updatedAt: now,
+                scope: "managed",
+                managedPolicy: ManagedTunnelPolicy()
+            ))
+            try saveManagedRecords(records)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func updateManagedTunnel(
+        id: String,
+        name: String,
+        contents: Data?,
+        policy: Data,
+        autoConnectRule: Data,
+        authorization: Data,
+        reply: @escaping (Bool, String?) -> Void
+    ) {
+        do {
+            try validateAdminAuthorization(authorization)
+            try ensureManagedStore()
+            var records = try loadManagedRecords()
+            guard let uuid = UUID(uuidString: id),
+                  let index = records.firstIndex(where: { $0.id == uuid }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            let decoder = JSONDecoder()
+            let decodedPolicy = try decoder.decode(ManagedTunnelPolicy.self, from: policy)
+            let decodedRule = try decoder.decode(ManagedAutoConnectRule.self, from: autoConnectRule)
+            let safeBaseName = ConfigName.sanitize(name)
+            guard let safeName = validatedConfigName("\(safeBaseName).conf") else {
+                throw HelperError.invalidConfigName
+            }
+
+            let oldConfigURL = URL(fileURLWithPath: records[index].configPath)
+            let newConfigURL = managedConfigDir.appendingPathComponent(safeName, isDirectory: false)
+            let metadata: SanitizedConfigMetadata?
+            if let contents {
+                guard contents.count <= maximumConfigSize else { throw HelperError.invalidConfig }
+                try validateConfigContents(contents)
+                metadata = try sanitizedMetadata(from: contents)
+                try writeManagedConfig(contents, to: newConfigURL)
+            } else {
+                try validateManagedConfigFile(oldConfigURL)
+                metadata = nil
+                if oldConfigURL.path != newConfigURL.path {
+                    guard !fileManager.fileExists(atPath: newConfigURL.path) else {
+                        throw HelperError.managedTunnelExists
+                    }
+                    try fileManager.moveItem(at: oldConfigURL, to: newConfigURL)
+                    try fileManager.setAttributes([
+                        .posixPermissions: 0o600,
+                        .ownerAccountID: 0,
+                        .groupOwnerAccountID: 0
+                    ], ofItemAtPath: newConfigURL.path)
+                }
+            }
+            if oldConfigURL.path != newConfigURL.path, fileManager.fileExists(atPath: oldConfigURL.path) {
+                try? fileManager.removeItem(at: oldConfigURL)
+            }
+
+            records[index].name = safeBaseName
+            records[index].configPath = newConfigURL.path
+            records[index].autoConnectRule = decodedRule
+            records[index].managedPolicy = decodedPolicy
+            if let metadata {
+                records[index].address = metadata.address
+                records[index].allowedIPs = metadata.allowedIPs
+                records[index].dns = metadata.dns
+                records[index].endpoint = metadata.endpoint
+                records[index].publicKey = metadata.publicKey
+            }
+            records[index].updatedAt = Date()
+            try saveManagedRecords(records)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func deleteManagedTunnel(id: String, authorization: Data, reply: @escaping (Bool, String?) -> Void) {
+        do {
+            try validateAdminAuthorization(authorization)
+            try ensureManagedStore()
+            var records = try loadManagedRecords()
+            guard let uuid = UUID(uuidString: id),
+                  let record = records.first(where: { $0.id == uuid }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            records.removeAll { $0.id == uuid }
+            let configURL = URL(fileURLWithPath: record.configPath)
+            if fileManager.fileExists(atPath: configURL.path) {
+                try validateManagedConfigFile(configURL)
+                try fileManager.removeItem(at: configURL)
+            }
+            var connectedUsers = try loadManagedConnectedUsers()
+            connectedUsers.removeValue(forKey: id)
+            try saveManagedConnectedUsers(connectedUsers)
+            try saveManagedRecords(records)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func stageManagedConfig(id: String, reply: @escaping (String?, String?) -> Void) {
+        do {
+            try ensureManagedStore()
+            let records = try loadManagedRecords()
+            guard let uuid = UUID(uuidString: id),
+                  let record = records.first(where: { $0.id == uuid }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            let source = URL(fileURLWithPath: record.configPath)
+            try validateManagedConfigFile(source)
+            let contents = try Data(contentsOf: source, options: .mappedIfSafe)
+            try validateConfigContents(contents)
+            try createDirectory(runtimeConfigDir, permissions: 0o700)
+            let destination = runtimeConfigDir.appendingPathComponent(source.lastPathComponent, isDirectory: false)
+            try writeRuntimeConfig(contents, to: destination)
+            reply(destination.path, nil)
+        } catch {
+            reply(nil, error.localizedDescription)
+        }
+    }
+
+    func markManagedTunnelConnected(id: String, reply: @escaping (Bool, String?) -> Void) {
+        do {
+            try ensureManagedStore()
+            let records = try loadManagedRecords()
+            guard UUID(uuidString: id) != nil,
+                  records.contains(where: { $0.id.uuidString == id }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            var connectedUsers = try loadManagedConnectedUsers()
+            var sessions = connectedUsers[id, default: []]
+            sessions.removeAll { $0.uid == clientUser.uid }
+            sessions.append(ManagedTunnelUserSession(
+                uid: clientUser.uid,
+                username: clientUser.username,
+                connectedAt: Date()
+            ))
+            connectedUsers[id] = sessions.sorted { $0.username.localizedCaseInsensitiveCompare($1.username) == .orderedAscending }
+            try saveManagedConnectedUsers(connectedUsers)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func markManagedTunnelDisconnected(id: String, reply: @escaping (Bool, String?) -> Void) {
+        do {
+            try ensureManagedStore()
+            guard UUID(uuidString: id) != nil else {
+                throw HelperError.managedTunnelNotFound
+            }
+            var connectedUsers = try loadManagedConnectedUsers()
+            var sessions = connectedUsers[id, default: []]
+            sessions.removeAll { $0.uid == clientUser.uid }
+            if sessions.isEmpty {
+                connectedUsers.removeValue(forKey: id)
+            } else {
+                connectedUsers[id] = sessions
+            }
+            try saveManagedConnectedUsers(connectedUsers)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func listManagedTunnelUsers(id: String, authorization: Data, reply: @escaping (Data?, String?) -> Void) {
+        do {
+            try validateAdminAuthorization(authorization)
+            try ensureManagedStore()
+            let records = try loadManagedRecords()
+            guard UUID(uuidString: id) != nil,
+                  records.contains(where: { $0.id.uuidString == id }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            let sessions = try loadManagedConnectedUsers()[id, default: []]
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            reply(try encoder.encode(sessions), nil)
+        } catch {
+            reply(nil, error.localizedDescription)
         }
     }
 
@@ -378,6 +757,200 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
 
         try createDirectory(runtimeConfigDir, permissions: 0o700)
+    }
+
+    private func ensureManagedStore() throws {
+        try createDirectory(systemRoot, permissions: 0o755)
+        try createDirectory(managedRoot, permissions: 0o755)
+        try createDirectory(managedConfigDir, permissions: 0o700)
+        try createDirectory(managedMetadataDir, permissions: 0o755)
+        if fileManager.fileExists(atPath: managedMetadataFile.path) {
+            try validateRegularFile(managedMetadataFile, expectedSize: nil)
+            try validateRootOwnedFile(managedMetadataFile)
+        }
+        if fileManager.fileExists(atPath: managedConnectedUsersFile.path) {
+            try validateRegularFile(managedConnectedUsersFile, expectedSize: nil)
+            try validateRootOwnedFile(managedConnectedUsersFile)
+        }
+    }
+
+    private func loadManagedRecords() throws -> [ManagedTunnelRecord] {
+        guard fileManager.fileExists(atPath: managedMetadataFile.path) else { return [] }
+        try validateRegularFile(managedMetadataFile, expectedSize: nil)
+        try validateRootOwnedFile(managedMetadataFile)
+        let data = try Data(contentsOf: managedMetadataFile, options: .mappedIfSafe)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([ManagedTunnelRecord].self, from: data)
+    }
+
+    private func saveManagedRecords(_ records: [ManagedTunnelRecord]) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(records)
+        let temporary = managedMetadataDir.appendingPathComponent(".tunnels-\(UUID().uuidString).tmp")
+        try data.write(to: temporary, options: [.atomic])
+        try fileManager.setAttributes([
+            .posixPermissions: 0o644,
+            .ownerAccountID: 0,
+            .groupOwnerAccountID: 0
+        ], ofItemAtPath: temporary.path)
+        if fileManager.fileExists(atPath: managedMetadataFile.path) {
+            _ = try fileManager.replaceItemAt(managedMetadataFile, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: managedMetadataFile)
+        }
+    }
+
+    private func loadManagedConnectedUsers() throws -> [String: [ManagedTunnelUserSession]] {
+        guard fileManager.fileExists(atPath: managedConnectedUsersFile.path) else { return [:] }
+        try validateRegularFile(managedConnectedUsersFile, expectedSize: nil)
+        try validateRootOwnedFile(managedConnectedUsersFile)
+        let data = try Data(contentsOf: managedConnectedUsersFile, options: .mappedIfSafe)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([String: [ManagedTunnelUserSession]].self, from: data)
+    }
+
+    private func saveManagedConnectedUsers(_ connectedUsers: [String: [ManagedTunnelUserSession]]) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(connectedUsers)
+        let temporary = managedMetadataDir.appendingPathComponent(".connected-users-\(UUID().uuidString).tmp")
+        try data.write(to: temporary, options: [.atomic])
+        try fileManager.setAttributes([
+            .posixPermissions: 0o600,
+            .ownerAccountID: 0,
+            .groupOwnerAccountID: 0
+        ], ofItemAtPath: temporary.path)
+        if fileManager.fileExists(atPath: managedConnectedUsersFile.path) {
+            _ = try fileManager.replaceItemAt(managedConnectedUsersFile, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: managedConnectedUsersFile)
+        }
+    }
+
+    private func writeManagedConfig(_ contents: Data, to destination: URL) throws {
+        try validateConfigContents(contents)
+        let temporary = managedConfigDir.appendingPathComponent(".\(UUID().uuidString).tmp")
+        try contents.write(to: temporary, options: [.atomic])
+        try fileManager.setAttributes([
+            .posixPermissions: 0o600,
+            .ownerAccountID: 0,
+            .groupOwnerAccountID: 0
+        ], ofItemAtPath: temporary.path)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: destination)
+        }
+    }
+
+    private func writeRuntimeConfig(_ contents: Data, to destination: URL) throws {
+        let temporary = runtimeConfigDir.appendingPathComponent(".\(UUID().uuidString).tmp")
+        try contents.write(to: temporary, options: [.atomic])
+        try fileManager.setAttributes([
+            .posixPermissions: 0o600,
+            .ownerAccountID: 0,
+            .groupOwnerAccountID: 0
+        ], ofItemAtPath: temporary.path)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: destination)
+        }
+    }
+
+    private func validateManagedConfigFile(_ url: URL) throws {
+        guard url.standardizedFileURL.path.hasPrefix(managedConfigDir.standardizedFileURL.path + "/"),
+              validatedConfigName(url.lastPathComponent) != nil else {
+            throw HelperError.invalidConfigName
+        }
+        try validateRegularFile(url, expectedSize: nil)
+        try validateRootOwnedFile(url)
+    }
+
+    private func validateAdminAuthorization(_ authorization: Data) throws {
+        guard authorization.count == MemoryLayout<AuthorizationExternalForm>.size else {
+            throw HelperError.authorizationRequired
+        }
+        var externalForm = AuthorizationExternalForm()
+        _ = withUnsafeMutableBytes(of: &externalForm) { buffer in
+            authorization.copyBytes(to: buffer)
+        }
+        var authRef: AuthorizationRef?
+        guard AuthorizationCreateFromExternalForm(&externalForm, &authRef) == errAuthorizationSuccess,
+              let authRef else {
+            throw HelperError.authorizationRequired
+        }
+        try "system.privilege.admin".withCString { rightName in
+            var item = AuthorizationItem(
+                name: rightName,
+                valueLength: 0,
+                value: nil,
+                flags: 0
+            )
+            try withUnsafeMutablePointer(to: &item) { itemPointer in
+                var rights = AuthorizationRights(count: 1, items: itemPointer)
+                guard AuthorizationCopyRights(authRef, &rights, nil, AuthorizationFlags(), nil) == errAuthorizationSuccess else {
+                    throw HelperError.authorizationRequired
+                }
+            }
+        }
+    }
+
+    private func sanitizedMetadata(from contents: Data) throws -> SanitizedConfigMetadata {
+        guard let text = String(data: contents, encoding: .utf8) else {
+            throw HelperError.invalidConfig
+        }
+        var section = ""
+        var peerCount = 0
+        var address: [String] = []
+        var allowedIPs: [String] = []
+        var dns: [String] = []
+        var endpoint: String?
+        var publicKey: String?
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            if line.hasPrefix("[") {
+                section = line.lowercased()
+                if section == "[peer]" { peerCount += 1 }
+                continue
+            }
+            let parts = line.components(separatedBy: "=")
+            guard parts.count >= 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespaces)
+            if section == "[interface]" {
+                switch key {
+                case "address": address = ConfigName.nonEmptyList(value)
+                case "dns": dns = ConfigName.nonEmptyList(value)
+                default: break
+                }
+            } else if section == "[peer]" && peerCount == 1 {
+                switch key {
+                case "publickey": publicKey = value.isEmpty ? nil : value
+                case "endpoint": endpoint = value.isEmpty ? nil : value
+                case "allowedips": allowedIPs = ConfigName.nonEmptyList(value)
+                default: break
+                }
+            }
+        }
+
+        guard !address.isEmpty, !allowedIPs.isEmpty, publicKey != nil else {
+            throw HelperError.invalidConfig
+        }
+        return SanitizedConfigMetadata(
+            address: address,
+            allowedIPs: allowedIPs,
+            dns: dns,
+            endpoint: endpoint,
+            publicKey: publicKey
+        )
     }
 
     private func validatedConfigName(_ name: String) -> String? {
@@ -581,6 +1154,10 @@ private enum HelperError: LocalizedError {
     case hashMismatch(String)
     case invalidInstalledWg
     case invalidConfig
+    case invalidConfigName
+    case authorizationRequired
+    case managedTunnelExists
+    case managedTunnelNotFound
     case privilegedHook(String)
 
     var errorDescription: String? {
@@ -590,6 +1167,10 @@ private enum HelperError: LocalizedError {
         case .hashMismatch(let name): return "SHA256 verification failed for \(name)"
         case .invalidInstalledWg: return "Installed WireGuard binary failed verification"
         case .invalidConfig: return "Tunnel configuration is not valid UTF-8"
+        case .invalidConfigName: return "Managed tunnel name is invalid"
+        case .authorizationRequired: return "Administrator authorization is required"
+        case .managedTunnelExists: return "A managed tunnel with that name already exists"
+        case .managedTunnelNotFound: return "Managed tunnel was not found"
         case .privilegedHook(let name):
             return "Tunnel configuration contains forbidden root command hook: \(name)"
         }

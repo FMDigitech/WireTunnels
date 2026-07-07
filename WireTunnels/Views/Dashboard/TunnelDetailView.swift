@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import UniformTypeIdentifiers
 
 // MARK: - Helpers
 
@@ -59,12 +60,17 @@ struct TunnelDetailView: View {
     let tunnel: Tunnel
     @State private var showingEditor = false
     @State private var showingDeleteConfirm = false
+    @State private var showingManagedReplacement = false
+    @State private var isSharingTunnel = false
     @State private var isProcessing = false
+    @State private var isLoadingConnectedUsers = false
+    @State private var connectedUsers: [ManagedTunnelUserSession] = []
     @State private var errorMessage: String? = nil
 
     // On-Demand state — mirrors live.autoConnectRule, saved immediately on change
     @State private var ruleEnabled: Bool                   = false
     @State private var ruleInterface: AutoConnectInterface = .wifi
+    @State private var ruleAction: AutoConnectAction       = .connect
     @State private var ruleAnyWiFi: Bool                   = true
     @State private var ruleSSIDs: [String]                 = []
     @State private var newSSID: String                     = ""
@@ -72,6 +78,20 @@ struct TunnelDetailView: View {
     // Always read live data from TunnelManager so stats update in real-time
     private var live: Tunnel {
         tunnelManager.tunnels.first(where: { $0.id == tunnel.id }) ?? tunnel
+    }
+
+    private var isManaged: Bool {
+        live.scope == .managed
+    }
+
+    private var connectionDisabled: Bool {
+        isProcessing
+            || (isManaged && live.isActive && live.managedPolicy?.usersCanDisconnect == false)
+            || (isManaged && !live.isActive && live.managedPolicy?.usersCanConnect == false)
+    }
+
+    private var confType: UTType {
+        UTType(filenameExtension: "conf") ?? .plainText
     }
 
     private var connectionBinding: Binding<Bool> {
@@ -134,6 +154,11 @@ struct TunnelDetailView: View {
                     DetailRow(label: "Sent", value: formatBytes(live.txBytes))
                 }
 
+                if isManaged && tunnelManager.currentUserIsAdministrator {
+                    Divider()
+                    connectedUsersSection
+                }
+
                 // Traffic charts — only when active and samples exist
                 let samples = tunnelManager.trafficHistory[live.id] ?? []
                 if live.isActive && !samples.isEmpty {
@@ -150,8 +175,13 @@ struct TunnelDetailView: View {
 
                 // Config path
                 DetailSection(title: "Configuration") {
-                    DetailRow(label: "Config Path", value: live.configPath, monospace: true)
-                    if let rtPath = live.runtimeConfigPath {
+                    if isManaged {
+                        DetailRow(label: "Scope", value: "Visible to all users")
+                        DetailRow(label: "Editing", value: "Administrator only")
+                    } else {
+                        DetailRow(label: "Config Path", value: live.configPath, monospace: true)
+                    }
+                    if let rtPath = live.runtimeConfigPath, !isManaged {
                         DetailRow(label: "Runtime Path", value: rtPath, monospace: true)
                     }
                     DetailRow(label: "Autostart", value: live.autostart ? "Enabled" : "Disabled")
@@ -183,15 +213,38 @@ struct TunnelDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                tunnelManager.deleteTunnel(live)
+                if isManaged {
+                    Task { await tunnelManager.deleteManagedTunnel(live) }
+                } else {
+                    tunnelManager.deleteTunnel(live)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This action cannot be undone. The tunnel configuration file will be removed.")
+            Text(isManaged
+                 ? "This action requires administrator approval."
+                 : "This action cannot be undone. The tunnel configuration file will be removed.")
         }
         .sheet(isPresented: $showingEditor) {
             ConfigEditorSheetView(tunnel: live)
                 .environmentObject(tunnelManager)
+        }
+        .fileImporter(
+            isPresented: $showingManagedReplacement,
+            allowedContentTypes: [confType, .plainText]
+        ) { result in
+            switch result {
+            case .success(let url):
+                Task {
+                    do {
+                        try await tunnelManager.replaceManagedConfig(live, with: url)
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -227,6 +280,12 @@ struct TunnelDetailView: View {
                             .font(.caption)
                             .foregroundStyle(.yellow)
                     }
+
+                    if isManaged {
+                        Label("Shared for All Users", systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -243,7 +302,7 @@ struct TunnelDetailView: View {
                 }
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .disabled(isProcessing)
+                .disabled(connectionDisabled)
                 .accessibilityLabel("Connection for \(live.name)")
             }
         }
@@ -255,8 +314,49 @@ struct TunnelDetailView: View {
         ruleEnabled && (ruleInterface == .wifi || ruleInterface == .both)
     }
 
+    private var connectedUsersSection: some View {
+        DetailSection(title: "Connected Users") {
+            if isLoadingConnectedUsers {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if connectedUsers.isEmpty {
+                Text("Visible to administrators.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(connectedUsers) { session in
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.fill")
+                                .foregroundStyle(.secondary)
+                            Text(session.username)
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Text(session.connectedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Button {
+                loadConnectedUsers()
+            } label: {
+                Label("Show Connected Users", systemImage: "person.2")
+            }
+            .buttonStyle(.bordered)
+            .disabled(isLoadingConnectedUsers)
+        }
+    }
+
     private var onDemandSection: some View {
-        DetailSection(title: "On-Demand (Auto-Connect)") {
+        DetailSection(title: "On-Demand") {
             Toggle(isOn: $ruleEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Enable On-Demand")
@@ -267,13 +367,25 @@ struct TunnelDetailView: View {
                 }
             }
             .toggleStyle(.switch)
+            .disabled(isManaged)
             .onChange(of: ruleEnabled) { _, _ in saveRule() }
 
             if ruleEnabled {
                 Divider()
 
+                Picker("Action", selection: $ruleAction) {
+                    ForEach(AutoConnectAction.allCases, id: \.self) { action in
+                        Text(action.displayName).tag(action)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(isManaged)
+                .onChange(of: ruleAction) { _, _ in saveRule() }
+
+                Divider()
+
                 HStack {
-                    Text("Connect on")
+                    Text(ruleAction == .connect ? "Connect on" : "Disconnect on")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(width: 130, alignment: .leading)
@@ -285,6 +397,7 @@ struct TunnelDetailView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    .disabled(isManaged)
                     .onChange(of: ruleInterface) { _, _ in saveRule() }
                 }
 
@@ -297,6 +410,7 @@ struct TunnelDetailView: View {
 
                         Toggle("Any Wi-Fi Network", isOn: $ruleAnyWiFi)
                             .toggleStyle(.checkbox)
+                            .disabled(isManaged)
                             .onChange(of: ruleAnyWiFi) { _, _ in
                                 if ruleAnyWiFi { ruleSSIDs = [] }
                                 saveRule()
@@ -322,6 +436,7 @@ struct TunnelDetailView: View {
                                                     .foregroundStyle(.red)
                                             }
                                             .buttonStyle(.plain)
+                                            .disabled(isManaged)
                                         }
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
@@ -339,7 +454,8 @@ struct TunnelDetailView: View {
                                     .onSubmit { addSSID() }
                                 Button("Add") { addSSID() }
                                     .buttonStyle(.bordered)
-                                    .disabled(newSSID.trimmingCharacters(in: .whitespaces).isEmpty ||
+                                    .disabled(isManaged ||
+                                              newSSID.trimmingCharacters(in: .whitespaces).isEmpty ||
                                               ruleSSIDs.contains(newSSID.trimmingCharacters(in: .whitespaces)))
                             }
 
@@ -354,7 +470,7 @@ struct TunnelDetailView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .disabled(ruleSSIDs.contains(ssid))
+                                .disabled(isManaged || ruleSSIDs.contains(ssid))
                             }
                         }
                     }
@@ -381,15 +497,18 @@ struct TunnelDetailView: View {
         let rule = live.autoConnectRule
         ruleEnabled   = rule.enabled
         ruleInterface = rule.interface
+        ruleAction    = rule.action
         ruleAnyWiFi   = rule.matchesAnyWiFi
         ruleSSIDs     = rule.wifiSSIDs
         newSSID       = ""
     }
 
     private func saveRule() {
+        guard !isManaged else { return }
         let rule = AutoConnectRule(
             enabled:   ruleEnabled,
             interface: ruleInterface,
+            action:    ruleAction,
             wifiSSIDs: ruleAnyWiFi ? [] : ruleSSIDs
         )
         tunnelManager.updateAutoConnectRule(for: live, rule: rule)
@@ -405,34 +524,79 @@ struct TunnelDetailView: View {
 
     private var actionsSection: some View {
         HStack(spacing: 12) {
-            Button {
-                tunnelManager.toggleFavorite(live)
-            } label: {
-                Label(
-                    live.isFavorite ? "Remove Favorite" : "Add Favorite",
-                    systemImage: live.isFavorite ? "star.slash" : "star"
-                )
-            }
-            .buttonStyle(.bordered)
+            if !isManaged {
+                Button {
+                    tunnelManager.toggleFavorite(live)
+                } label: {
+                    Label(
+                        live.isFavorite ? "Remove Favorite" : "Add Favorite",
+                        systemImage: live.isFavorite ? "star.slash" : "star"
+                    )
+                }
+                .buttonStyle(.bordered)
 
-            Button {
-                showingEditor = true
-            } label: {
-                Label("Edit Config", systemImage: "pencil")
+                Button {
+                    showingEditor = true
+                } label: {
+                    Label("Edit Config", systemImage: "pencil")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    makeShared()
+                } label: {
+                    Label("Make Shared", systemImage: "person.2.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(live.isActive || isSharingTunnel)
+                .help(live.isActive
+                      ? "Disconnect the tunnel before making it visible to all users."
+                      : "Make this tunnel visible to all users. Administrator approval is required.")
+            } else {
+                Button {
+                    showingManagedReplacement = true
+                } label: {
+                    Label("Replace Managed Config", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .disabled(live.isActive)
             }
-            .buttonStyle(.bordered)
 
             Spacer()
 
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
-                Label("Delete Tunnel", systemImage: "trash")
+                Label(isManaged ? "Delete Managed Tunnel" : "Delete Tunnel", systemImage: "trash")
             }
             .buttonStyle(.bordered)
             .tint(.red)
             .disabled(live.isActive)
             .help(live.isActive ? "Disconnect the tunnel before deleting." : "Delete this tunnel permanently.")
+        }
+    }
+
+    private func makeShared() {
+        isSharingTunnel = true
+        Task {
+            do {
+                try await tunnelManager.makeTunnelShared(live)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSharingTunnel = false
+        }
+    }
+
+    private func loadConnectedUsers() {
+        isLoadingConnectedUsers = true
+        Task {
+            do {
+                connectedUsers = try await tunnelManager.connectedUsers(for: live)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoadingConnectedUsers = false
         }
     }
 }

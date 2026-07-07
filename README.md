@@ -1,5 +1,3 @@
-# WireTunnels
-
 <p align="center">
   <img src="./assets/banner.png" alt="WireTunnels" />
 </p>
@@ -141,13 +139,21 @@ Import existing `.conf` files or create new tunnels using the basic editor, adva
 
 Monitor tunnel status, latest handshake, endpoint, interface, DNS, Allowed IPs and traffic usage in real time.
 
-### Auto-start and auto-connect
+### Auto-start and on-demand automation
 
-Launch WireTunnels automatically and connect selected tunnels on startup.
+Launch WireTunnels automatically at login. Per-tunnel On-Demand rules connect **or disconnect** a tunnel automatically based on network conditions (Wi-Fi SSID, Ethernet, or both) — not just on connect, disconnect triggers too, e.g. drop a tunnel automatically when you join a trusted Wi-Fi network.
 
 ### Favorites and quick actions
 
 Mark tunnels as favorites and quickly start or stop all favorite tunnels from the menu bar or with shortcuts.
+
+### Managed shared tunnels
+
+Administrators can create tunnels shared across every local user on the Mac. Shared tunnel configs and private keys are stored by the privileged helper with root-only permissions; standard users can see and use shared tunnels but never their keys. Personal tunnels remain private per user as before.
+
+### Secure, verified WireGuard runtime
+
+Bundled WireGuard binaries are installed through a narrowly constrained privileged helper that validates the calling app's signature, a manifest, and file hashes before any privileged operation — installation requires explicit user consent, nothing runs silently.
 
 ### Smarter warnings
 

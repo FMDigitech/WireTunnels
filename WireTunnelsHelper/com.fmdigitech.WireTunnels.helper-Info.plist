@@ -9,9 +9,9 @@
     <key>CFBundleName</key>
     <string>WireTunnelsHelper</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.0.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>SMAuthorizedClients</key>
     <array>
         <string>identifier "com.fmdigitech.WireTunnels" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "48W4Z4X56T"</string>
