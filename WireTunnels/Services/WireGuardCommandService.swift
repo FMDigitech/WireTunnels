@@ -5,7 +5,7 @@ import ServiceManagement
 @MainActor
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
-    nonisolated static let expectedHelperVersion = "1.0.1"
+    nonisolated static let expectedHelperVersion = "1.0.2"
     nonisolated static let expectedHelperProtocolRevision = "managed-users-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
@@ -15,6 +15,10 @@ final class WireGuardCommandService {
     nonisolated static let helperPlistName = "com.fmdigitech.WireTunnels.helper.plist"
 
     private var connection: NSXPCConnection?
+    // Kept alive across calls so the admin credential it caches is reused instead
+    // of re-prompting for a password on every shared-tunnel operation. macOS ties
+    // that cache to the specific AuthorizationRef, not just the login session.
+    private var authorizationRef: AuthorizationRef?
     // ponytail: fresh instance per access, not stored — SMAppService.status can
     // go stale on a long-lived instance (macOS keeps toggling Login Items live,
     // reused SMAppService objects don't always pick it up without a relaunch).
@@ -114,7 +118,16 @@ final class WireGuardCommandService {
                 try? await unregisterHelper()
                 invalidateConnection()
             }
-            try daemonService.register()
+            do {
+                try daemonService.register()
+            } catch {
+                // register() right after unregister() reliably fails with
+                // "Operation not permitted" — launchd needs a moment to drop
+                // the old registration before it accepts a new one.
+                guard replacingExisting else { throw error }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try daemonService.register()
+            }
             if daemonService.status == .requiresApproval {
                 throw CommandError.helperApprovalRequired
             }
@@ -531,11 +544,7 @@ final class WireGuardCommandService {
     }
 
     private func adminAuthorizationToken() throws -> Data {
-        var authRef: AuthorizationRef?
-        let createStatus = AuthorizationCreate(nil, nil, AuthorizationFlags(), &authRef)
-        guard createStatus == errAuthorizationSuccess, let authRef else {
-            throw CommandError.authorizationFailed(createStatus)
-        }
+        let authRef = try acquireAuthorizationRef()
 
         let flags: AuthorizationFlags = [.interactionAllowed, .extendRights, .preAuthorize]
         let copyStatus = "system.privilege.admin".withCString { rightName in
@@ -562,9 +571,28 @@ final class WireGuardCommandService {
         return withUnsafeBytes(of: &externalForm) { Data($0) }
     }
 
+    private func acquireAuthorizationRef() throws -> AuthorizationRef {
+        if let authorizationRef {
+            return authorizationRef
+        }
+        var authRef: AuthorizationRef?
+        let createStatus = AuthorizationCreate(nil, nil, AuthorizationFlags(), &authRef)
+        guard createStatus == errAuthorizationSuccess, let authRef else {
+            throw CommandError.authorizationFailed(createStatus)
+        }
+        authorizationRef = authRef
+        return authRef
+    }
+
     func invalidateConnection() {
         connection?.invalidate()
         connection = nil
+    }
+
+    deinit {
+        if let authorizationRef {
+            AuthorizationFree(authorizationRef, [])
+        }
     }
 }
 

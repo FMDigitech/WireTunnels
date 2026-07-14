@@ -49,6 +49,30 @@
             />
         </item>
 
+        <item>
+            <title>Version 1.0.2</title>
+            <pubDate>Tue, 14 Jul 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>Shared tunnels: administrators can create tunnels visible to every user on the Mac, control who's allowed to connect or disconnect, and see who's currently connected</li>
+                    <li>On-Demand rules can now connect and disconnect on different Wi-Fi networks independently, instead of a single action per tunnel</li>
+                    <li>Pick Wi-Fi networks for On-Demand rules from a list of known networks, or type one manually</li>
+                    <li>Shared tunnel changes now ask for your admin password once per session instead of every time</li>
+                    <li>Added a "Hide Dock Icon" option in Settings for menu-bar-only use</li>
+                    <li>Fixed On-Demand rules for specific Wi-Fi networks not triggering (this needed Location permission to read the current network name)</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.0.2/WireTunnels-1.0.2.zip"
+                sparkle:edSignature="qPtcIuciO5g4c/eOJLHpfMfUEyTPTr7+wgnCb23acN0ik16n7fiYSSxQNBLGxL1S1+0bughI6zKhNpKLRmRyDA=="
+                length="10801424"
+                type="application/octet-stream"
+            />
+        </item>
+
         <!--
         Next release: bump CFBundleVersion (integer) and MARKETING_VERSION in Xcode,
         run sign_update on the new zip, add a new <item> above this comment.

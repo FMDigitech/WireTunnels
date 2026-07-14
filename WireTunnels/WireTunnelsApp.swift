@@ -6,6 +6,10 @@ import AppKit
 private class AppDelegate: NSObject, NSApplicationDelegate {
     var tunnelManager: TunnelManager?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(UserDefaults.standard.bool(forKey: "hideDockIcon") ? .accessory : .regular)
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         // Clicking the Dock icon when all windows are closed re-opens the dashboard.
         if !hasVisibleWindows {

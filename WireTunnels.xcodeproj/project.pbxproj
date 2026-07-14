@@ -234,7 +234,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "# Build and bundle wireguard binaries\nbash \"${SRCROOT}/Scripts/build_wireguard_binaries.sh\"\n\n# Copy launchd plist for SMAppService daemon registration\nLAUNCH_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"\nmkdir -p \"$LAUNCH_DIR\"\ncp \"${SRCROOT}/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist\" \\\n   \"$LAUNCH_DIR/com.fmdigitech.WireTunnels.helper.plist\"\n";
+			shellScript = "set -euo pipefail\n\n# Build and bundle wireguard binaries\nbash \"${SRCROOT}/Scripts/build_wireguard_binaries.sh\"\n\n# Copy launchd plist for SMAppService daemon registration\nLAUNCH_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"\nmkdir -p \"$LAUNCH_DIR\"\ncp \"${SRCROOT}/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist\" \\\n   \"$LAUNCH_DIR/com.fmdigitech.WireTunnels.helper.plist\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -433,7 +433,7 @@
 				CODE_SIGN_ENTITLEMENTS = WireTunnels/WireTunnels.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 48W4Z4X56T;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -443,12 +443,13 @@
 				INFOPLIST_KEY_CFBundleDisplayName = WireTunnels;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "WireTunnels uses your location to read the current Wi-Fi network name, so On-Demand rules can match specific networks.";
 				INFOPLIST_KEY_NSUserNotificationAlertStyle = alert;
 				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/FMDigitech/WireTunnels/main/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "YFTXWuQkChzuy1Zhc2i2oJX3qunpBrIS7JZTWcZFobw=";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -469,7 +470,7 @@
 				CODE_SIGN_ENTITLEMENTS = WireTunnels/WireTunnels.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 48W4Z4X56T;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -479,12 +480,13 @@
 				INFOPLIST_KEY_CFBundleDisplayName = WireTunnels;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "WireTunnels uses your location to read the current Wi-Fi network name, so On-Demand rules can match specific networks.";
 				INFOPLIST_KEY_NSUserNotificationAlertStyle = alert;
 				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/FMDigitech/WireTunnels/main/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "YFTXWuQkChzuy1Zhc2i2oJX3qunpBrIS7JZTWcZFobw=";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fmdigitech.WireTunnels;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

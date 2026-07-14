@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import Security
 
-private let helperVersionNumber = "1.0.1"
+private let helperVersionNumber = "1.0.2"
 private let helperProtocolRevisionValue = "managed-users-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
@@ -41,16 +41,98 @@ private enum ManagedAutoConnectInterface: String, Codable {
     case both
 }
 
-private enum ManagedAutoConnectAction: String, Codable {
-    case connect
-    case disconnect
-}
-
-private struct ManagedAutoConnectRule: Codable, Equatable {
+private struct ManagedAutoConnectNetworkMatch: Codable, Equatable {
     var enabled: Bool = false
     var interface: ManagedAutoConnectInterface = .wifi
-    var action: ManagedAutoConnectAction = .connect
     var wifiSSIDs: [String] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case interface
+        case wifiSSIDs
+    }
+
+    init(enabled: Bool = false, interface: ManagedAutoConnectInterface = .wifi, wifiSSIDs: [String] = []) {
+        self.enabled = enabled
+        self.interface = interface
+        self.wifiSSIDs = wifiSSIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        interface = try container.decodeIfPresent(ManagedAutoConnectInterface.self, forKey: .interface) ?? .wifi
+        wifiSSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+    }
+}
+
+/// Mirrors WireTunnels/Models/AutoConnectRule.swift — the helper only stores and
+/// passes this through, it never interprets it, but the JSON shape must match
+/// what the app encodes/decodes.
+private struct ManagedAutoConnectRule: Codable, Equatable {
+    var connect: ManagedAutoConnectNetworkMatch = ManagedAutoConnectNetworkMatch()
+    var disconnect: ManagedAutoConnectNetworkMatch = ManagedAutoConnectNetworkMatch()
+
+    init(
+        connect: ManagedAutoConnectNetworkMatch = ManagedAutoConnectNetworkMatch(),
+        disconnect: ManagedAutoConnectNetworkMatch = ManagedAutoConnectNetworkMatch()
+    ) {
+        self.connect = connect
+        self.disconnect = disconnect
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case connect
+        case disconnect
+        // Pre-existing flat shape, kept only to migrate records written by an older app/helper.
+        case enabled
+        case interface
+        case action
+        case wifiSSIDs
+    }
+
+    private enum LegacyAction: String, Codable {
+        case connect
+        case disconnect
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        guard container.contains(.action) else {
+            connect = try container.decodeIfPresent(ManagedAutoConnectNetworkMatch.self, forKey: .connect)
+                ?? ManagedAutoConnectNetworkMatch()
+            disconnect = try container.decodeIfPresent(ManagedAutoConnectNetworkMatch.self, forKey: .disconnect)
+                ?? ManagedAutoConnectNetworkMatch()
+            return
+        }
+
+        let legacyEnabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        let legacyInterface = try container.decodeIfPresent(ManagedAutoConnectInterface.self, forKey: .interface) ?? .wifi
+        let legacyAction = try container.decodeIfPresent(LegacyAction.self, forKey: .action) ?? .connect
+        let legacySSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+        let legacyMatch = ManagedAutoConnectNetworkMatch(
+            enabled: legacyEnabled,
+            interface: legacyInterface,
+            wifiSSIDs: legacySSIDs
+        )
+        switch legacyAction {
+        case .connect:
+            connect = legacyMatch
+            disconnect = ManagedAutoConnectNetworkMatch()
+        case .disconnect:
+            connect = ManagedAutoConnectNetworkMatch()
+            disconnect = legacyMatch
+        }
+    }
+
+    // CodingKeys carries legacy-only cases that don't map to stored properties,
+    // which disables encode(to:) synthesis — so it's spelled out here instead.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(connect, forKey: .connect)
+        try container.encode(disconnect, forKey: .disconnect)
+    }
 }
 
 private struct ManagedTunnelPolicy: Codable, Equatable {

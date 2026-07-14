@@ -67,13 +67,22 @@ struct TunnelDetailView: View {
     @State private var connectedUsers: [ManagedTunnelUserSession] = []
     @State private var errorMessage: String? = nil
 
-    // On-Demand state — mirrors live.autoConnectRule, saved immediately on change
-    @State private var ruleEnabled: Bool                   = false
-    @State private var ruleInterface: AutoConnectInterface = .wifi
-    @State private var ruleAction: AutoConnectAction       = .connect
-    @State private var ruleAnyWiFi: Bool                   = true
-    @State private var ruleSSIDs: [String]                 = []
-    @State private var newSSID: String                     = ""
+    // On-Demand state — mirrors live.autoConnectRule, saved immediately on change.
+    // Connect and disconnect are independent halves so a tunnel can e.g. connect
+    // on the office Wi-Fi and disconnect on a public hotspot at the same time.
+    @State private var connectEnabled: Bool                   = false
+    @State private var connectInterface: AutoConnectInterface = .wifi
+    @State private var connectAnyWiFi: Bool                   = true
+    @State private var connectSSIDs: [String]                 = []
+    @State private var connectNewSSID: String                 = ""
+
+    @State private var disconnectEnabled: Bool                   = false
+    @State private var disconnectInterface: AutoConnectInterface = .wifi
+    @State private var disconnectAnyWiFi: Bool                   = true
+    @State private var disconnectSSIDs: [String]                 = []
+    @State private var disconnectNewSSID: String                 = ""
+
+    @State private var knownNetworks: [String] = []
 
     // Always read live data from TunnelManager so stats update in real-time
     private var live: Tunnel {
@@ -82,6 +91,12 @@ struct TunnelDetailView: View {
 
     private var isManaged: Bool {
         live.scope == .managed
+    }
+
+    /// Shared tunnels' on-demand rule is set once by an administrator and applies to everyone;
+    /// only the administrator may change it, and personal tunnels are always editable.
+    private var canEditOnDemand: Bool {
+        !isManaged || tunnelManager.currentUserIsAdministrator
     }
 
     private var connectionDisabled: Bool {
@@ -199,6 +214,9 @@ struct TunnelDetailView: View {
         .navigationTitle(live.name)
         .onAppear { loadRule() }
         .onChange(of: live.autoConnectRule) { _, _ in loadRule() }
+        .task {
+            knownNetworks = await Task.detached { NetworkMonitorService.knownWiFiNetworkNames() }.value
+        }
         .alert("Error", isPresented: .init(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -310,10 +328,6 @@ struct TunnelDetailView: View {
 
     // MARK: On-Demand Section
 
-    private var showWiFiOptions: Bool {
-        ruleEnabled && (ruleInterface == .wifi || ruleInterface == .both)
-    }
-
     private var connectedUsersSection: some View {
         DetailSection(title: "Connected Users") {
             if isLoadingConnectedUsers {
@@ -357,137 +371,78 @@ struct TunnelDetailView: View {
 
     private var onDemandSection: some View {
         DetailSection(title: "On-Demand") {
-            Toggle(isOn: $ruleEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable On-Demand")
-                        .font(.subheadline.weight(.medium))
-                    Text("Automatically connect or disconnect based on network conditions.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            if isManaged {
+                Text(tunnelManager.currentUserIsAdministrator
+                     ? "As administrator, changes here apply to all users of this shared tunnel."
+                     : "Set by your administrator and applied to all users. You can't change it here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Connect and disconnect rules are independent — a tunnel can connect on one network and disconnect on another.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            OnDemandMatchSection(
+                title: "Connect",
+                systemImage: "bolt.fill",
+                enabled: $connectEnabled,
+                interface: $connectInterface,
+                anyWiFi: $connectAnyWiFi,
+                ssids: $connectSSIDs,
+                newSSID: $connectNewSSID,
+                knownNetworks: knownNetworks,
+                currentSSID: tunnelManager.networkMonitor.currentSSID,
+                canEdit: canEditOnDemand,
+                hasWiFiNamePermission: tunnelManager.networkMonitor.hasWiFiNamePermission,
+                onRequestWiFiPermission: { tunnelManager.networkMonitor.requestWiFiNamePermissionIfNeeded() },
+                onOpenLocationSettings: { tunnelManager.networkMonitor.openLocationSettings() },
+                onSave: saveRule
+            )
+
+            Divider()
+
+            OnDemandMatchSection(
+                title: "Disconnect",
+                systemImage: "bolt.slash.fill",
+                enabled: $disconnectEnabled,
+                interface: $disconnectInterface,
+                anyWiFi: $disconnectAnyWiFi,
+                ssids: $disconnectSSIDs,
+                newSSID: $disconnectNewSSID,
+                knownNetworks: knownNetworks,
+                currentSSID: tunnelManager.networkMonitor.currentSSID,
+                canEdit: canEditOnDemand,
+                hasWiFiNamePermission: tunnelManager.networkMonitor.hasWiFiNamePermission,
+                onRequestWiFiPermission: { tunnelManager.networkMonitor.requestWiFiNamePermissionIfNeeded() },
+                onOpenLocationSettings: { tunnelManager.networkMonitor.openLocationSettings() },
+                onSave: saveRule
+            )
+
+            if connectEnabled || disconnectEnabled {
+                Divider()
+                HStack(spacing: 16) {
+                    onDemandStatusIndicator(
+                        label: "Connect",
+                        matches: connectEnabled && tunnelManager.networkMonitor.matchesConnect(live)
+                    )
+                    onDemandStatusIndicator(
+                        label: "Disconnect",
+                        matches: disconnectEnabled && tunnelManager.networkMonitor.matchesDisconnect(live)
+                    )
                 }
             }
-            .toggleStyle(.switch)
-            .disabled(isManaged)
-            .onChange(of: ruleEnabled) { _, _ in saveRule() }
+        }
+    }
 
-            if ruleEnabled {
-                Divider()
-
-                Picker("Action", selection: $ruleAction) {
-                    ForEach(AutoConnectAction.allCases, id: \.self) { action in
-                        Text(action.displayName).tag(action)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(isManaged)
-                .onChange(of: ruleAction) { _, _ in saveRule() }
-
-                Divider()
-
-                HStack {
-                    Text(ruleAction == .connect ? "Connect on" : "Disconnect on")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 130, alignment: .leading)
-
-                    Picker("", selection: $ruleInterface) {
-                        ForEach(AutoConnectInterface.allCases, id: \.self) { iface in
-                            Text(iface.displayName).tag(iface)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .disabled(isManaged)
-                    .onChange(of: ruleInterface) { _, _ in saveRule() }
-                }
-
-                if showWiFiOptions {
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Wi-Fi Networks")
-                            .font(.subheadline.weight(.medium))
-
-                        Toggle("Any Wi-Fi Network", isOn: $ruleAnyWiFi)
-                            .toggleStyle(.checkbox)
-                            .disabled(isManaged)
-                            .onChange(of: ruleAnyWiFi) { _, _ in
-                                if ruleAnyWiFi { ruleSSIDs = [] }
-                                saveRule()
-                            }
-
-                        if !ruleAnyWiFi {
-                            // SSID list
-                            if !ruleSSIDs.isEmpty {
-                                VStack(spacing: 4) {
-                                    ForEach(ruleSSIDs, id: \.self) { ssid in
-                                        HStack {
-                                            Image(systemName: "wifi")
-                                                .foregroundStyle(.secondary)
-                                                .font(.caption)
-                                            Text(ssid)
-                                                .font(.system(.subheadline, design: .monospaced))
-                                            Spacer()
-                                            Button {
-                                                ruleSSIDs.removeAll { $0 == ssid }
-                                                saveRule()
-                                            } label: {
-                                                Image(systemName: "minus.circle.fill")
-                                                    .foregroundStyle(.red)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .disabled(isManaged)
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.secondary.opacity(0.06),
-                                                    in: RoundedRectangle(cornerRadius: 6))
-                                    }
-                                }
-                            }
-
-                            // Add SSID field
-                            HStack {
-                                TextField("SSID name", text: $newSSID)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.system(.body, design: .monospaced))
-                                    .onSubmit { addSSID() }
-                                Button("Add") { addSSID() }
-                                    .buttonStyle(.bordered)
-                                    .disabled(isManaged ||
-                                              newSSID.trimmingCharacters(in: .whitespaces).isEmpty ||
-                                              ruleSSIDs.contains(newSSID.trimmingCharacters(in: .whitespaces)))
-                            }
-
-                            // Add current network shortcut
-                            if let ssid = tunnelManager.networkMonitor.currentSSID {
-                                Button {
-                                    guard !ruleSSIDs.contains(ssid) else { return }
-                                    ruleSSIDs.append(ssid)
-                                    saveRule()
-                                } label: {
-                                    Label("Add Current: \"\(ssid)\"", systemImage: "wifi.circle")
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .disabled(isManaged || ruleSSIDs.contains(ssid))
-                            }
-                        }
-                    }
-                }
-
-                // Status indicator
-                Divider()
-                HStack(spacing: 6) {
-                    let matches = tunnelManager.networkMonitor.matchesTunnel(live)
-                    Circle()
-                        .fill(matches ? Color.green : Color.secondary)
-                        .frame(width: 7, height: 7)
-                    Text(matches ? "Current network matches rule" : "Current network does not match rule")
-                        .font(.caption)
-                        .foregroundStyle(matches ? .green : .secondary)
-                }
-            }
+    private func onDemandStatusIndicator(label: String, matches: Bool) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(matches ? Color.green : Color.secondary)
+                .frame(width: 7, height: 7)
+            Text("\(label) rule \(matches ? "matches" : "doesn't match") current network")
+                .font(.caption)
+                .foregroundStyle(matches ? .green : .secondary)
         }
     }
 
@@ -495,31 +450,46 @@ struct TunnelDetailView: View {
 
     private func loadRule() {
         let rule = live.autoConnectRule
-        ruleEnabled   = rule.enabled
-        ruleInterface = rule.interface
-        ruleAction    = rule.action
-        ruleAnyWiFi   = rule.matchesAnyWiFi
-        ruleSSIDs     = rule.wifiSSIDs
-        newSSID       = ""
+
+        connectEnabled   = rule.connect.enabled
+        connectInterface = rule.connect.interface
+        connectAnyWiFi   = rule.connect.matchesAnyWiFi
+        connectSSIDs     = rule.connect.wifiSSIDs
+        connectNewSSID   = ""
+
+        disconnectEnabled   = rule.disconnect.enabled
+        disconnectInterface = rule.disconnect.interface
+        disconnectAnyWiFi   = rule.disconnect.matchesAnyWiFi
+        disconnectSSIDs     = rule.disconnect.wifiSSIDs
+        disconnectNewSSID   = ""
     }
 
     private func saveRule() {
-        guard !isManaged else { return }
+        guard canEditOnDemand else { return }
         let rule = AutoConnectRule(
-            enabled:   ruleEnabled,
-            interface: ruleInterface,
-            action:    ruleAction,
-            wifiSSIDs: ruleAnyWiFi ? [] : ruleSSIDs
+            connect: AutoConnectNetworkMatch(
+                enabled: connectEnabled,
+                interface: connectInterface,
+                wifiSSIDs: connectAnyWiFi ? [] : connectSSIDs
+            ),
+            disconnect: AutoConnectNetworkMatch(
+                enabled: disconnectEnabled,
+                interface: disconnectInterface,
+                wifiSSIDs: disconnectAnyWiFi ? [] : disconnectSSIDs
+            )
         )
-        tunnelManager.updateAutoConnectRule(for: live, rule: rule)
-    }
-
-    private func addSSID() {
-        let s = newSSID.trimmingCharacters(in: .whitespaces)
-        guard !s.isEmpty, !ruleSSIDs.contains(s) else { return }
-        ruleSSIDs.append(s)
-        newSSID = ""
-        saveRule()
+        if isManaged {
+            Task {
+                do {
+                    try await tunnelManager.updateManagedAutoConnectRule(for: live, rule: rule)
+                } catch {
+                    errorMessage = error.localizedDescription
+                    loadRule() // revert the UI to the last confirmed shared state
+                }
+            }
+        } else {
+            tunnelManager.updateAutoConnectRule(for: live, rule: rule)
+        }
     }
 
     private var actionsSection: some View {
@@ -598,6 +568,188 @@ struct TunnelDetailView: View {
             }
             isLoadingConnectedUsers = false
         }
+    }
+}
+
+// MARK: - On-Demand Match Section
+
+/// Editor for one half (connect or disconnect) of an on-demand rule. Two of these
+/// are shown side by side in TunnelDetailView so the connect and disconnect
+/// network lists can be configured independently.
+private struct OnDemandMatchSection: View {
+    let title: String
+    let systemImage: String
+    @Binding var enabled: Bool
+    @Binding var interface: AutoConnectInterface
+    @Binding var anyWiFi: Bool
+    @Binding var ssids: [String]
+    @Binding var newSSID: String
+    let knownNetworks: [String]
+    let currentSSID: String?
+    let canEdit: Bool
+    let hasWiFiNamePermission: Bool
+    let onRequestWiFiPermission: () -> Void
+    let onOpenLocationSettings: () -> Void
+    let onSave: () -> Void
+
+    private var showWiFiOptions: Bool {
+        enabled && (interface == .wifi || interface == .both)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $enabled) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.medium))
+            }
+            .toggleStyle(.switch)
+            .disabled(!canEdit)
+            .onChange(of: enabled) { _, _ in onSave() }
+
+            if enabled {
+                HStack {
+                    Text("\(title) on")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 90, alignment: .leading)
+
+                    Picker("", selection: $interface) {
+                        ForEach(AutoConnectInterface.allCases, id: \.self) { iface in
+                            Text(iface.displayName).tag(iface)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .disabled(!canEdit)
+                    .onChange(of: interface) { _, _ in onSave() }
+                }
+
+                if showWiFiOptions {
+                    Toggle("Any Wi-Fi Network", isOn: $anyWiFi)
+                        .toggleStyle(.checkbox)
+                        .disabled(!canEdit)
+                        .onChange(of: anyWiFi) { _, isAny in
+                            // Only save when switching TO "any network" (clearing the list).
+                            // Switching away with a still-empty list must not save yet —
+                            // an empty list round-trips as matchesAnyWiFi == true and would
+                            // immediately flip this toggle back on via the parent's reload,
+                            // wiping out whatever the user is about to type into the SSID field.
+                            guard isAny else {
+                                onRequestWiFiPermission()
+                                return
+                            }
+                            ssids = []
+                            onSave()
+                        }
+
+                    if !anyWiFi {
+                        if !hasWiFiNamePermission {
+                            wifiPermissionWarning
+                        }
+
+                        // SSID list
+                        if !ssids.isEmpty {
+                            VStack(spacing: 4) {
+                                ForEach(ssids, id: \.self) { ssid in
+                                    HStack {
+                                        Image(systemName: "wifi")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                        Text(ssid)
+                                            .font(.system(.subheadline, design: .monospaced))
+                                        Spacer()
+                                        Button {
+                                            ssids.removeAll { $0 == ssid }
+                                            onSave()
+                                        } label: {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundStyle(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(!canEdit)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.secondary.opacity(0.06),
+                                                in: RoundedRectangle(cornerRadius: 6))
+                                }
+                            }
+                        }
+
+                        // Known networks (from System Settings > Wi-Fi)
+                        let selectableKnownNetworks = knownNetworks.filter { !ssids.contains($0) }
+                        if !selectableKnownNetworks.isEmpty {
+                            Menu {
+                                ForEach(selectableKnownNetworks, id: \.self) { network in
+                                    Button(network) {
+                                        ssids.append(network)
+                                        onSave()
+                                    }
+                                }
+                            } label: {
+                                Label("Add Known Network…", systemImage: "wifi")
+                            }
+                            .disabled(!canEdit)
+                        }
+
+                        // Manual entry — fallback for networks not in the known list above
+                        HStack {
+                            TextField("Or type SSID manually", text: $newSSID)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+                                .onSubmit { addSSID() }
+                            Button("Add") { addSSID() }
+                                .buttonStyle(.bordered)
+                                .disabled(!canEdit ||
+                                          newSSID.trimmingCharacters(in: .whitespaces).isEmpty ||
+                                          ssids.contains(newSSID.trimmingCharacters(in: .whitespaces)))
+                        }
+
+                        // Add current network shortcut
+                        if let currentSSID, !ssids.contains(currentSSID) {
+                            Button {
+                                ssids.append(currentSSID)
+                                onSave()
+                            } label: {
+                                Label("Add Current: \"\(currentSSID)\"", systemImage: "wifi.circle")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!canEdit)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var wifiPermissionWarning: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(
+                "WireTunnels needs Location access to read the Wi-Fi network name. Without it, rules for specific networks won't trigger — enable it in System Settings > Privacy & Security > Location Services.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+
+            Button("Open Location Settings") {
+                onOpenLocationSettings()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func addSSID() {
+        let s = newSSID.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty, !ssids.contains(s) else { return }
+        ssids.append(s)
+        newSSID = ""
+        onSave()
     }
 }
 

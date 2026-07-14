@@ -427,9 +427,8 @@ final class TunnelManager: ObservableObject {
             errorMessage = "Install and verify the bundled WireGuard tools in Settings before connecting."
             return
         }
-        if liveTunnel.autoConnectRule.enabled,
-           liveTunnel.autoConnectRule.action == .disconnect,
-           networkMonitor.matchesTunnel(liveTunnel) {
+        if liveTunnel.autoConnectRule.disconnect.enabled,
+           networkMonitor.matchesDisconnect(liveTunnel) {
             errorMessage = "This tunnel is blocked by its on-demand disconnect rule for the current network."
             return
         }
@@ -781,6 +780,10 @@ final class TunnelManager: ObservableObject {
 
     func startPolling(interval: TimeInterval = 2.0) {
         pollingTask?.cancel()
+        var tick = 0
+        // Refresh the shared managed-tunnel list roughly every 10s so policy/on-demand
+        // changes made by an administrator reach other users' already-running sessions.
+        let managedRefreshEveryNTicks = max(1, Int(10.0 / interval))
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
@@ -789,8 +792,14 @@ final class TunnelManager: ObservableObject {
                 guard !self.isLoading else { continue }
                 if self.needsSetup {
                     await self.refreshHelperRegistrationStatus()
-                } else if self.hasActiveTunnels {
+                    continue
+                }
+                if self.hasActiveTunnels {
                     await self.refreshStatus()
+                }
+                tick += 1
+                if tick % managedRefreshEveryNTicks == 0 {
+                    await self.loadManagedTunnels()
                 }
             }
         }
@@ -808,21 +817,23 @@ final class TunnelManager: ObservableObject {
 
         for tunnel in tunnels {
             guard tunnel.autoConnectRule.enabled else { continue }
-            let matches = networkMonitor.matchesTunnel(tunnel)
-            if tunnel.autoConnectRule.action == .disconnect {
-                if matches, tunnel.isActive {
-                    log.info("Auto-disconnect blacklist triggered for \(tunnel.name)")
+            // Disconnect takes priority: a network that matches both halves
+            // (e.g. "any Wi-Fi" for connect and a specific SSID for disconnect)
+            // should not connect.
+            if networkMonitor.matchesDisconnect(tunnel) {
+                if tunnel.isActive {
+                    log.info("Auto-disconnect rule triggered for \(tunnel.name)")
                     networkMonitor.markAutoDisconnected(tunnel.id)
                     await disconnectTunnel(tunnel, isAutoDisconnect: true)
                 }
-            } else if matches {
+            } else if networkMonitor.matchesConnect(tunnel) {
                 if !tunnel.isActive && !networkMonitor.isSuppressed(tunnel.id) && !connectingTunnels.contains(tunnel.id) {
-                    log.info("Auto-connect triggered for \(tunnel.name)")
+                    log.info("Auto-connect rule triggered for \(tunnel.name)")
                     networkMonitor.markAutoConnected(tunnel.id)
                     await connectTunnel(tunnel, isAutoConnect: true)
                 }
             } else {
-                // Network no longer matches — clear suppression so it reconnects next time
+                // Network no longer matches either half — clear suppression so it reconnects next time
                 networkMonitor.clearSuppression(tunnel.id)
                 if tunnel.isActive && networkMonitor.wasAutoConnected(tunnel.id) {
                     log.info("Auto-disconnect triggered for \(tunnel.name)")
@@ -841,6 +852,25 @@ final class TunnelManager: ObservableObject {
         savePersonalTunnelsOnly()
         log.info("Auto-connect rule updated for \(tunnels[index].name): enabled=\(rule.enabled)")
         Task { await handleNetworkChange() }
+    }
+
+    /// Admin-only: pushes an on-demand rule to the shared store so it applies to every user of this managed tunnel.
+    func updateManagedAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) async throws {
+        guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }), liveTunnel.scope == .managed else { return }
+        guard currentUserIsAdministrator else {
+            throw CommandError.managedTunnelFailed("Only an administrator can change on-demand settings for a shared tunnel.")
+        }
+        try await commandService.updateManagedTunnel(
+            id: liveTunnel.id,
+            name: liveTunnel.name,
+            contents: nil,
+            policy: liveTunnel.managedPolicy ?? ManagedTunnelPolicy(),
+            autoConnectRule: rule
+        )
+        await loadManagedTunnels()
+        updateWarnings()
+        log.info("Auto-connect rule updated for shared tunnel \(liveTunnel.name): enabled=\(rule.enabled)")
+        await handleNetworkChange()
     }
 
     // MARK: - Warnings

@@ -1,19 +1,26 @@
+import AppKit
 import Foundation
 import Network
 import CoreWLAN
+import CoreLocation
 import Combine
 import OSLog
 
 /// Monitors active network interfaces and drives auto-connect/disconnect logic.
 @MainActor
-final class NetworkMonitorService: ObservableObject {
+final class NetworkMonitorService: NSObject, ObservableObject {
     @Published private(set) var isOnEthernet: Bool   = false
     @Published private(set) var isOnWiFi: Bool       = false
     @Published private(set) var currentSSID: String? = nil
+    // macOS only returns a real SSID from CoreWLAN once Location Services access
+    // is granted (privacy restriction since 10.15) — without it, SSID-scoped
+    // On-Demand rules can never match even though "Any Wi-Fi" rules work fine.
+    @Published private(set) var hasWiFiNamePermission: Bool = false
 
     private let monitor = NWPathMonitor()
     private let queue   = DispatchQueue(label: "com.fmdigitech.WireTunnels.netmon", qos: .utility)
     private let log     = Logger(subsystem: "com.fmdigitech.WireTunnels", category: "NetworkMonitor")
+    private let locationManager = CLLocationManager()
 
     /// Called on every network path change (already dispatched to MainActor).
     var onNetworkChange: (() async -> Void)?
@@ -24,7 +31,11 @@ final class NetworkMonitorService: ObservableObject {
     // prevents immediate reconnect until the matching network is lost and rejoined.
     private var suppressedIDs: Set<UUID>     = []
 
-    init() {
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        updateWiFiNamePermission()
+
         monitor.pathUpdateHandler = { [weak self] path in
             let onWifi     = path.usesInterfaceType(.wifi)
             let onEthernet = path.usesInterfaceType(.wiredEthernet)
@@ -43,10 +54,45 @@ final class NetworkMonitorService: ObservableObject {
 
     deinit { monitor.cancel() }
 
+    // MARK: - Wi-Fi name permission (Location Services)
+
+    /// Prompts for Location access if not yet decided. Safe to call repeatedly —
+    /// macOS only shows the system dialog once per app.
+    func requestWiFiNamePermissionIfNeeded() {
+        guard locationManager.authorizationStatus == .notDetermined else { return }
+        locationManager.requestWhenInUseAuthorization()
+    }
+
+    func openLocationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func updateWiFiNamePermission() {
+        switch locationManager.authorizationStatus {
+        case .authorized, .authorizedAlways:
+            hasWiFiNamePermission = true
+        default:
+            hasWiFiNamePermission = false
+        }
+    }
+
     // MARK: - Rule matching
 
+    /// True if either the connect or the disconnect half of the rule matches the current network.
     func matchesTunnel(_ tunnel: Tunnel) -> Bool {
-        let rule = tunnel.autoConnectRule
+        matchesConnect(tunnel) || matchesDisconnect(tunnel)
+    }
+
+    func matchesConnect(_ tunnel: Tunnel) -> Bool {
+        matches(tunnel.autoConnectRule.connect)
+    }
+
+    func matchesDisconnect(_ tunnel: Tunnel) -> Bool {
+        matches(tunnel.autoConnectRule.disconnect)
+    }
+
+    private func matches(_ rule: AutoConnectNetworkMatch) -> Bool {
         guard rule.enabled else { return false }
         switch rule.interface {
         case .ethernet: return isOnEthernet
@@ -55,7 +101,7 @@ final class NetworkMonitorService: ObservableObject {
         }
     }
 
-    private func matchesWiFi(rule: AutoConnectRule) -> Bool {
+    private func matchesWiFi(rule: AutoConnectNetworkMatch) -> Bool {
         guard isOnWiFi else { return false }
         if rule.matchesAnyWiFi { return true }
         guard let ssid = currentSSID else { return false }
@@ -92,5 +138,59 @@ final class NetworkMonitorService: ObservableObject {
 
     static func fetchCurrentSSID() -> String? {
         CWWiFiClient.shared().interface()?.ssid()
+    }
+
+    /// Networks macOS already remembers (System Settings > Wi-Fi > preferred networks),
+    /// so the user can pick one instead of typing an SSID by hand. Shells out to
+    /// networksetup(8), which (unlike CoreWLAN scanning) needs no location permission.
+    nonisolated static func knownWiFiNetworkNames() -> [String] {
+        guard let device = wifiDeviceName() else { return [] }
+        guard let output = runNetworksetup(["-listpreferredwirelessnetworks", device]) else { return [] }
+        return output
+            .split(separator: "\n")
+            .dropFirst() // "Preferred networks on enX:"
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private nonisolated static func wifiDeviceName() -> String? {
+        guard let output = runNetworksetup(["-listallhardwareports"]) else { return nil }
+        let lines = output.components(separatedBy: "\n")
+        guard let portIndex = lines.firstIndex(where: { $0.contains("Hardware Port: Wi-Fi") }),
+              portIndex + 1 < lines.count,
+              let range = lines[portIndex + 1].range(of: "Device: ")
+        else { return nil }
+        return String(lines[portIndex + 1][range.upperBound...]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private nonisolated static func runNetworksetup(_ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard process.terminationStatus == 0 else { return nil }
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+    }
+}
+
+extension NetworkMonitorService: CLLocationManagerDelegate {
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.updateWiFiNamePermission()
+            // Permission just changed — re-read the SSID immediately instead of
+            // waiting for the next network path event.
+            if self.isOnWiFi {
+                self.currentSSID = Self.fetchCurrentSSID()
+            }
+        }
     }
 }

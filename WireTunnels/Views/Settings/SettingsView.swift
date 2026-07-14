@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("launchAtLogin")     var launchAtLogin    = false
     @AppStorage("showNotifications") var showNotifications = false
     @AppStorage("showRawOutput")     var showRawOutput    = false
+    @AppStorage("hideDockIcon")      var hideDockIcon     = false
 
     @State private var showingResetConfirm = false
     @State private var isRedetecting = false
@@ -204,6 +205,22 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    Divider()
+
+                    Toggle(isOn: $hideDockIcon) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hide Dock Icon")
+                                .font(.body)
+                            Text("Keep WireTunnels in the menu bar only, without a Dock icon.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .onChange(of: hideDockIcon) { _, hidden in
+                        NSApp.setActivationPolicy(hidden ? .accessory : .regular)
+                    }
                 }
 
                 // MARK: Updates
@@ -330,6 +347,8 @@ struct SettingsView: View {
             launchAtLogin = false
             showNotifications = false
             showRawOutput = false
+            hideDockIcon = false
+            NSApp.setActivationPolicy(.regular)
         }
     }
 
