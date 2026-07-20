@@ -1,9 +1,14 @@
+import Charts
 import SwiftUI
 
 struct TunnelRowView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     let tunnel: Tunnel
     @State private var isProcessing = false
+
+    private var trafficSamples: [TrafficSample] {
+        tunnelManager.trafficHistory[tunnel.id] ?? []
+    }
 
     private var hasWarning: Bool {
         tunnelManager.activeWarnings.contains { warning in
@@ -12,6 +17,7 @@ struct TunnelRowView: View {
             case .fullTunnelActive(let name):           return name == tunnel.name
             case .overlappingAllowedIPs(let a, let b):  return a == tunnel.name || b == tunnel.name
             case .conflictingDNS(let names):            return names.contains(tunnel.name)
+            case .killSwitchBlocking(let name):         return name == tunnel.name
             }
         }
     }
@@ -109,6 +115,27 @@ struct TunnelRowView: View {
             }
 
             Spacer()
+
+            // Throughput sparkline — activity at a glance, no axes/labels
+            if tunnel.isActive, !trafficSamples.isEmpty {
+                Chart(trafficSamples) { sample in
+                    AreaMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("Throughput", sample.rxRate + sample.txRate)
+                    )
+                    .foregroundStyle(.green.opacity(0.2))
+                    LineMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("Throughput", sample.rxRate + sample.txRate)
+                    )
+                    .foregroundStyle(.green)
+                    .lineStyle(StrokeStyle(lineWidth: 1.2))
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .frame(width: 44, height: 22)
+                .accessibilityHidden(true)
+            }
 
             // Action buttons
             HStack(spacing: 6) {

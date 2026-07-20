@@ -61,6 +61,9 @@ struct TunnelDetailView: View {
     @State private var showingEditor = false
     @State private var showingDeleteConfirm = false
     @State private var showingManagedReplacement = false
+    @State private var showingQRCode = false
+    @State private var isTestingConnection = false
+    @State private var connectionTestResult: String? = nil
     @State private var isSharingTunnel = false
     @State private var isProcessing = false
     @State private var isLoadingConnectedUsers = false
@@ -83,6 +86,9 @@ struct TunnelDetailView: View {
     @State private var disconnectNewSSID: String                 = ""
 
     @State private var knownNetworks: [String] = []
+
+    // Kill switch — mirrors live.isKillSwitchEnabled, saved immediately on change.
+    @State private var killSwitchEnabled: Bool = false
 
     // Always read live data from TunnelManager so stats update in real-time
     private var live: Tunnel {
@@ -167,6 +173,28 @@ struct TunnelDetailView: View {
                     DetailRow(label: "Last Handshake", value: formatHandshake(live.lastHandshake))
                     DetailRow(label: "Received", value: formatBytes(live.rxBytes))
                     DetailRow(label: "Sent", value: formatBytes(live.txBytes))
+
+                    HStack(spacing: 10) {
+                        Button {
+                            testConnection()
+                        } label: {
+                            if isTestingConnection {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label("Test Connection", systemImage: "waveform.path.ecg")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!live.isActive || isTestingConnection)
+                        .help("Pings this tunnel's own VPN server to check latency.")
+
+                        if let connectionTestResult {
+                            Text(connectionTestResult)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 if isManaged && tunnelManager.currentUserIsAdministrator {
@@ -185,6 +213,11 @@ struct TunnelDetailView: View {
 
                 // On-Demand (Auto-Connect)
                 onDemandSection
+
+                Divider()
+
+                // Kill Switch
+                killSwitchSection
 
                 Divider()
 
@@ -212,8 +245,12 @@ struct TunnelDetailView: View {
             .padding(20)
         }
         .navigationTitle(live.name)
-        .onAppear { loadRule() }
+        .onAppear {
+            loadRule()
+            killSwitchEnabled = live.isKillSwitchEnabled
+        }
         .onChange(of: live.autoConnectRule) { _, _ in loadRule() }
+        .onChange(of: live.isKillSwitchEnabled) { _, newValue in killSwitchEnabled = newValue }
         .task {
             knownNetworks = await Task.detached { NetworkMonitorService.knownWiFiNetworkNames() }.value
         }
@@ -245,6 +282,10 @@ struct TunnelDetailView: View {
         }
         .sheet(isPresented: $showingEditor) {
             ConfigEditorSheetView(tunnel: live)
+                .environmentObject(tunnelManager)
+        }
+        .sheet(isPresented: $showingQRCode) {
+            QRCodeSheetView(tunnel: live)
                 .environmentObject(tunnelManager)
         }
         .fileImporter(
@@ -492,6 +533,48 @@ struct TunnelDetailView: View {
         }
     }
 
+    // MARK: Kill Switch
+
+    private var killSwitchSection: some View {
+        DetailSection(title: "Kill Switch") {
+            if isManaged {
+                Text(tunnelManager.currentUserIsAdministrator
+                     ? "As administrator, changes here apply to all users of this shared tunnel."
+                     : "Set by your administrator and applied to all users. You can't change it here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle(isOn: $killSwitchEnabled) {
+                Label("Block traffic if this tunnel drops", systemImage: "shield.lefthalf.filled")
+                    .font(.subheadline.weight(.medium))
+            }
+            .toggleStyle(.switch)
+            .disabled(!canEditOnDemand)
+            .onChange(of: killSwitchEnabled) { _, _ in saveKillSwitch() }
+
+            Text("Blocks all other network traffic until this tunnel reconnects. Disconnecting it yourself does not trigger a block.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func saveKillSwitch() {
+        guard canEditOnDemand else { return }
+        if isManaged {
+            Task {
+                do {
+                    try await tunnelManager.updateManagedKillSwitch(for: live, enabled: killSwitchEnabled)
+                } catch {
+                    errorMessage = error.localizedDescription
+                    killSwitchEnabled = live.isKillSwitchEnabled // revert the UI to the last confirmed shared state
+                }
+            }
+        } else {
+            tunnelManager.updateKillSwitch(for: live, enabled: killSwitchEnabled)
+        }
+    }
+
     private var actionsSection: some View {
         HStack(spacing: 12) {
             if !isManaged {
@@ -522,6 +605,13 @@ struct TunnelDetailView: View {
                 .help(live.isActive
                       ? "Disconnect the tunnel before making it visible to all users."
                       : "Make this tunnel visible to all users. Administrator approval is required.")
+
+                Button {
+                    showingQRCode = true
+                } label: {
+                    Label("Show QR Code", systemImage: "qrcode")
+                }
+                .buttonStyle(.bordered)
             } else {
                 Button {
                     showingManagedReplacement = true
@@ -543,6 +633,22 @@ struct TunnelDetailView: View {
             .tint(.red)
             .disabled(live.isActive)
             .help(live.isActive ? "Disconnect the tunnel before deleting." : "Delete this tunnel permanently.")
+        }
+    }
+
+    private func testConnection() {
+        isTestingConnection = true
+        connectionTestResult = nil
+        Task {
+            switch await tunnelManager.testConnection(for: live) {
+            case .success(let averageMs):
+                connectionTestResult = String(format: "%.0f ms avg", averageMs)
+            case .unreachable:
+                connectionTestResult = "Unreachable"
+            case .unknownEndpoint:
+                connectionTestResult = "Endpoint unknown"
+            }
+            isTestingConnection = false
         }
     }
 
@@ -1077,5 +1183,76 @@ private struct ConfigEditorSheetView: View {
             }
             isSaving = false
         }
+    }
+}
+
+// MARK: - QR Code Sheet
+
+private struct QRCodeSheetView: View {
+    @Environment(\.dismiss) var dismiss
+    let tunnel: Tunnel
+
+    @State private var qrImage: NSImage? = nil
+    @State private var loadError: String? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("QR Code — \(tunnel.name)")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            VStack(spacing: 16) {
+                Label("Contains this tunnel's private key — only share it with a device you trust.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+
+                if let qrImage {
+                    Image(nsImage: qrImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 260, height: 260)
+                } else {
+                    Text(loadError ?? "Unable to generate QR code for this tunnel.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 260, height: 260)
+                }
+
+                Text("Scan with the WireGuard app on another device to import this tunnel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(24)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+        }
+        .frame(width: 380, height: 460)
+        .onAppear { loadQRCode() }
+    }
+
+    private func loadQRCode() {
+        guard let contents = try? String(contentsOfFile: tunnel.configPath, encoding: .utf8) else {
+            loadError = "Unable to read this tunnel's configuration."
+            return
+        }
+        guard let image = QRCodeService.generate(from: contents) else {
+            loadError = "This configuration is too large to encode as a QR code."
+            return
+        }
+        qrImage = image
     }
 }

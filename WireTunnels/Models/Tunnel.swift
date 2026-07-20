@@ -6,8 +6,28 @@ enum TunnelScope: String, Codable, Hashable {
 }
 
 struct ManagedTunnelPolicy: Codable, Equatable, Hashable {
-    var usersCanConnect: Bool = true
-    var usersCanDisconnect: Bool = true
+    var usersCanConnect: Bool
+    var usersCanDisconnect: Bool
+    var killSwitchEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case usersCanConnect
+        case usersCanDisconnect
+        case killSwitchEnabled
+    }
+
+    init(usersCanConnect: Bool = true, usersCanDisconnect: Bool = true, killSwitchEnabled: Bool = false) {
+        self.usersCanConnect = usersCanConnect
+        self.usersCanDisconnect = usersCanDisconnect
+        self.killSwitchEnabled = killSwitchEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        usersCanConnect = try container.decodeIfPresent(Bool.self, forKey: .usersCanConnect) ?? true
+        usersCanDisconnect = try container.decodeIfPresent(Bool.self, forKey: .usersCanDisconnect) ?? true
+        killSwitchEnabled = try container.decodeIfPresent(Bool.self, forKey: .killSwitchEnabled) ?? false
+    }
 }
 
 struct ManagedTunnelUserSession: Identifiable, Codable, Equatable, Hashable {
@@ -28,6 +48,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
     var isFavorite: Bool
     var autostart: Bool
     var autoConnectRule: AutoConnectRule
+    var killSwitchEnabled: Bool
     var address: [String]?      // [Interface] Address — tunnel's own IPs
     var allowedIPs: [String]
     var dns: [String]
@@ -52,6 +73,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         case isFavorite
         case autostart
         case autoConnectRule
+        case killSwitchEnabled
         case address
         case allowedIPs
         case dns
@@ -77,6 +99,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         self.isFavorite = false
         self.autostart = false
         self.autoConnectRule = AutoConnectRule()
+        self.killSwitchEnabled = false
         self.allowedIPs = []
         self.dns = []
         self.endpoint = nil
@@ -104,6 +127,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         autostart = try container.decode(Bool.self, forKey: .autostart)
         autoConnectRule = try container.decodeIfPresent(AutoConnectRule.self, forKey: .autoConnectRule)
             ?? AutoConnectRule()
+        killSwitchEnabled = try container.decodeIfPresent(Bool.self, forKey: .killSwitchEnabled) ?? false
         address = try container.decodeIfPresent([String].self, forKey: .address)
         allowedIPs = try container.decode([String].self, forKey: .allowedIPs)
         dns = try container.decode([String].self, forKey: .dns)
@@ -117,5 +141,12 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         scope = try container.decodeIfPresent(TunnelScope.self, forKey: .scope) ?? .personal
         managedPolicy = try container.decodeIfPresent(ManagedTunnelPolicy.self, forKey: .managedPolicy)
+    }
+
+    /// Whether the kill switch is armed for this tunnel, regardless of scope —
+    /// personal tunnels use their own flag, managed tunnels defer to the
+    /// admin-controlled policy pushed from the shared helper store.
+    var isKillSwitchEnabled: Bool {
+        scope == .managed ? (managedPolicy?.killSwitchEnabled ?? false) : killSwitchEnabled
     }
 }

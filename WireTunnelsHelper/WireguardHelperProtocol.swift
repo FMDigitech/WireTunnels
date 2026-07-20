@@ -14,6 +14,7 @@ import Foundation
     func markManagedTunnelConnected(id: String, reply: @escaping (Bool, String?) -> Void)
     func markManagedTunnelDisconnected(id: String, reply: @escaping (Bool, String?) -> Void)
     func listManagedTunnelUsers(id: String, authorization: Data, reply: @escaping (Data?, String?) -> Void)
+    func syncKillSwitch(entries: Data, reply: @escaping (Bool, String?) -> Void)
     func installBundledTools(reply: @escaping (Bool, String?) -> Void)
     func helperVersion(reply: @escaping (String) -> Void)
     func helperProtocolRevision(reply: @escaping (String) -> Void)

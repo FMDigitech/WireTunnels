@@ -5,6 +5,7 @@ enum TunnelWarning: Identifiable, Equatable {
     case fullTunnelActive(String)            // single tunnel with 0.0.0.0/0
     case overlappingAllowedIPs(String, String) // tunnel A and B have overlapping IPs
     case conflictingDNS([String])            // active tunnels with different DNS
+    case killSwitchBlocking(String)          // tunnel dropped unexpectedly, kill switch is blocking traffic
 
     var id: String {
         switch self {
@@ -12,6 +13,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .fullTunnelActive(let name): return "fullTunnelActive-\(name)"
         case .overlappingAllowedIPs(let a, let b): return "overlappingIPs-\(a)-\(b)"
         case .conflictingDNS(let names): return "conflictingDNS-\(names.joined())"
+        case .killSwitchBlocking(let name): return "killSwitchBlocking-\(name)"
         }
     }
 
@@ -21,6 +23,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .fullTunnelActive: return "Full Tunnel Active"
         case .overlappingAllowedIPs: return "Overlapping Routes"
         case .conflictingDNS: return "DNS Conflict"
+        case .killSwitchBlocking: return "Kill Switch Active"
         }
     }
 
@@ -34,6 +37,8 @@ enum TunnelWarning: Identifiable, Equatable {
             return "Tunnels \"\(a)\" and \"\(b)\" have overlapping AllowedIPs. Traffic may be routed incorrectly."
         case .conflictingDNS(let names):
             return "Active tunnels \(names.joined(separator: ", ")) define different DNS servers. Resolution may be unpredictable."
+        case .killSwitchBlocking(let name):
+            return "\"\(name)\" dropped unexpectedly. All non-tunnel traffic is blocked until it reconnects or you disable its kill switch."
         }
     }
 
@@ -43,6 +48,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .fullTunnelActive: return .warning
         case .overlappingAllowedIPs: return .warning
         case .conflictingDNS: return .info
+        case .killSwitchBlocking: return .error
         }
     }
 }

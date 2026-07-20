@@ -24,6 +24,8 @@ final class NetworkMonitorService: NSObject, ObservableObject {
 
     /// Called on every network path change (already dispatched to MainActor).
     var onNetworkChange: (() async -> Void)?
+    /// Called when the system wakes from sleep (already dispatched to MainActor).
+    var onSystemWake: (() async -> Void)?
 
     // Tunnels connected by the auto-connect rule (not by the user)
     private var autoConnectedIDs: Set<UUID>  = []
@@ -50,9 +52,27 @@ final class NetworkMonitorService: NSObject, ObservableObject {
             }
         }
         monitor.start(queue: queue)
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
     }
 
-    deinit { monitor.cancel() }
+    deinit {
+        monitor.cancel()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    @objc private func handleSystemWake() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.log.info("System woke from sleep")
+            await self.onSystemWake?()
+        }
+    }
 
     // MARK: - Wi-Fi name permission (Location Services)
 

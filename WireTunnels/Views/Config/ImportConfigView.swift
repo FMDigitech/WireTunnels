@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -25,6 +26,12 @@ struct ImportConfigView: View {
         UTType(filenameExtension: "conf") ?? .plainText
     }
 
+    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tiff", "gif", "bmp"]
+
+    private static func isImageFile(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Title bar
@@ -45,10 +52,10 @@ struct ImportConfigView: View {
 
                     // Instructions
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Select a .conf file")
+                        Text("Select a .conf file or QR code")
                             .font(.subheadline.weight(.medium))
 
-                        Text("Choose a WireGuard configuration file (.conf) to import. The file will be validated and added to your tunnel list.")
+                        Text("Choose a WireGuard configuration file (.conf) or a QR code image to import. The configuration will be validated and added to your tunnel list.")
                             .font(.body)
                             .foregroundStyle(.secondary)
                     }
@@ -75,9 +82,9 @@ struct ImportConfigView: View {
                             Image(systemName: isDragTargeted ? "arrow.down.doc.fill" : "doc.badge.plus")
                                 .font(.system(size: 36))
                                 .foregroundStyle(isDragTargeted ? Color.accentColor : Color.accentColor)
-                            Text(isDragTargeted ? "Drop to Import" : "Drop .conf here or Click to Browse")
+                            Text(isDragTargeted ? "Drop to Import" : "Drop a file here or Click to Browse")
                                 .font(.body.weight(.medium))
-                            Text("Supports .conf files")
+                            Text("Supports .conf files and QR code images")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -100,6 +107,14 @@ struct ImportConfigView: View {
                     .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
                         handleDrop(providers: providers)
                     }
+
+                    Button {
+                        pasteFromClipboard()
+                    } label: {
+                        Label("Paste QR Code from Clipboard", systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isProcessing)
 
                     // Selected file display
                     if let url = selectedURL {
@@ -221,26 +236,34 @@ struct ImportConfigView: View {
         }
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: [confType, .plainText]
+            allowedContentTypes: [confType, .plainText, .image]
         ) { result in
             switch result {
             case .success(let url):
-                selectedURL = url
-                successName = nil
-                error = nil
-                do {
-                    let parsed = try tunnelManager.inspectConfig(at: url)
-                    selectedWarnings = parsed.warnings
-                    if !parsed.isValid {
-                        error = ConfigManagementError
-                            .invalidConfiguration(parsed.validationErrors)
-                            .localizedDescription
+                if Self.isImageFile(url) {
+                    if let image = NSImage(contentsOf: url) {
+                        handleQRImage(image)
+                    } else {
+                        error = "Unable to read that image."
                     }
-                } catch {
-                    self.error = error.localizedDescription
-                    selectedWarnings = []
+                } else {
+                    selectedURL = url
+                    successName = nil
+                    error = nil
+                    do {
+                        let parsed = try tunnelManager.inspectConfig(at: url)
+                        selectedWarnings = parsed.warnings
+                        if !parsed.isValid {
+                            error = ConfigManagementError
+                                .invalidConfiguration(parsed.validationErrors)
+                                .localizedDescription
+                        }
+                    } catch {
+                        self.error = error.localizedDescription
+                        selectedWarnings = []
+                    }
+                    performImport()
                 }
-                performImport()
             case .failure(let err):
                 error = err.localizedDescription
             }
@@ -252,32 +275,78 @@ struct ImportConfigView: View {
             return false
         }
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
-            guard let url, url.pathExtension.lowercased() == "conf" else {
+            guard let url else {
                 DispatchQueue.main.async {
-                    self.error = "Only .conf files are supported."
+                    self.error = "Unsupported file."
                 }
                 return
             }
             DispatchQueue.main.async {
-                self.selectedURL = url
-                self.successName = nil
-                self.error = nil
-                do {
-                    let parsed = try self.tunnelManager.inspectConfig(at: url)
-                    self.selectedWarnings = parsed.warnings
-                    if !parsed.isValid {
-                        self.error = ConfigManagementError
-                            .invalidConfiguration(parsed.validationErrors)
-                            .localizedDescription
+                if Self.isImageFile(url) {
+                    if let image = NSImage(contentsOf: url) {
+                        self.handleQRImage(image)
+                    } else {
+                        self.error = "Unable to read that image."
                     }
-                } catch {
-                    self.error = error.localizedDescription
-                    self.selectedWarnings = []
+                } else if url.pathExtension.lowercased() == "conf" {
+                    self.selectedURL = url
+                    self.successName = nil
+                    self.error = nil
+                    do {
+                        let parsed = try self.tunnelManager.inspectConfig(at: url)
+                        self.selectedWarnings = parsed.warnings
+                        if !parsed.isValid {
+                            self.error = ConfigManagementError
+                                .invalidConfiguration(parsed.validationErrors)
+                                .localizedDescription
+                        }
+                    } catch {
+                        self.error = error.localizedDescription
+                        self.selectedWarnings = []
+                    }
+                    self.performImport()
+                } else {
+                    self.error = "Only .conf files and QR code images are supported."
                 }
-                self.performImport()
             }
         }
         return true
+    }
+
+    private func pasteFromClipboard() {
+        guard let image = NSImage(pasteboard: .general) else {
+            error = "No image found on the clipboard."
+            return
+        }
+        handleQRImage(image)
+    }
+
+    private func handleQRImage(_ image: NSImage) {
+        guard let decoded = QRCodeService.decode(from: image) else {
+            error = "No QR code found in that image."
+            selectedWarnings = []
+            return
+        }
+        do {
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("conf")
+            try decoded.write(to: tempURL, atomically: true, encoding: .utf8)
+            selectedURL = tempURL
+            successName = nil
+            error = nil
+            let parsed = try tunnelManager.inspectConfig(at: tempURL)
+            selectedWarnings = parsed.warnings
+            if !parsed.isValid {
+                error = ConfigManagementError
+                    .invalidConfiguration(parsed.validationErrors)
+                    .localizedDescription
+            }
+            performImport()
+        } catch {
+            self.error = error.localizedDescription
+            selectedWarnings = []
+        }
     }
 
     private func performImport() {

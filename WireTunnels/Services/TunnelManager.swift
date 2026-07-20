@@ -37,6 +37,22 @@ final class TunnelManager: ObservableObject {
     private var networkChangeDebounceTask: Task<Void, Never>?
     private var connectingTunnels: Set<UUID> = []
     private var statusFailureReported = false
+    /// Raw managed-tunnel snapshot from the last successful `loadManagedTunnels()`
+    /// call, before live runtime state (isActive/rxBytes/etc.) is merged in — used
+    /// to log only on a real change (an admin editing/adding/removing a tunnel),
+    /// not on every ~10s poll or every byte of traffic.
+    private var lastLoadedManagedTunnels: [Tunnel] = []
+    /// Tunnels currently protected by a kill switch, i.e. PF is (or should be)
+    /// blocking non-tunnel traffic for them. Not a pure function of `isActive` —
+    /// a tunnel that drops unexpectedly stays in this set until it reconnects or
+    /// the user explicitly disarms it; that persistence is the entire feature.
+    private var killSwitchArmedTunnelIDs: Set<UUID> = []
+    /// Last successfully-resolved interface/endpoint per armed tunnel. Kept
+    /// independent of `Tunnel.interfaceName`/`endpoint` (which some failure paths
+    /// clear back to nil) so a tunnel that drops keeps blocking with the last
+    /// rules it was actually armed with, rather than silently losing its entry
+    /// the next time any other tunnel's kill switch state changes.
+    private var killSwitchLastKnownEntry: [UUID: KillSwitchEntry] = [:]
 
     // MARK: - Initialization
 
@@ -54,6 +70,9 @@ final class TunnelManager: ObservableObject {
                 guard !Task.isCancelled else { return }
                 await self?.handleNetworkChange()
             }
+        }
+        networkMonitor.onSystemWake = { [weak self] in
+            await self?.handleSystemWake()
         }
         Task { await initialize() }
     }
@@ -184,6 +203,18 @@ final class TunnelManager: ObservableObject {
             errorMessage = nil
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await refreshStatus(reportError: false)
+        }
+
+        // Flush any stale kill-switch PF state left over from a previous crash or
+        // force-quit, then immediately re-arm protection for tunnels already
+        // running (the helper's wg-quick process outlives the app, so a tunnel
+        // can still be genuinely connected across a relaunch) before polling or
+        // auto-connect starts.
+        killSwitchArmedTunnelIDs.removeAll()
+        killSwitchLastKnownEntry.removeAll()
+        await syncKillSwitchState()
+        for tunnel in tunnels where tunnel.isActive && tunnel.isKillSwitchEnabled {
+            await armKillSwitch(for: tunnel)
         }
 
         // Start polling loop (2s — feeds real-time charts and status)
@@ -480,6 +511,9 @@ final class TunnelManager: ObservableObject {
             savePersonalTunnelsOnly()
             updateWarnings()
             await refreshStatus()
+            if tunnels[index].isKillSwitchEnabled {
+                await armKillSwitch(for: tunnels[index])
+            }
             log.info("Tunnel \(liveTunnel.name) connected")
             try? await notificationService.postConnected(tunnelName: liveTunnel.name)
         } catch {
@@ -506,6 +540,9 @@ final class TunnelManager: ObservableObject {
                 throw CommandError.managedTunnelFailed("Users are not allowed to disconnect this managed tunnel")
             }
             try await commandService.stopTunnel(configPath: configPath)
+            if killSwitchArmedTunnelIDs.contains(liveTunnel.id) {
+                await disarmKillSwitch(for: liveTunnel)
+            }
             if liveTunnel.scope == .managed {
                 do {
                     try await commandService.markManagedTunnelDisconnected(id: liveTunnel.id)
@@ -769,6 +806,16 @@ final class TunnelManager: ObservableObject {
                     updatedTunnels[index].lastHandshake = nil
                     updatedTunnels[index].rxBytes = 0
                     updatedTunnels[index].txBytes = 0
+                    // Kill switch stays armed here deliberately — an unexpected drop
+                    // is exactly what it exists to keep blocking through.
+                    if killSwitchArmedTunnelIDs.contains(updatedTunnels[index].id) {
+                        let name = updatedTunnels[index].name
+                        log.warning("Kill switch engaged: \(name) dropped unexpectedly, blocking traffic")
+                        try? await notificationService.postError(
+                            tunnelName: name,
+                            message: "Connection dropped — kill switch is blocking traffic until it reconnects."
+                        )
+                    }
                 }
             }
         }
@@ -810,6 +857,22 @@ final class TunnelManager: ObservableObject {
         pollingTask = nil
     }
 
+    // MARK: - Connection Test
+
+    /// On-demand latency check against the tunnel's own configured peer endpoint
+    /// (data the user already owns — no third-party host involved).
+    func testConnection(for tunnel: Tunnel) async -> ConnectionTestResult {
+        guard let endpoint = tunnel.endpoint, let parsed = Self.parseEndpoint(endpoint) else {
+            return .unknownEndpoint
+        }
+        let samples = await Task.detached {
+            PingService.measureLatency(host: parsed.host)
+        }.value
+        guard !samples.isEmpty else { return .unreachable }
+        let average = samples.reduce(0, +) / Double(samples.count)
+        return .success(averageMs: average)
+    }
+
     // MARK: - Auto-Connect
 
     func handleNetworkChange() async {
@@ -844,6 +907,80 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Restarts every active tunnel's interface after the system wakes from sleep.
+    /// A tunnel that reads "connected" in the UI can be dead in practice — the
+    /// underlying UDP socket and any dynamic-DNS-resolved peer endpoint can go
+    /// stale across sleep, silently dropping traffic until wg-quick is rerun.
+    func handleSystemWake() async {
+        guard !isLoading, !needsSetup else { return }
+        // Network interfaces aren't back immediately on wake; give them a moment
+        // to settle before rebuilding tunnel interfaces on top of them.
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard !isLoading, !needsSetup else { return }
+
+        let activeTunnels = tunnels.filter { $0.isActive }
+        guard !activeTunnels.isEmpty else { return }
+        log.info("System wake: reconnecting \(activeTunnels.count) active tunnel(s)")
+
+        await withTaskGroup(of: Void.self) { group in
+            for tunnel in activeTunnels {
+                group.addTask { [weak self] in
+                    await self?.reconnectAfterWake(tunnel)
+                }
+            }
+        }
+
+        await refreshStatus()
+        // Re-arm (idempotent) any kill-switch tunnel that's active again — the
+        // interface name/endpoint may have changed across the reconnect.
+        for tunnel in tunnels where tunnel.isActive && tunnel.isKillSwitchEnabled {
+            await armKillSwitch(for: tunnel)
+        }
+        log.info("System wake: reconnect pass complete")
+    }
+
+    private func reconnectAfterWake(_ tunnel: Tunnel) async {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        let liveTunnel = tunnels[index]
+        guard liveTunnel.isActive else { return }
+        // Don't collide with a concurrent user-initiated connect/disconnect or an
+        // auto-connect rule firing from the same wake event.
+        guard !connectingTunnels.contains(liveTunnel.id) else {
+            log.info("Wake reconnect skipped for \(liveTunnel.name), already in progress")
+            return
+        }
+        connectingTunnels.insert(liveTunnel.id)
+        defer { connectingTunnels.remove(liveTunnel.id) }
+
+        let configPath = liveTunnel.runtimeConfigPath ?? liveTunnel.configPath
+        log.info("Wake reconnect: restarting \(liveTunnel.name)")
+        do {
+            try await commandService.stopTunnel(configPath: configPath)
+            try await commandService.startTunnel(configPath: configPath)
+            log.info("Wake reconnect: \(liveTunnel.name) restarted")
+        } catch {
+            log.error("Wake reconnect failed for \(liveTunnel.name): \(error.localizedDescription)")
+            if let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) {
+                tunnels[index].isActive = false
+                tunnels[index].connectedAt = nil
+                tunnels[index].runtimeConfigPath = nil
+                tunnels[index].interfaceName = nil
+                tunnels[index].lastHandshake = nil
+                tunnels[index].rxBytes = 0
+                tunnels[index].txBytes = 0
+                tunnels[index].updatedAt = Date()
+                trafficHistory.removeValue(forKey: liveTunnel.id)
+                trafficSnapshots.removeValue(forKey: liveTunnel.id)
+                savePersonalTunnelsOnly()
+                updateWarnings()
+            }
+            let message = killSwitchArmedTunnelIDs.contains(liveTunnel.id)
+                ? "Lost connection after sleep — kill switch is blocking traffic until it reconnects."
+                : "Lost connection after sleep: \(error.localizedDescription)"
+            try? await notificationService.postError(tunnelName: liveTunnel.name, message: message)
+        }
+    }
+
     func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
         guard tunnels[index].scope == .personal else { return }
@@ -871,6 +1008,115 @@ final class TunnelManager: ObservableObject {
         updateWarnings()
         log.info("Auto-connect rule updated for shared tunnel \(liveTunnel.name): enabled=\(rule.enabled)")
         await handleNetworkChange()
+    }
+
+    // MARK: - Kill switch
+
+    func updateKillSwitch(for tunnel: Tunnel, enabled: Bool) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        guard tunnels[index].scope == .personal else { return }
+        tunnels[index].killSwitchEnabled = enabled
+        tunnels[index].updatedAt = Date()
+        savePersonalTunnelsOnly()
+        log.info("Kill switch updated for \(tunnels[index].name): enabled=\(enabled)")
+        let liveTunnel = tunnels[index]
+        Task { await applyKillSwitchToggle(for: liveTunnel, enabled: enabled) }
+    }
+
+    /// Admin-only: pushes the kill switch flag to the shared store so it applies to every user of this managed tunnel.
+    func updateManagedKillSwitch(for tunnel: Tunnel, enabled: Bool) async throws {
+        guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }), liveTunnel.scope == .managed else { return }
+        guard currentUserIsAdministrator else {
+            throw CommandError.managedTunnelFailed("Only an administrator can change the kill switch for a shared tunnel.")
+        }
+        var policy = liveTunnel.managedPolicy ?? ManagedTunnelPolicy()
+        policy.killSwitchEnabled = enabled
+        try await commandService.updateManagedTunnel(
+            id: liveTunnel.id,
+            name: liveTunnel.name,
+            contents: nil,
+            policy: policy,
+            autoConnectRule: liveTunnel.autoConnectRule
+        )
+        await loadManagedTunnels()
+        updateWarnings()
+        log.info("Kill switch updated for shared tunnel \(liveTunnel.name): enabled=\(enabled)")
+        if let refreshed = tunnels.first(where: { $0.id == liveTunnel.id }) {
+            await applyKillSwitchToggle(for: refreshed, enabled: enabled)
+        }
+    }
+
+    /// Applies an on/off toggle immediately rather than waiting for the next
+    /// connect/disconnect: arms right away if the tunnel is already connected,
+    /// disarms right away regardless of connection state (this is also how a
+    /// tunnel stuck blocking after an unexpected drop gets released without
+    /// requiring a reconnect).
+    private func applyKillSwitchToggle(for tunnel: Tunnel, enabled: Bool) async {
+        if enabled {
+            if tunnel.isActive {
+                await armKillSwitch(for: tunnel)
+            }
+        } else {
+            await disarmKillSwitch(for: tunnel)
+        }
+    }
+
+    private func armKillSwitch(for tunnel: Tunnel) async {
+        guard let interfaceName = tunnel.interfaceName,
+              let endpoint = tunnel.endpoint,
+              let parsed = Self.parseEndpoint(endpoint)
+        else {
+            log.warning("Kill switch could not determine tunnel endpoint for \(tunnel.name); leaving traffic unprotected")
+            try? await notificationService.postError(
+                tunnelName: tunnel.name,
+                message: "Kill switch could not be enabled: tunnel endpoint is unknown"
+            )
+            return
+        }
+        killSwitchLastKnownEntry[tunnel.id] = KillSwitchEntry(
+            interfaceName: interfaceName,
+            endpointHost: parsed.host,
+            endpointPort: parsed.port
+        )
+        killSwitchArmedTunnelIDs.insert(tunnel.id)
+        await syncKillSwitchState()
+        log.info("Kill switch armed for \(tunnel.name)")
+    }
+
+    private func disarmKillSwitch(for tunnel: Tunnel) async {
+        guard killSwitchArmedTunnelIDs.remove(tunnel.id) != nil else { return }
+        killSwitchLastKnownEntry.removeValue(forKey: tunnel.id)
+        await syncKillSwitchState()
+        log.info("Kill switch disarmed for \(tunnel.name)")
+    }
+
+    /// Rebuilds the full kill-switch ruleset from every currently-armed tunnel's
+    /// last-known interface/endpoint and pushes it to the helper in one call.
+    /// Safe to call after every relevant event — the helper replaces the whole
+    /// anchor's contents each time, so this is idempotent.
+    private func syncKillSwitchState() async {
+        let entries = killSwitchArmedTunnelIDs.compactMap { killSwitchLastKnownEntry[$0] }
+        do {
+            try await commandService.syncKillSwitch(entries: entries)
+        } catch {
+            log.error("Failed to sync kill switch rules: \(error.localizedDescription)")
+            errorMessage = "Kill switch could not be updated: \(error.localizedDescription)"
+        }
+        updateWarnings()
+    }
+
+    /// Splits a `wg show`-style endpoint string ("host:port" or "[host]:port" for IPv6) into its parts.
+    private static func parseEndpoint(_ endpoint: String) -> (host: String, port: Int)? {
+        if endpoint.hasPrefix("["), let closeBracket = endpoint.firstIndex(of: "]") {
+            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<closeBracket])
+            let rest = endpoint[endpoint.index(after: closeBracket)...]
+            guard rest.hasPrefix(":"), let port = Int(rest.dropFirst()) else { return nil }
+            return (host, port)
+        }
+        guard let lastColon = endpoint.lastIndex(of: ":") else { return nil }
+        let host = String(endpoint[..<lastColon])
+        guard let port = Int(endpoint[endpoint.index(after: lastColon)...]) else { return nil }
+        return (host, port)
     }
 
     // MARK: - Warnings
@@ -902,6 +1148,10 @@ final class TunnelManager: ObservableObject {
             if !dnsSets.dropFirst().allSatisfy({ $0 == dnsSets[0] }) {
                 warnings.append(.conflictingDNS(activeWithDNS.map(\.name)))
             }
+        }
+
+        for tunnel in tunnels where killSwitchArmedTunnelIDs.contains(tunnel.id) && !tunnel.isActive {
+            warnings.append(.killSwitchBlocking(tunnel.name))
         }
 
         if activeWarnings != warnings {
@@ -949,22 +1199,31 @@ final class TunnelManager: ObservableObject {
 
     private func loadManagedTunnels() async {
         do {
-            var managed = try await commandService.listManagedTunnels()
+            let managed = try await commandService.listManagedTunnels()
+            let changed = managed != lastLoadedManagedTunnels
+            lastLoadedManagedTunnels = managed
+
+            var merged = managed
             let existingByID = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
-            for index in managed.indices {
-                managed[index].scope = .managed
-                if let existing = existingByID[managed[index].id] {
-                    managed[index].isActive = existing.isActive
-                    managed[index].runtimeConfigPath = existing.runtimeConfigPath
-                    managed[index].interfaceName = existing.interfaceName
-                    managed[index].lastHandshake = existing.lastHandshake
-                    managed[index].rxBytes = existing.rxBytes
-                    managed[index].txBytes = existing.txBytes
-                    managed[index].connectedAt = existing.connectedAt
+            for index in merged.indices {
+                merged[index].scope = .managed
+                if let existing = existingByID[merged[index].id] {
+                    merged[index].isActive = existing.isActive
+                    merged[index].runtimeConfigPath = existing.runtimeConfigPath
+                    merged[index].interfaceName = existing.interfaceName
+                    merged[index].lastHandshake = existing.lastHandshake
+                    merged[index].rxBytes = existing.rxBytes
+                    merged[index].txBytes = existing.txBytes
+                    merged[index].connectedAt = existing.connectedAt
                 }
             }
-            tunnels = tunnels.filter { $0.scope == .personal } + managed
-            log.info("Loaded \(managed.count) managed tunnels")
+            let updatedTunnels = tunnels.filter { $0.scope == .personal } + merged
+            if updatedTunnels != tunnels {
+                tunnels = updatedTunnels
+            }
+            if changed {
+                log.info("Loaded \(merged.count) managed tunnels")
+            }
         } catch {
             log.warning("Unable to load managed tunnels: \(error.localizedDescription)")
         }
@@ -1088,6 +1347,12 @@ final class TunnelManager: ObservableObject {
         }
         trafficHistory[tunnelId] = samples
     }
+}
+
+enum ConnectionTestResult {
+    case success(averageMs: Double)
+    case unreachable
+    case unknownEndpoint
 }
 
 enum ConfigManagementError: LocalizedError {

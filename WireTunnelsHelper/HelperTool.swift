@@ -3,8 +3,8 @@ import Darwin
 import Foundation
 import Security
 
-private let helperVersionNumber = "1.0.2"
-private let helperProtocolRevisionValue = "managed-users-v1"
+private let helperVersionNumber = "1.0.3"
+private let helperProtocolRevisionValue = "kill-switch-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -136,8 +136,34 @@ private struct ManagedAutoConnectRule: Codable, Equatable {
 }
 
 private struct ManagedTunnelPolicy: Codable, Equatable {
-    var usersCanConnect: Bool = true
-    var usersCanDisconnect: Bool = true
+    var usersCanConnect: Bool
+    var usersCanDisconnect: Bool
+    var killSwitchEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case usersCanConnect
+        case usersCanDisconnect
+        case killSwitchEnabled
+    }
+
+    init(usersCanConnect: Bool = true, usersCanDisconnect: Bool = true, killSwitchEnabled: Bool = false) {
+        self.usersCanConnect = usersCanConnect
+        self.usersCanDisconnect = usersCanDisconnect
+        self.killSwitchEnabled = killSwitchEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        usersCanConnect = try container.decodeIfPresent(Bool.self, forKey: .usersCanConnect) ?? true
+        usersCanDisconnect = try container.decodeIfPresent(Bool.self, forKey: .usersCanDisconnect) ?? true
+        killSwitchEnabled = try container.decodeIfPresent(Bool.self, forKey: .killSwitchEnabled) ?? false
+    }
+}
+
+private struct KillSwitchEntry: Codable {
+    let interfaceName: String
+    let endpointHost: String
+    let endpointPort: Int
 }
 
 private struct ManagedTunnelRecord: Codable, Equatable, Identifiable {
@@ -392,6 +418,92 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         } else {
             reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
         }
+    }
+
+    private static let killSwitchAnchor = "com.fmdigitech.wiretunnels.killswitch"
+
+    /// Loads (or, for an empty list, flushes) PF pass-through rules for the given
+    /// tunnel interfaces/endpoints into a single dedicated anchor. Never disables
+    /// PF globally or touches any anchor but our own — PF is a shared system
+    /// resource other software may also rely on.
+    func syncKillSwitch(entries: Data, reply: @escaping (Bool, String?) -> Void) {
+        let decoded: [KillSwitchEntry]
+        do {
+            decoded = try JSONDecoder().decode([KillSwitchEntry].self, from: entries)
+        } catch {
+            reply(false, "Invalid kill switch request")
+            return
+        }
+
+        for entry in decoded {
+            guard Self.isValidInterfaceName(entry.interfaceName) else {
+                reply(false, "Invalid kill switch interface: \(entry.interfaceName)")
+                return
+            }
+            guard Self.isValidIPLiteral(entry.endpointHost) else {
+                reply(false, "Invalid kill switch endpoint")
+                return
+            }
+            guard (1...65535).contains(entry.endpointPort) else {
+                reply(false, "Invalid kill switch endpoint port")
+                return
+            }
+        }
+
+        let pfctl = URL(fileURLWithPath: "/sbin/pfctl")
+
+        guard !decoded.isEmpty else {
+            let result = runCommand(executable: pfctl, arguments: ["-a", Self.killSwitchAnchor, "-F", "all"])
+            if result.exitCode == 0 {
+                reply(true, nil)
+            } else {
+                reply(false, commandError(result, fallback: "Unable to clear kill switch rules"))
+            }
+            return
+        }
+
+        var lines = ["block drop all", "pass quick on lo0 all"]
+        for entry in decoded {
+            lines.append("pass quick on \(entry.interfaceName) all")
+            lines.append("pass out quick proto udp from any to \(entry.endpointHost) port \(entry.endpointPort)")
+        }
+        let rulesText = lines.joined(separator: "\n") + "\n"
+
+        let loadResult = runCommand(
+            executable: pfctl,
+            arguments: ["-a", Self.killSwitchAnchor, "-f", "-"],
+            standardInput: rulesText
+        )
+        guard loadResult.exitCode == 0 else {
+            reply(false, commandError(loadResult, fallback: "Unable to load kill switch rules"))
+            return
+        }
+
+        // Idempotent enable — "pf already enabled" is not a failure, same
+        // tolerance startTunnel already applies to wg-quick's "already exists as".
+        let enableResult = runCommand(executable: pfctl, arguments: ["-e"])
+        let alreadyEnabled = (enableResult.stdout + enableResult.stderr).contains("pf already enabled")
+        guard enableResult.exitCode == 0 || alreadyEnabled else {
+            reply(false, commandError(enableResult, fallback: "Unable to enable packet filter"))
+            return
+        }
+
+        reply(true, nil)
+    }
+
+    private static func isValidInterfaceName(_ value: String) -> Bool {
+        guard value.hasPrefix("utun") else { return false }
+        let suffix = value.dropFirst(4)
+        guard !suffix.isEmpty, suffix.count <= 3 else { return false }
+        return suffix.allSatisfy { $0.isNumber }
+    }
+
+    private static func isValidIPLiteral(_ value: String) -> Bool {
+        var addr4 = in_addr()
+        if value.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 { return true }
+        var addr6 = in6_addr()
+        if value.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 { return true }
+        return false
     }
 
     func generateKeyPair(reply: @escaping (String?, String?, String?) -> Void) {

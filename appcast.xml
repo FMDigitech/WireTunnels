@@ -73,9 +73,37 @@
             />
         </item>
 
+        <item>
+            <title>Version 1.0.3</title>
+            <pubDate>Mon, 20 Jul 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>Reliable reconnect after sleep — tunnels now automatically restart after your Mac wakes, instead of the dashboard silently showing "Connected" while traffic has actually stopped</li>
+                    <li>Per-tunnel kill switch — block all other network traffic if a tunnel drops unexpectedly, until it reconnects or you turn it off; works for personal tunnels and for shared tunnels (administrator-controlled)</li>
+                    <li>QR code import/export — show a tunnel as a QR code to pair a phone with the official WireGuard app in seconds, or import a tunnel by dropping, opening, or pasting a QR code image</li>
+                    <li>Live throughput sparkline + connection test — each tunnel row now shows a live throughput sparkline, and the tunnel detail view has an on-demand "Test Connection" button that checks latency to your VPN server</li>
+                </ul>
+                <p><strong>Notes</strong></p>
+                <ul>
+                    <li>The kill switch enforces its rules via the system packet filter (PF) through the existing privileged helper — no new permissions beyond what's already required</li>
+                    <li>The connection test only pings the tunnel's own configured VPN server; it makes no calls to any third-party service, consistent with WireTunnels' no-telemetry design</li>
+                    <li>Existing installs will prompt to update the privileged helper on first launch after upgrading (required for the kill switch's new helper capability)</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.0.3/WireTunnels-1.0.3.dmg"
+                sparkle:edSignature="oFz7Pd4egmNRB51njYTVk4iqB/UHzBhbwiGzXE5v34zSAGSdc7oRveufe8j71KLIOgSyhdQQ6AFhB+n000avDQ=="
+                length="13377989"
+                type="application/octet-stream"
+            />
+        </item>
+
         <!--
         Next release: bump CFBundleVersion (integer) and MARKETING_VERSION in Xcode,
-        run sign_update on the new zip, add a new <item> above this comment.
+        run sign_update on the new dmg (or zip), add a new <item> above this comment.
         -->
     </channel>
 </rss>

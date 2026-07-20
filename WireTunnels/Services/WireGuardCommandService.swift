@@ -2,11 +2,17 @@ import Foundation
 import Security
 import ServiceManagement
 
+struct KillSwitchEntry: Codable {
+    let interfaceName: String
+    let endpointHost: String
+    let endpointPort: Int
+}
+
 @MainActor
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
-    nonisolated static let expectedHelperVersion = "1.0.2"
-    nonisolated static let expectedHelperProtocolRevision = "managed-users-v1"
+    nonisolated static let expectedHelperVersion = "1.0.3"
+    nonisolated static let expectedHelperProtocolRevision = "kill-switch-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
@@ -358,6 +364,17 @@ final class WireGuardCommandService {
         }
     }
 
+    func syncKillSwitch(entries: [KillSwitchEntry]) async throws {
+        let data = try JSONEncoder().encode(entries)
+        return try await performHelperOperation(timeoutDescription: "Updating kill switch") { helper, complete in
+            helper.syncKillSwitch(entries: data) { success, errorMessage in
+                complete(success
+                    ? .success(())
+                    : .failure(CommandError.killSwitchFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
     func getWgShowOutput() async throws -> String {
         try await performHelperOperation(timeoutDescription: "Refreshing tunnel status") { helper, complete in
             helper.runWgShow { output, errorMessage in
@@ -613,6 +630,7 @@ enum CommandError: LocalizedError {
     case copyFailed(String)
     case authorizationFailed(OSStatus)
     case managedTunnelFailed(String)
+    case killSwitchFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -635,6 +653,7 @@ enum CommandError: LocalizedError {
         case .copyFailed(let msg): return "Failed to copy config: \(msg)"
         case .authorizationFailed(let status): return "Administrator authorization failed (\(status))"
         case .managedTunnelFailed(let msg): return "Managed tunnel operation failed: \(msg)"
+        case .killSwitchFailed(let msg): return "Kill switch update failed: \(msg)"
         }
     }
 }
