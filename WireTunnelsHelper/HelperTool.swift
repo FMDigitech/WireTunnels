@@ -4,9 +4,13 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.7"
-private let helperProtocolRevisionValue = "inventory-routing-v2"
+private let helperProtocolRevisionValue = "inventory-routing-v2-tools-auth"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
+private let clientCodeRequirement = """
+anchor apple generic and identifier "\(applicationIdentifier)" and \
+certificate leaf[subject.OU] = "\(applicationTeamIdentifier)"
+"""
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
 private let systemBinDir = systemRoot.appendingPathComponent("bin", isDirectory: true)
 private let runtimeConfigDir = systemRoot.appendingPathComponent("runtime", isDirectory: true)
@@ -1413,8 +1417,11 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    func installBundledTools(reply: @escaping (Bool, String?) -> Void) {
+    func installBundledTools(authorization: Data, reply: @escaping (Bool, String?) -> Void) {
         do {
+            // Installing binaries that wg-quick later runs as root is equivalent to root
+            // access, so it needs the same admin authorization as managed-tunnel changes.
+            try validateAdminAuthorization(authorization)
             try installVerifiedTools()
             reply(true, nil)
         } catch {
@@ -1423,10 +1430,19 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
     }
 
     private func installVerifiedTools() throws {
+        // Only install from an app in /Applications; the helper must not copy root-run
+        // binaries out of an arbitrary (e.g. user-writable, temporary) bundle location.
+        guard clientBundleURL.path.hasPrefix("/Applications/") else {
+            throw HelperError.untrustedBundleLocation
+        }
+        let sealedHashes = try sealedResourceHashes(of: clientBundleURL)
         let sourceDirectory = clientBundleURL
             .appendingPathComponent("Contents/Resources/wireguard", isDirectory: true)
         let sourceManifest = sourceDirectory.appendingPathComponent("manifest.json")
         let manifestData = try Data(contentsOf: sourceManifest, options: .mappedIfSafe)
+        guard Self.sha256Hex(of: manifestData) == sealedHashes["Resources/wireguard/manifest.json"] else {
+            throw HelperError.hashMismatch("manifest.json")
+        }
         let manifest = try JSONDecoder().decode(RuntimeManifest.self, from: manifestData)
         let names = manifest.artifacts.map(\.name)
         guard manifest.schemaVersion == 1,
@@ -1449,10 +1465,12 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
 
         // Bundled Mach-O binaries are re-signed by Xcode after the build phase writes
-        // the manifest, so their size/sha256 in the manifest may be stale. We verify
-        // copy faithfulness (source hash == destination hash) instead of comparing to
-        // the potentially-stale manifest values. The installed manifest is written with
-        // the actual post-signing sha256/size so verifiedInstalledWg() can verify later.
+        // the manifest, so their size/sha256 in the manifest may be stale. Each file is
+        // instead checked against the hash in the app's validated code signature seal,
+        // and that check runs on the root-owned staged copy, so the source file being
+        // swapped after validation can't change what gets installed. The installed
+        // manifest is written with the actual sha256/size so verifiedInstalledWg() can
+        // verify later.
         var installedArtifactInfo: [(name: String, sha256: String, size: Int64)] = []
 
         for artifact in manifest.artifacts {
@@ -1474,10 +1492,12 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 .ownerAccountID: 0,
                 .groupOwnerAccountID: 0
             ], ofItemAtPath: destination.path)
-            guard try sha256(of: destination).caseInsensitiveCompare(sourceHash) == .orderedSame else {
+            let stagedHash = try sha256(of: destination)
+            guard stagedHash == sealedHashes["Resources/wireguard/\(artifact.name)"],
+                  stagedHash.caseInsensitiveCompare(sourceHash) == .orderedSame else {
                 throw HelperError.hashMismatch(artifact.name)
             }
-            installedArtifactInfo.append((name: artifact.name, sha256: sourceHash, size: sourceSize))
+            installedArtifactInfo.append((name: artifact.name, sha256: stagedHash, size: sourceSize))
         }
 
         let installedManifest = metadataDir.appendingPathComponent("manifest.json")
@@ -1931,6 +1951,48 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         return environment
     }
 
+    /// SHA-256 hex digests of the bundle's sealed resources (CodeResources "files2" ->
+    /// "hash2"), keyed by path relative to Contents/. The bundle is validated first and the
+    /// seal is taken from that same SecStaticCode object, so it is the resource directory the
+    /// signature check vouched for, not a later re-read of a file that could have changed.
+    private func sealedResourceHashes(of bundleURL: URL) throws -> [String: String] {
+        var staticCode: SecStaticCode?
+        var requirement: SecRequirement?
+        guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode,
+              SecRequirementCreateWithString(clientCodeRequirement as CFString, [], &requirement) == errSecSuccess,
+              let requirement,
+              SecStaticCodeCheckValidity(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate),
+                requirement
+              ) == errSecSuccess else {
+            throw HelperError.invalidBundleSignature
+        }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSInternalInformation),
+            &information
+        ) == errSecSuccess,
+        // "ResourceDirectory" is kSecCodeInfoResourceDirectory, which the public headers omit.
+        let resourceDirectory = (information as? [String: Any])?["ResourceDirectory"] as? [String: Any],
+        let files = resourceDirectory["files2"] as? [String: Any] else {
+            throw HelperError.invalidBundleSignature
+        }
+        var hashes: [String: String] = [:]
+        for (path, entry) in files {
+            if let hash = (entry as? [String: Any])?["hash2"] as? Data {
+                hashes[path] = hash.map { String(format: "%02x", $0) }.joined()
+            }
+        }
+        return hashes
+    }
+
+    private static func sha256Hex(of data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     private func sha256(of url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -2002,6 +2064,8 @@ private enum HelperError: LocalizedError {
     case managedTunnelNotFound
     case privilegedHook(String)
     case controlCharacter
+    case untrustedBundleLocation
+    case invalidBundleSignature
 
     var errorDescription: String? {
         switch self {
@@ -2018,6 +2082,10 @@ private enum HelperError: LocalizedError {
             return "Tunnel configuration contains forbidden root command hook: \(name)"
         case .controlCharacter:
             return "Tunnel configuration contains control characters"
+        case .untrustedBundleLocation:
+            return "WireGuard tools can only be installed from WireTunnels in /Applications"
+        case .invalidBundleSignature:
+            return "WireTunnels app bundle failed code signature verification"
         }
     }
 }

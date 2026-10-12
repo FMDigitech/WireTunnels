@@ -90,7 +90,7 @@ final class InventoryHelperFixture: NSObject, WireguardHelperProtocol {
             if pauseInventory { pendingReply = reply } else { reply(true, nil) }
         } catch { reply(false, error.localizedDescription) }
     }
-    func installBundledTools(reply: @escaping (Bool, String?) -> Void) {
+    func installBundledTools(authorization: Data, reply: @escaping (Bool, String?) -> Void) {
         preconditionFailure("Unexpected helper call: installBundledTools")
     }
     func helperVersion(reply: @escaping (String) -> Void) {
