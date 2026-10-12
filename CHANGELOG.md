@@ -2,6 +2,18 @@
 
 This file tracks work in progress toward the next release and keeps the shipped ones as technical/QA reference. It's more detailed than the public release notes in `appcast.xml` — distill the "Public release notes (draft)" section of the unreleased version into `appcast.xml` once a build is actually signed and tagged.
 
+## Unreleased
+
+### Security
+- **The helper no longer allows unsigned libraries** (#41, @tobikris). It was signed with `com.apple.security.cs.disable-library-validation`, which lets a root process load libraries not signed by the app's team. The helper only uses system frameworks, so the exception is removed.
+- **Users can no longer remove each other's split-tunnel and multi-hop routes** (#41, @tobikris). `syncRoutes` tracked installed routes by the owner ID the app sent, in one store shared by all users, so one user's sync could remove routes another user's app had installed. Routes are now tracked by the caller's uid plus the owner ID, which must be a UUID. The routes themselves still apply to the whole Mac.
+
+### Known limitations / follow-ups
+- If one user disconnects a shared tunnel another user connected, the first user's exclusion routes stay until their app clears them. They point at the default gateway, where that traffic goes anyway once the tunnel is down.
+- Routes are system-wide: one user's exclusion routes also apply to other users' traffic, including around their full tunnels, and a route two users installed is removed for both when either removes it.
+
+---
+
 ## 1.0.8 — released 2026-10-26
 
 Integrates the community pull requests #29, #30, #32, #35, #36, #37 and #38 (thanks @tobikris and @007hacky007) and closes issue #34. #31 is superseded by #35 (the app no longer compares tool signatures: the helper installs and verifies the tools itself).
