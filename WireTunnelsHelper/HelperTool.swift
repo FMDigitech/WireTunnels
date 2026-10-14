@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.6"
-private let helperProtocolRevisionValue = "split-dns-v1"
+private let helperProtocolRevisionValue = "command-diagnostics-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -527,21 +527,46 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         reply(helperProtocolRevisionValue)
     }
 
+    func commandDiagnostics(reply: @escaping (Data?, String?) -> Void) {
+        do { reply(try JSONEncoder().encode(HelperCommandLog.shared.snapshot()), nil) }
+        catch { reply(nil, "Unable to encode helper diagnostics") }
+    }
+
     func startTunnel(named name: String, reply: @escaping (Bool, String?) -> Void) {
         guard let configURL = validatedRuntimeConfig(named: name, allowLegacy: false) else {
             reply(false, "Invalid tunnel configuration name")
             return
         }
 
+        let alreadyRunning = (try? RuntimeConfigLocator.configPaths(
+            in: URL(fileURLWithPath: "/var/run/wireguard"),
+            resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
+        ))?.values.contains(configURL.path) == true
+
         let environment = wireGuardEnvironment()
         let result = runCommand(
             executable: systemBinDir.appendingPathComponent("wg-quick"),
             arguments: ["up", configURL.path],
-            environment: environment
+            environment: environment,
+            timeout: 20
         )
         if result.exitCode == 0 || (result.stdout + result.stderr).contains("already exists as") {
             reply(true, nil)
         } else {
+            // Only roll back a connection this up attempt could have created.
+            // Never stop an interface that was already running before the call.
+            if !alreadyRunning {
+                let alias = configURL.deletingPathExtension().lastPathComponent
+                let marker = URL(fileURLWithPath: "/var/run/wireguard/\(alias).name")
+                if fileManager.fileExists(atPath: marker.path) {
+                    _ = runCommand(
+                        executable: systemBinDir.appendingPathComponent("wg-quick"),
+                        arguments: ["down", configURL.path],
+                        environment: environment,
+                        timeout: 1
+                    )
+                }
+            }
             reply(false, result.stderr.isEmpty ? result.stdout : result.stderr)
         }
     }
@@ -583,6 +608,31 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             reply(Self.redactingPrivateKeys(in: result.stdout), nil)
         } else {
             reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+        }
+    }
+
+    func runtimeStatusSnapshot(reply: @escaping (Data?, String?) -> Void) {
+        let result = runCommand(
+            executable: systemBinDir.appendingPathComponent("wg"),
+            arguments: ["show", "all", "dump"]
+        )
+        guard result.exitCode == 0 else {
+            reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+            return
+        }
+        do {
+            let paths = try RuntimeConfigLocator.configPaths(
+                in: URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true),
+                resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
+            )
+            struct Snapshot: Encodable {
+                let output: String
+                let configPaths: [String: String]
+            }
+            let snapshot = Snapshot(output: Self.redactingPrivateKeys(in: result.stdout), configPaths: paths)
+            reply(try JSONEncoder().encode(snapshot), nil)
+        } catch {
+            reply(nil, "Unable to resolve active tunnel configurations: \(error.localizedDescription)")
         }
     }
 
@@ -1713,51 +1763,39 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         executable: URL,
         arguments: [String],
         environment: [String: String]? = nil,
-        standardInput: String? = nil
+        standardInput: String? = nil,
+        timeout: TimeInterval = 25
     ) -> (stdout: String, stderr: String, exitCode: Int32) {
-        let process = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        let stdinPipe = standardInput == nil ? nil : Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        if let stdinPipe {
-            process.standardInput = stdinPipe
+        let started = ProcessInfo.processInfo.systemUptime
+        let commandID = UUID()
+        let name = executable.lastPathComponent
+        let operation = arguments.first.flatMap { ["up", "down", "show", "genkey", "pubkey"].contains($0) ? $0 : nil }
+        let label = operation.map { "\(name) \($0)" } ?? name
+        let trace = name == "wg-quick"
+        var lastStage = "starting command"
+        if trace {
+            HelperCommandLog.shared.record(commandID: commandID, command: label, stage: lastStage, elapsed: 0)
         }
-
-        do {
-            try process.run()
-            if let standardInput, let stdinPipe {
-                try stdinPipe.fileHandleForWriting.write(contentsOf: Data(standardInput.utf8))
-                try stdinPipe.fileHandleForWriting.close()
+        let result = CommandRunner().run(
+            executable: executable, arguments: arguments, environment: environment,
+            standardInput: standardInput, timeout: timeout, terminationGrace: trace ? 3 : 1, progress: { stage in
+                lastStage = stage
+                if trace {
+                    HelperCommandLog.shared.record(commandID: commandID, command: label, stage: stage,
+                                                   elapsed: ProcessInfo.processInfo.systemUptime - started)
+                }
             }
-
-            let outputGroup = DispatchGroup()
-            var stdoutData = Data()
-            var stderrData = Data()
-            outputGroup.enter()
-            DispatchQueue.global(qos: .utility).async {
-                stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                outputGroup.leave()
-            }
-            outputGroup.enter()
-            DispatchQueue.global(qos: .utility).async {
-                stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                outputGroup.leave()
-            }
-            process.waitUntilExit()
-            outputGroup.wait()
-
-            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-            return (stdout, stderr, process.terminationStatus)
-        } catch {
-            try? stdinPipe?.fileHandleForWriting.close()
-            return ("", error.localizedDescription, -1)
+        )
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        if trace || result.exitCode != 0 || elapsed >= 1 {
+            HelperCommandLog.shared.record(commandID: commandID, command: label,
+                stage: result.timedOut ? "timed out during \(result.timeoutStage ?? lastStage)" : "completed",
+                elapsed: elapsed, exitCode: result.exitCode, timedOut: result.timedOut)
         }
+        if result.timedOut {
+            return (result.stdout, "Command \(label) timed out after \(String(format: "%.1f", elapsed))s during \(result.timeoutStage ?? lastStage)", result.exitCode)
+        }
+        return (result.stdout, result.stderr, result.exitCode)
     }
 
     private func commandError(

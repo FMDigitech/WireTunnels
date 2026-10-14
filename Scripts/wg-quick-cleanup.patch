@@ -1,0 +1,11 @@
+--- a/wg-quick
++++ b/wg-quick
+@@ -452,7 +452,7 @@
+ cmd_up() {
+ 	local i
+ 	get_real_interface && die "\`$INTERFACE' already exists as \`$REAL_INTERFACE'"
+-	trap 'del_if; del_routes; exit' INT TERM EXIT
++	trap 'status=$?; echo "[+] Restoring DNS after failed startup" >&2; del_dns || echo "[!] Failed to restore DNS during startup cleanup" >&2; del_if; del_routes; exit "$status"' INT TERM EXIT
+ 	add_if
+ 	execute_hooks "${PRE_UP[@]}"
+ 	set_config
