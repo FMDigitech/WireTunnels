@@ -269,11 +269,27 @@ struct SettingsView: View {
 
                 // MARK: Updates
                 SettingsSection(title: "Updates", systemImage: "arrow.triangle.2.circlepath") {
+                    Toggle(isOn: Binding(
+                        get: { updaterService.automaticallyChecksForUpdates },
+                        set: { updaterService.setAutomaticallyChecksForUpdates($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Automatically Check for Updates")
+                                .font(.body)
+                            Text("Periodically check for new versions of WireTunnels in the background.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+
+                    Divider()
+
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Check for Updates")
                                 .font(.body)
-                            Text("WireTunnels checks for updates automatically on launch.")
+                            Text("Check for a new version now, even when automatic checks are off.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
