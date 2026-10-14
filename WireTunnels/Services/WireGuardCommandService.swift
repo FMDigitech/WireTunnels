@@ -30,15 +30,19 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.6"
-    nonisolated static let expectedHelperProtocolRevision = "split-dns-v1"
+    nonisolated static let expectedHelperProtocolRevision = "dns-recovery-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
-    private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
+    nonisolated private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
+    // Startup can need a separate DNS recovery attempt after a terminated
+    // wg-quick command. Let those bounded helper operations finish first.
+    nonisolated private static let tunnelOperationTimeoutNanoseconds: UInt64 = 75_000_000_000
     private static let toolInstallTimeoutNanoseconds: UInt64 = 60_000_000_000
     // Plist must be at Contents/Library/LaunchDaemons/ in the app bundle
     nonisolated static let helperPlistName = "com.fmdigitech.WireTunnels.helper.plist"
 
     private var connection: NSXPCConnection?
+    private var seenCommandEvents: Set<UUID> = []
     // Kept alive across calls so the admin credential it caches is reused instead
     // of re-prompting for a password on every shared-tunnel operation. macOS ties
     // that cache to the specific AuthorizationRef, not just the login session.
@@ -200,24 +204,48 @@ final class WireGuardCommandService {
 
     private func performHelperOperation<T>(
         timeoutDescription: String,
+        timeoutNanoseconds: UInt64 = operationTimeoutNanoseconds,
+        invalidateOnTimeout: Bool = true,
         invoke: @escaping (
             WireguardHelperProtocol,
             @escaping (Result<T, Error>) -> Void
         ) -> Void
     ) async throws -> T {
         _ = try getHelper()
+        let operationID = String(UUID().uuidString.prefix(8))
+        let started = ProcessInfo.processInfo.systemUptime
+        let quiet = timeoutDescription == "Refreshing tunnel status" || timeoutDescription == "Reading helper diagnostics"
+        if !quiet { LogService.shared.info("Helper request \(operationID): \(timeoutDescription) started") }
         return try await withCheckedThrowingContinuation { continuation in
             var hasResumed = false
+            var slowTask: Task<Void, Never>?
             let resume: (Result<T, Error>) -> Void = { result in
                 guard !hasResumed else { return }
                 hasResumed = true
+                slowTask?.cancel()
+                let elapsed = String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started)
+                switch result {
+                case .success:
+                    if !quiet || ProcessInfo.processInfo.systemUptime - started >= 1 {
+                        LogService.shared.info("Helper request \(operationID): \(timeoutDescription) completed in \(elapsed)s")
+                    }
+                case .failure(let error):
+                    LogService.shared.error("Helper request \(operationID): \(timeoutDescription) failed after \(elapsed)s: \(error.localizedDescription)")
+                }
                 continuation.resume(with: result)
+            }
+            slowTask = Task { @MainActor in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    LogService.shared.warning("Helper request \(operationID): \(timeoutDescription) still waiting after \(String(format: "%.1f", ProcessInfo.processInfo.systemUptime - started))s")
+                }
             }
 
             let timeoutTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: Self.operationTimeoutNanoseconds)
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 guard !Task.isCancelled else { return }
-                self?.invalidateConnection()
+                if invalidateOnTimeout { self?.invalidateConnection() }
                 resume(.failure(CommandError.operationTimedOut(timeoutDescription)))
             }
 
@@ -362,23 +390,56 @@ final class WireGuardCommandService {
 
     func startTunnel(configPath: String) async throws {
         let name = URL(fileURLWithPath: configPath).lastPathComponent
-        return try await performHelperOperation(timeoutDescription: "Starting tunnel") { helper, complete in
-            helper.startTunnel(named: name) { success, errorMessage in
-                complete(success
-                    ? .success(())
-                    : .failure(CommandError.tunnelStartFailed(errorMessage ?? "Unknown")))
+        do {
+            try await performHelperOperation(timeoutDescription: "Starting tunnel \(name)", timeoutNanoseconds: Self.tunnelOperationTimeoutNanoseconds) { helper, complete in
+                helper.startTunnel(named: name) { success, errorMessage in
+                    complete(success
+                        ? .success(())
+                        : .failure(CommandError.tunnelStartFailed(errorMessage ?? "Unknown")))
+                }
             }
+            await logCommandDiagnostics()
+        } catch {
+            await logCommandDiagnostics()
+            throw error
         }
     }
 
     func stopTunnel(configPath: String) async throws {
         let name = URL(fileURLWithPath: configPath).lastPathComponent
-        return try await performHelperOperation(timeoutDescription: "Stopping tunnel") { helper, complete in
-            helper.stopTunnel(named: name) { success, errorMessage in
-                complete(success
-                    ? .success(())
-                    : .failure(CommandError.tunnelStopFailed(errorMessage ?? "Unknown")))
+        do {
+            try await performHelperOperation(timeoutDescription: "Stopping tunnel \(name)", timeoutNanoseconds: Self.tunnelOperationTimeoutNanoseconds) { helper, complete in
+                helper.stopTunnel(named: name) { success, errorMessage in
+                    complete(success
+                        ? .success(())
+                        : .failure(CommandError.tunnelStopFailed(errorMessage ?? "Unknown")))
+                }
             }
+            await logCommandDiagnostics()
+        } catch {
+            await logCommandDiagnostics()
+            throw error
+        }
+    }
+
+    private func logCommandDiagnostics() async {
+        do {
+            let data: Data = try await performHelperOperation(timeoutDescription: "Reading helper diagnostics", timeoutNanoseconds: 1_000_000_000, invalidateOnTimeout: false) { helper, complete in
+                helper.commandDiagnostics { data, error in
+                    if let data { complete(.success(data)) }
+                    else { complete(.failure(CommandError.statusFailed(error ?? "Unable to read command diagnostics"))) }
+                }
+            }
+            let events = try JSONDecoder().decode([HelperCommandEvent].self, from: data)
+            for event in events where !seenCommandEvents.contains(event.id) {
+                let status = event.exitCode.map { "; exit=\($0)" } ?? ""
+                let line = "Helper command \(String(event.commandID.uuidString.prefix(8))) \(event.command): \(event.stage) at \(String(format: "%.3f", event.elapsed))s\(status)"
+                if event.timedOut || event.exitCode.map({ $0 != 0 }) == true { LogService.shared.error(line) }
+                else { LogService.shared.info(line) }
+            }
+            seenCommandEvents = Set(events.map(\.id))
+        } catch {
+            LogService.shared.warning("Helper command diagnostics unavailable: \(error.localizedDescription)")
         }
     }
 
@@ -430,6 +491,19 @@ final class WireGuardCommandService {
                 }
             }
         }
+    }
+
+    func getRuntimeStatusSnapshot() async throws -> WireGuardStatusSnapshot {
+        let data: Data = try await performHelperOperation(timeoutDescription: "Refreshing tunnel status") { helper, complete in
+            helper.runtimeStatusSnapshot { data, errorMessage in
+                if let data {
+                    complete(.success(data))
+                } else {
+                    complete(.failure(CommandError.statusFailed(errorMessage ?? "Unknown")))
+                }
+            }
+        }
+        return try JSONDecoder().decode(WireGuardStatusSnapshot.self, from: data)
     }
 
     func generateKeyPair() async throws -> (privateKey: String, publicKey: String) {

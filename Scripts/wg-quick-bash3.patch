@@ -1,0 +1,122 @@
+--- a/wg-quick
++++ b/wg-quick
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env bash
++#!/bin/bash
+ # SPDX-License-Identifier: GPL-2.0
+ #
+ # Copyright (C) 2015-2020 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+@@ -39,7 +39,7 @@
+ 	exit 1
+ }
+ 
+-[[ ${BASH_VERSINFO[0]} -ge 4 ]] || die "Version mismatch: bash ${BASH_VERSINFO[0]} detected, when bash 4+ required"
++[[ ${BASH_VERSINFO[0]} -ge 3 ]] || die "Version mismatch: bash ${BASH_VERSINFO[0]} detected, when bash 3+ required"
+ 
+ CONFIG_SEARCH_PATHS=( /etc/wireguard /usr/local/etc/wireguard )
+ 
+@@ -216,29 +216,49 @@
+ 	done < <(wg show "$REAL_INTERFACE" endpoints)
+ }
+ 
+-declare -A SERVICE_DNS
+-declare -A SERVICE_DNS_SEARCH
++# Parallel indexed arrays instead of associative ones, so this runs on macOS /bin/bash 3.2.
++SERVICE_NAMES=( )
++SERVICE_DNS=( )
++SERVICE_DNS_SEARCH=( )
++service_known() {
++	local i
++	for i in "${!SERVICE_NAMES[@]}"; do
++		[[ ${SERVICE_NAMES[i]} == "$1" ]] && return 0
++	done
++	return 1
++}
++
+ collect_new_service_dns() {
+-	local service get_response
+-	local -A found_services
++	local service get_response dns search i found found_services=( ) keep_names=( ) keep_dns=( ) keep_search=( )
+ 	{ read -r _ && while read -r service; do
+ 		[[ $service == "*"* ]] && service="${service:1}"
+-		found_services["$service"]=1
+-		[[ -n ${SERVICE_DNS["$service"]} ]] && continue
++		found_services+=( "$service" )
++		service_known "$service" && continue
+ 		get_response="$(cmd networksetup -getdnsservers "$service")"
+ 		[[ $get_response == *" "* ]] && get_response="Empty"
+-		[[ -n $get_response ]] && SERVICE_DNS["$service"]="$get_response"
++		dns="$get_response"
+ 		get_response="$(cmd networksetup -getsearchdomains "$service")"
+ 		[[ $get_response == *" "* ]] && get_response="Empty"
+-		[[ -n $get_response ]] && SERVICE_DNS_SEARCH["$service"]="$get_response"
++		search="$get_response"
++		[[ -n $dns ]] || continue
++		SERVICE_NAMES+=( "$service" )
++		SERVICE_DNS+=( "$dns" )
++		SERVICE_DNS_SEARCH+=( "$search" )
+ 	done; } < <(networksetup -listallnetworkservices)
+ 
+-	for service in "${!SERVICE_DNS[@]}"; do
+-		if ! [[ -n ${found_services["$service"]} ]]; then
+-			unset SERVICE_DNS["$service"]
+-			unset SERVICE_DNS_SEARCH["$service"]
+-		fi
++	for i in "${!SERVICE_NAMES[@]}"; do
++		for found in "${found_services[@]}"; do
++			if [[ $found == "${SERVICE_NAMES[i]}" ]]; then
++				keep_names+=( "${SERVICE_NAMES[i]}" )
++				keep_dns+=( "${SERVICE_DNS[i]}" )
++				keep_search+=( "${SERVICE_DNS_SEARCH[i]}" )
++				break
++			fi
++		done
+ 	done
++	SERVICE_NAMES=( "${keep_names[@]}" )
++	SERVICE_DNS=( "${keep_dns[@]}" )
++	SERVICE_DNS_SEARCH=( "${keep_search[@]}" )
+ }
+ 
+ set_endpoint_direct_route() {
+@@ -294,8 +314,9 @@
+ 
+ set_dns() {
+ 	collect_new_service_dns
+-	local service response
+-	for service in "${!SERVICE_DNS[@]}"; do
++	local i service response
++	for i in "${!SERVICE_NAMES[@]}"; do
++		service="${SERVICE_NAMES[i]}"
+ 		while read -r response; do
+ 			[[ $response == *Error* ]] && echo "$response" >&2
+ 		done < <(
+@@ -310,13 +331,14 @@
+ }
+ 
+ del_dns() {
+-	local service response
+-	for service in "${!SERVICE_DNS[@]}"; do
++	local i service response
++	for i in "${!SERVICE_NAMES[@]}"; do
++		service="${SERVICE_NAMES[i]}"
+ 		while read -r response; do
+ 			[[ $response == *Error* ]] && echo "$response" >&2
+ 		done < <(
+-			cmd networksetup -setdnsservers "$service" ${SERVICE_DNS["$service"]} || true
+-			cmd networksetup -setsearchdomains "$service" ${SERVICE_DNS_SEARCH["$service"]} || true
++			cmd networksetup -setdnsservers "$service" ${SERVICE_DNS[i]} || true
++			cmd networksetup -setsearchdomains "$service" ${SERVICE_DNS_SEARCH[i]} || true
+ 		)
+ 	done
+ }
+@@ -326,7 +348,9 @@
+ 	(trap 'del_routes; del_dns; exit 0' INT TERM EXIT
+ 	exec >/dev/null 2>&1
+ 	exec 19< <(exec route -n monitor)
+-	local event bpid=$BASHPID mpid=$!
++	# bash 3.2 has no $BASHPID; the exec'd sh's parent is this subshell.
++	local event bpid mpid=$!
++	bpid="$(exec sh -c 'echo $PPID')"
+ 	[[ ${#DNS[@]} -gt 0 ]] && trap set_dns ALRM
+ 	# TODO: this should also check to see if the endpoint actually changes
+ 	# in response to incoming packets, and then call set_endpoint_direct_route
