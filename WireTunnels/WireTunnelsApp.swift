@@ -91,13 +91,14 @@ struct WireTunnelsApp: App {
 private struct MenuBarIconView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("launchInBackground") private var launchInBackground = false
+    @AppStorage("monochromeMenuBarIcon") private var monochromeMenuBarIcon = false
     let hasActive: Bool
     let hasWarnings: Bool
     let hasError: Bool
 
     var body: some View {
         Image(systemName: iconName)
-            .symbolRenderingMode(.palette)
+            .symbolRenderingMode(monochromeMenuBarIcon ? .monochrome : .palette)
             .foregroundStyle(iconColor, .primary)
             .task {
                 guard !launchInBackground else { return }
@@ -113,6 +114,7 @@ private struct MenuBarIconView: View {
     }
 
     private var iconColor: Color {
+        if monochromeMenuBarIcon { return .primary }
         if hasError { return .red }
         if hasWarnings { return .yellow }
         if hasActive { return .green }
