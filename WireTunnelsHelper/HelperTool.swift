@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.6"
-private let helperProtocolRevisionValue = "split-dns-v1"
+private let helperProtocolRevisionValue = "runtime-config-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -583,6 +583,31 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             reply(Self.redactingPrivateKeys(in: result.stdout), nil)
         } else {
             reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+        }
+    }
+
+    func runtimeStatusSnapshot(reply: @escaping (Data?, String?) -> Void) {
+        let result = runCommand(
+            executable: systemBinDir.appendingPathComponent("wg"),
+            arguments: ["show", "all", "dump"]
+        )
+        guard result.exitCode == 0 else {
+            reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+            return
+        }
+        do {
+            let paths = try RuntimeConfigLocator.configPaths(
+                in: URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true),
+                resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
+            )
+            struct Snapshot: Encodable {
+                let output: String
+                let configPaths: [String: String]
+            }
+            let snapshot = Snapshot(output: Self.redactingPrivateKeys(in: result.stdout), configPaths: paths)
+            reply(try JSONEncoder().encode(snapshot), nil)
+        } catch {
+            reply(nil, "Unable to resolve active tunnel configurations: \(error.localizedDescription)")
         }
     }
 

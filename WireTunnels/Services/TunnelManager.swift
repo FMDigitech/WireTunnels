@@ -640,6 +640,24 @@ final class TunnelManager: ObservableObject {
 
     // MARK: - Config Management
 
+    @discardableResult
+    func duplicateTunnel(_ tunnel: Tunnel) throws -> Tunnel {
+        guard let source = tunnels.first(where: { $0.id == tunnel.id }) else {
+            throw TunnelDuplicationError.tunnelNotFound
+        }
+        let reservedNames = statusMonitor.statusMap.values.compactMap { $0.runtimeConfigPath }.map {
+            URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+        }
+        let copy = try TunnelDuplicationService(configStorage: configStorage).duplicate(
+            source, existingTunnels: tunnels, reservedConfigNames: reservedNames
+        )
+        tunnels.append(copy)
+        savePersonalTunnelsOnly()
+        updateWarnings()
+        log.info("Duplicated tunnel: \(source.name) -> \(copy.name)")
+        return copy
+    }
+
     func importConfig(from url: URL) async throws {
         log.info("Importing config: \(url.lastPathComponent)")
         let parsed = try parser.parse(contentsOf: url)
@@ -772,6 +790,10 @@ final class TunnelManager: ObservableObject {
     func deleteTunnel(_ tunnel: Tunnel) {
         guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }) else { return }
         guard liveTunnel.scope == .personal else { return }
+        guard !liveTunnel.isActive, !connectingTunnels.contains(liveTunnel.id) else {
+            errorMessage = "Disconnect \(liveTunnel.name) before deleting it."
+            return
+        }
         tunnels.removeAll { $0.id == tunnel.id }
         try? configStorage.deleteConfig(at: URL(fileURLWithPath: liveTunnel.configPath))
         savePersonalTunnelsOnly()
@@ -884,7 +906,8 @@ final class TunnelManager: ObservableObject {
                     localPublicKey: $0.localPublicKey,
                     endpoint: $0.endpoint,
                     interfaceHint: $0.interfaceName
-                        ?? URL(fileURLWithPath: $0.configPath).deletingPathExtension().lastPathComponent
+                        ?? URL(fileURLWithPath: $0.configPath).deletingPathExtension().lastPathComponent,
+                    configName: URL(fileURLWithPath: $0.configPath).deletingPathExtension().lastPathComponent
                 )
             },
             statuses: statusMonitor.statusMap
@@ -897,6 +920,11 @@ final class TunnelManager: ObservableObject {
                 updatedTunnels[index].isActive = true
                 // Learn and persist the real kernel interface name (utun*)
                 updatedTunnels[index].interfaceName = status.interfaceName
+                // Preserve the original live config path for down and reconnect.
+                // An unresolved alias must not erase the path recorded at connect.
+                if let runtimePath = status.runtimeConfigPath {
+                    updatedTunnels[index].runtimeConfigPath = runtimePath
+                }
                 if let peer = status.peers.first {
                     updatedTunnels[index].lastHandshake = peer.lastHandshake
                     updatedTunnels[index].rxBytes = peer.rxBytes
