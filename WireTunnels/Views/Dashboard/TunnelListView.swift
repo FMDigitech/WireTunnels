@@ -20,7 +20,6 @@ struct TunnelListView: View {
             let warnedNames = tunnelManager.activeWarnings.flatMap { warning -> [String] in
                 switch warning {
                 case .multipleFullTunnels(let names):   return names
-                case .fullTunnelActive(let name):       return [name]
                 case .overlappingAllowedIPs(let a, let b): return [a, b]
                 case .conflictingDNS(let names):        return names
                 case .killSwitchBlocking(let name):     return [name]

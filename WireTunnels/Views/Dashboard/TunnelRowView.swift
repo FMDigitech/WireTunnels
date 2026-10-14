@@ -14,7 +14,6 @@ struct TunnelRowView: View {
         tunnelManager.activeWarnings.contains { warning in
             switch warning {
             case .multipleFullTunnels(let names):       return names.contains(tunnel.name)
-            case .fullTunnelActive(let name):           return name == tunnel.name
             case .overlappingAllowedIPs(let a, let b):  return a == tunnel.name || b == tunnel.name
             case .conflictingDNS(let names):            return names.contains(tunnel.name)
             case .killSwitchBlocking(let name):         return name == tunnel.name

@@ -1753,8 +1753,6 @@ final class TunnelManager: ObservableObject {
         let fullTunnels = active.filter { $0.allowedIPs.contains("0.0.0.0/0") }
         if fullTunnels.count > 1 {
             warnings.append(.multipleFullTunnels(fullTunnels.map(\.name)))
-        } else if let fullTunnel = fullTunnels.first {
-            warnings.append(.fullTunnelActive(fullTunnel.name))
         }
 
         for i in active.indices {
