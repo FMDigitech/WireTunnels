@@ -215,11 +215,7 @@
 			inputPaths = (
 				"$(SRCROOT)/Scripts/build_wireguard_binaries.sh",
 				"$(SRCROOT)/Scripts/wireguard-versions.env",
-				"$(SRCROOT)/Scripts/test_wg_quick_bash3.sh",
-				"$(SRCROOT)/Scripts/test_wg_quick_dns_cleanup.sh",
-				"$(SRCROOT)/Scripts/test_wg_quick_validator_path.sh",
 				"$(SRCROOT)/Scripts/wg-quick-bash3.patch",
-				"$(SRCROOT)/Scripts/wg-quick-dns-cleanup.patch",
 				"$(SRCROOT)/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist",
 			);
 			name = "Build Wireguard Binaries";

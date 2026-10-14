@@ -1,10 +1,16 @@
 import Foundation
 
+struct WireGuardStatusSnapshot: Codable {
+    let output: String
+    let configPaths: [String: String]
+}
+
 struct TunnelStatus: Equatable {
     let interfaceName: String
     let publicKey: String
     let listenPort: Int
     let peers: [PeerStatus]
+    var runtimeConfigPath: String? = nil
 }
 
 struct PeerStatus: Equatable {
@@ -34,6 +40,7 @@ enum InterfaceMatcher {
         var endpoint: String?
         /// Last learned interface name, or the config's file name.
         var interfaceHint: String
+        var configName: String? = nil
     }
 
     static func assign(_ candidates: [Candidate], statuses: [String: TunnelStatus]) -> [Int: TunnelStatus] {
@@ -44,7 +51,30 @@ enum InterfaceMatcher {
         let order = candidates.indices.sorted { lhs, rhs in
             (candidates[lhs].localPublicKey != nil ? 0 : 1) < (candidates[rhs].localPublicKey != nil ? 0 : 1)
         }
+        // Reserve exact runtime aliases for every profile before falling back to
+        // keys. Profiles can share both keys while using different routes.
         for index in order {
+            let candidate = candidates[index]
+            let byRuntimeConfig = candidate.configName.flatMap { name in
+                ordered.first { status in
+                    guard let path = status.runtimeConfigPath else { return false }
+                    return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent == name
+                }
+            }
+            let byName = byRuntimeConfig
+                ?? candidate.configName.flatMap { statuses[$0] }
+                ?? statuses[candidate.interfaceHint]
+            let runtimeName = byName?.runtimeConfigPath.map {
+                URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+            }
+            if let byName, !claimed.contains(byName.interfaceName),
+               candidate.configName == nil || runtimeName == nil || runtimeName == candidate.configName,
+               candidate.peerPublicKey == nil || isOurs(byName, candidate) {
+                claimed.insert(byName.interfaceName)
+                matched[index] = byName
+            }
+        }
+        for index in order where matched[index] == nil {
             let candidate = candidates[index]
             let byName = statuses[candidate.interfaceHint]
             let status: TunnelStatus?

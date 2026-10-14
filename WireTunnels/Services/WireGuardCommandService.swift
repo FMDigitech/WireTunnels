@@ -30,7 +30,7 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.6"
-    nonisolated static let expectedHelperProtocolRevision = "split-dns-v1"
+    nonisolated static let expectedHelperProtocolRevision = "runtime-config-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
@@ -430,6 +430,19 @@ final class WireGuardCommandService {
                 }
             }
         }
+    }
+
+    func getRuntimeStatusSnapshot() async throws -> WireGuardStatusSnapshot {
+        let data: Data = try await performHelperOperation(timeoutDescription: "Refreshing tunnel status") { helper, complete in
+            helper.runtimeStatusSnapshot { data, errorMessage in
+                if let data {
+                    complete(.success(data))
+                } else {
+                    complete(.failure(CommandError.statusFailed(errorMessage ?? "Unknown")))
+                }
+            }
+        }
+        return try JSONDecoder().decode(WireGuardStatusSnapshot.self, from: data)
     }
 
     func generateKeyPair() async throws -> (privateKey: String, publicKey: String) {
