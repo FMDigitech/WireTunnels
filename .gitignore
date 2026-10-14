@@ -18,3 +18,7 @@ playground.xcworkspace
 
 # macOS
 .DS_Store
+
+# Python regression test caches
+__pycache__/
+*.pyc

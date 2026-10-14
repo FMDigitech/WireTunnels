@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     @EnvironmentObject var dashboardNavigation: DashboardNavigation
     @Environment(\.openWindow) var openWindow
+    @Environment(\.openSettings) var openSettings
 
     private var activeTunnels: [Tunnel] {
         tunnelManager.tunnels.filter { $0.isActive }
@@ -17,6 +18,11 @@ struct MenuBarView: View {
 
     private var hasInactiveFavorites: Bool {
         tunnelManager.favoriteTunnels.contains { !$0.isActive }
+    }
+
+    private func isBusy(_ tunnel: Tunnel) -> Bool {
+        let status = tunnelManager.connectionStatus(for: tunnel)
+        return status == .connecting || status == .reconnecting
     }
 
     var body: some View {
@@ -49,6 +55,39 @@ struct MenuBarView: View {
             Divider()
                 .padding(.vertical, 2)
 
+            ForEach(tunnelManager.tunnels.filter { tunnelManager.connectionStatus(for: $0) != nil }) { tunnel in
+                if let status = tunnelManager.connectionStatus(for: tunnel) {
+                    HStack(spacing: 8) {
+                        Image(systemName: status.systemImage)
+                            .foregroundStyle(status == .connectionLost ? Color.red : Color.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tunnel.name)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(status.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if status == .connectionLost {
+                            Button("Retry") {
+                                Task { await tunnelManager.connectTunnel(tunnel) }
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Retry connection for \(tunnel.name)")
+                            .accessibilityLabel("Retry connection for \(tunnel.name)")
+                        }
+                        Button("Details") { openDashboard(tunnelID: tunnel.id) }
+                        .buttonStyle(.borderless)
+                        .help("Open details for \(tunnel.name)")
+                        .accessibilityLabel("Open Details for \(tunnel.name)")
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+            }
+
             // Connected section
             if !activeTunnels.isEmpty {
                 SectionHeader(title: "Connected")
@@ -59,6 +98,7 @@ struct MenuBarView: View {
                         TunnelMenuRowWithChart(
                             tunnel: tunnel,
                             samples: tunnelManager.trafficHistory[tunnel.id] ?? [],
+                            isBusy: isBusy(tunnel),
                             detailAction: { openDashboard(tunnelID: tunnel.id) }
                         ) {
                             Task { await tunnelManager.disconnectTunnel(tunnel) }
@@ -67,6 +107,7 @@ struct MenuBarView: View {
                         TunnelMenuRow(
                             tunnel: tunnel,
                             isActive: true,
+                            isBusy: isBusy(tunnel),
                             detailAction: { openDashboard(tunnelID: tunnel.id) }
                         ) {
                             Task { await tunnelManager.disconnectTunnel(tunnel) }
@@ -86,6 +127,7 @@ struct MenuBarView: View {
                     TunnelMenuRow(
                         tunnel: tunnel,
                         isActive: false,
+                        isBusy: isBusy(tunnel),
                         detailAction: { openDashboard(tunnelID: tunnel.id) }
                     ) {
                         Task { await tunnelManager.connectTunnel(tunnel) }
@@ -119,6 +161,7 @@ struct MenuBarView: View {
                 MenuActionButton(label: "Stop All", systemImage: "stop.circle", role: .destructive) {
                     Task { await tunnelManager.stopAllActive() }
                 }
+                .disabled(tunnelManager.tunnels.contains { isBusy($0) })
             }
 
             Divider()
@@ -129,13 +172,12 @@ struct MenuBarView: View {
                 openDashboard()
             }
 
-            SettingsLink {
-                MenuActionLabel(label: "Settings", systemImage: "gear")
+            MenuActionButton(label: "Settings", systemImage: "gear") {
+                MenuBarDismissalController.performNavigation {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
+                }
             }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
                 .padding(.vertical, 2)
@@ -159,6 +201,7 @@ struct MenuBarView: View {
         }
         .frame(width: 300)
         .padding(.bottom, 4)
+        .background(MenuBarClickAwayDismissal().frame(width: 0, height: 0))
         .alert("WireTunnels Error", isPresented: managerErrorBinding) {
             Button("OK") {
                 tunnelManager.errorMessage = nil
@@ -179,18 +222,20 @@ struct MenuBarView: View {
     }
 
     private func openDashboard(tunnelID: UUID? = nil) {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "dashboard")
-        if let tunnelID {
-            dashboardNavigation.requestTunnel(tunnelID)
-        }
-        DispatchQueue.main.async {
-            NSApp.windows
-                .filter { $0.title == "WireTunnels" }
-                .forEach {
-                    $0.deminiaturize(nil)
-                    $0.makeKeyAndOrderFront(nil)
-                }
+        MenuBarDismissalController.performNavigation {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "dashboard")
+            if let tunnelID {
+                dashboardNavigation.requestTunnel(tunnelID)
+            }
+            DispatchQueue.main.async {
+                NSApp.windows
+                    .filter { $0.title == "WireTunnels" }
+                    .forEach {
+                        $0.deminiaturize(nil)
+                        $0.makeKeyAndOrderFront(nil)
+                    }
+            }
         }
     }
 }
@@ -238,6 +283,7 @@ private struct SectionHeader: View {
 private struct TunnelMenuRow: View {
     let tunnel: Tunnel
     let isActive: Bool
+    let isBusy: Bool
     let detailAction: () -> Void
     let action: () -> Void
 
@@ -276,6 +322,7 @@ private struct TunnelMenuRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(isBusy)
                 .accessibilityLabel("Connection for \(tunnel.name)")
             }
 
@@ -300,6 +347,7 @@ private struct TunnelMenuRow: View {
 private struct TunnelMenuRowWithChart: View {
     let tunnel: Tunnel
     let samples: [TrafficSample]
+    let isBusy: Bool
     let detailAction: () -> Void
     let action: () -> Void
 
@@ -335,6 +383,7 @@ private struct TunnelMenuRowWithChart: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(isBusy)
                 .accessibilityLabel("Connection for \(tunnel.name)")
             }
 

@@ -1,0 +1,76 @@
+--- a/wg-quick
++++ b/wg-quick
+@@ -228,11 +228,65 @@
+ 	return 1
+ }
+ 
++
++# Only change DNS for services currently carrying the default IPv4/IPv6 paths.
++# Keep baselines for previously active services until disconnect restores them.
++ACTIVE_DNS_SERVICES=( )
++collect_active_dns_services() {
++    local family key separator value service_id name known duplicate service available=( ) matched=0
++    ACTIVE_DNS_SERVICES=( )
++    for family in IPv4 IPv6; do
++        service_id=""
++        while read -r key separator value; do
++            [[ $key == PrimaryService && $separator == : ]] && service_id="$value"
++        done < <(printf 'show State:/Network/Global/%s\n' "$family" | scutil)
++        [[ $service_id =~ ^[a-zA-Z0-9_-]+$ ]] || continue
++        name=""
++        while read -r key separator value; do
++            [[ $key == UserDefinedName && $separator == : ]] && name="$value"
++        done < <(printf 'show Setup:/Network/Service/%s\n' "$service_id" | scutil)
++        [[ -n $name && ! $name =~ [[:cntrl:]] ]] || continue
++        duplicate=0
++        for known in "${ACTIVE_DNS_SERVICES[@]}"; do
++            [[ $known == "$name" ]] && duplicate=1
++        done
++        [[ $duplicate -eq 1 ]] || ACTIVE_DNS_SERVICES+=( "$name" )
++    done
++    # Dynamic-store names can lag behind the configured service list.
++    { read -r _ && while read -r service; do
++        [[ $service == "*"* ]] && service="${service:1}"
++        available+=( "$service" )
++    done; } < <(cmd networksetup -listallnetworkservices)
++    for name in "${ACTIVE_DNS_SERVICES[@]}"; do
++        for service in "${available[@]}"; do
++            [[ $name == "$service" ]] && matched=1
++        done
++    done
++    [[ $matched -eq 1 ]] || ACTIVE_DNS_SERVICES=( )
++    if [[ ${#ACTIVE_DNS_SERVICES[@]} -eq 0 ]]; then
++        echo "[+] Active DNS service lookup unavailable; using configured services" >&2
++    else
++        echo "[+] Selecting ${#ACTIVE_DNS_SERVICES[@]} active network service(s) for DNS" >&2
++    fi
++}
++
++service_active_for_dns() {
++    local service
++    # Preserve upstream behavior if the dynamic store has no usable selection.
++    [[ ${#ACTIVE_DNS_SERVICES[@]} -gt 0 ]] || return 0
++    for service in "${ACTIVE_DNS_SERVICES[@]}"; do
++        [[ $service == "$1" ]] && return 0
++    done
++    return 1
++}
++
+ collect_new_service_dns() {
++	collect_active_dns_services
+ 	local service get_response dns search i found found_services=( ) keep_names=( ) keep_dns=( ) keep_search=( )
+ 	{ read -r _ && while read -r service; do
+ 		[[ $service == "*"* ]] && service="${service:1}"
+ 		found_services+=( "$service" )
++		service_active_for_dns "$service" || continue
+ 		service_known "$service" && continue
+ 		get_response="$(cmd networksetup -getdnsservers "$service")"
+ 		[[ $get_response == *" "* ]] && get_response="Empty"
+@@ -317,6 +371,7 @@
+ 	local i service response
+ 	for i in "${!SERVICE_NAMES[@]}"; do
+ 		service="${SERVICE_NAMES[i]}"
++		service_active_for_dns "$service" || continue
+ 		while read -r response; do
+ 			[[ $response == *Error* ]] && echo "$response" >&2
+ 		done < <(

@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("showRawOutput")     var showRawOutput    = false
     @AppStorage("hideDockIcon")      var hideDockIcon     = false
     @AppStorage("launchInBackground") var launchInBackground = false
+    @AppStorage("monochromeMenuBarIcon") var monochromeMenuBarIcon = false
 
     @State private var showingResetConfirm = false
     @State private var isRedetecting = false
@@ -265,6 +266,19 @@ struct SettingsView: View {
                     .onChange(of: hideDockIcon) { _, hidden in
                         NSApp.setActivationPolicy(hidden ? .accessory : .regular)
                     }
+
+                    Divider()
+
+                    Toggle(isOn: $monochromeMenuBarIcon) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Monochrome Menu Bar Icon")
+                                .font(.body)
+                            Text("Use a black or white icon that matches the menu bar appearance. Connection status is shown by the icon shape.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
                 }
 
                 // MARK: Updates
@@ -438,6 +452,7 @@ struct SettingsView: View {
             showRawOutput = false
             hideDockIcon = false
             launchInBackground = false
+            monochromeMenuBarIcon = false
             NSApp.setActivationPolicy(.regular)
         }
     }
