@@ -57,6 +57,7 @@ private let tunnelRelativeDateFormatter: RelativeDateTimeFormatter = {
 
 struct TunnelDetailView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
+    @EnvironmentObject var dashboardNavigation: DashboardNavigation
     let tunnel: Tunnel
     @State private var showingEditor = false
     @State private var showingDeleteConfirm = false
@@ -858,6 +859,19 @@ struct TunnelDetailView: View {
                     Label("Edit Config", systemImage: "pencil")
                 }
                 .buttonStyle(.bordered)
+
+                Button {
+                    do {
+                        let copy = try tunnelManager.duplicateTunnel(live)
+                        dashboardNavigation.requestTunnel(copy.id)
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                } label: {
+                    Label("Duplicate", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .help("Create a disconnected copy of this tunnel")
 
                 Button {
                     makeShared()

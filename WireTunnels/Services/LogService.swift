@@ -26,7 +26,7 @@ final class LogService: ObservableObject {
     private let defaults: UserDefaults
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return f
     }()
 
@@ -56,6 +56,32 @@ final class LogService: ObservableObject {
         log(message, level: level)
     }
 
+    func timed<T>(_ step: String, action: () async throws -> T) async rethrows -> T {
+        let started = ProcessInfo.processInfo.systemUptime
+        info("\(step) started")
+        do {
+            let result = try await action()
+            info("\(step) completed in \(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started))s")
+            return result
+        } catch {
+            self.error("\(step) failed after \(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started))s: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    private static func redacted(_ message: String) -> String {
+        var message = message.replacingOccurrences(
+            of: "(?im)(privatekey|presharedkey)\\s*=\\s*[^\\s]+", with: "$1 = (hidden)", options: .regularExpression
+        )
+        message = message.replacingOccurrences(
+            of: "(?im)^.*Key is not the correct length or format.*$",
+            with: "WireGuard key is not the correct length or format (value hidden)", options: .regularExpression
+        )
+        return message.replacingOccurrences(
+            of: "(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])", with: "(hidden)", options: .regularExpression
+        )
+    }
+
     func clearLog() {
         logEntries.removeAll()
         nextID = 0
@@ -64,7 +90,7 @@ final class LogService: ObservableObject {
 
     func log(_ message: String, level: LogLevel = .info) {
         let timestamp = dateFormatter.string(from: Date())
-        let line = "[\(timestamp)] [\(level.rawValue)] \(message)"
+        let line = "[\(timestamp)] [\(level.rawValue)] \(Self.redacted(message))"
         print(line)
         nextID += 1
         logEntries.append(LogEntry(id: nextID, line: line))

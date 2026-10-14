@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TunnelRowView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
+    @EnvironmentObject var dashboardNavigation: DashboardNavigation
     let tunnel: Tunnel
     @State private var isProcessing = false
 
@@ -163,5 +164,19 @@ struct TunnelRowView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .contextMenu {
+            if tunnel.scope == .personal {
+                Button {
+                    do {
+                        let copy = try tunnelManager.duplicateTunnel(tunnel)
+                        dashboardNavigation.requestTunnel(copy.id)
+                    } catch {
+                        tunnelManager.errorMessage = error.localizedDescription
+                    }
+                } label: {
+                    Label("Duplicate Tunnel", systemImage: "doc.on.doc")
+                }
+            }
+        }
     }
 }

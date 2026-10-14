@@ -8,32 +8,46 @@ final class StatusMonitorService: ObservableObject {
     private(set) var lastRawOutput = ""
     private(set) var lastErrorDescription: String?
 
-    private let getWgShowOutput: @MainActor () async throws -> String
+    private let getSnapshot: @MainActor () async throws -> WireGuardStatusSnapshot
 
     init(commandService: WireGuardCommandService) {
-        self.getWgShowOutput = { [weak commandService] in
+        self.getSnapshot = { [weak commandService] in
             guard let commandService else {
                 throw RefreshError.commandServiceUnavailable
             }
-            return try await commandService.getWgShowOutput()
+            return try await commandService.getRuntimeStatusSnapshot()
         }
     }
 
-    init(getWgShowOutput: @escaping @MainActor () async throws -> String) {
-        self.getWgShowOutput = getWgShowOutput
+    init(
+        getWgShowOutput: @escaping @MainActor () async throws -> String,
+        getRuntimeConfigPaths: @escaping @MainActor () async throws -> [String: String] = { [:] }
+    ) {
+        self.getSnapshot = {
+            let output = try await getWgShowOutput()
+            let configPaths = try await getRuntimeConfigPaths()
+            return WireGuardStatusSnapshot(output: output, configPaths: configPaths)
+        }
     }
 
     @discardableResult
     func refresh() async -> Bool {
         let output: String
+        let configPaths: [String: String]
         do {
-            output = try await getWgShowOutput()
+            let snapshot = try await getSnapshot()
+            output = snapshot.output
+            configPaths = snapshot.configPaths
         } catch {
             lastErrorDescription = error.localizedDescription
             return false
         }
 
-        let parsed = parse(dumpOutput: output)
+        let parsed = parse(dumpOutput: output).map { status in
+            var status = status
+            status.runtimeConfigPath = configPaths[status.interfaceName]
+            return status
+        }
         lastErrorDescription = nil
         lastRawOutput = output
         statusMap = Dictionary(uniqueKeysWithValues: parsed.map { ($0.interfaceName, $0) })

@@ -1,0 +1,2 @@
+# Unified patches contain context-prefix spaces before tabs and blank lines.
+*.patch whitespace=-trailing-space,-space-before-tab
