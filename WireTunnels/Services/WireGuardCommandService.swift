@@ -30,7 +30,7 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.6"
-    nonisolated static let expectedHelperProtocolRevision = "split-dns-v1"
+    nonisolated static let expectedHelperProtocolRevision = "managed-config-read-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
@@ -506,6 +506,19 @@ final class WireGuardCommandService {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode([Tunnel].self, from: data)
+    }
+
+    func readManagedConfig(id: UUID) async throws -> Data {
+        let authorization = try adminAuthorizationToken()
+        return try await performHelperOperation(timeoutDescription: "Reading managed tunnel configuration") { helper, complete in
+            helper.readManagedConfig(id: id.uuidString, authorization: authorization) { data, errorMessage in
+                if let data {
+                    complete(.success(data))
+                } else {
+                    complete(.failure(CommandError.managedTunnelFailed(errorMessage ?? "Unable to read tunnel configuration")))
+                }
+            }
+        }
     }
 
     func installManagedTunnel(name: String, contents: Data) async throws {

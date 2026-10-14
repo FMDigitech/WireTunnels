@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.6"
-private let helperProtocolRevisionValue = "split-dns-v1"
+private let helperProtocolRevisionValue = "managed-config-read-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -942,6 +942,24 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             reply(try encoder.encode(records), nil)
+        } catch {
+            reply(nil, error.localizedDescription)
+        }
+    }
+
+    func readManagedConfig(id: String, authorization: Data, reply: @escaping (Data?, String?) -> Void) {
+        do {
+            try validateAdminAuthorization(authorization)
+            try ensureManagedStore()
+            guard let uuid = UUID(uuidString: id),
+                  let record = try loadManagedRecords().first(where: { $0.id == uuid }) else {
+                throw HelperError.managedTunnelNotFound
+            }
+            let url = URL(fileURLWithPath: record.configPath)
+            try validateManagedConfigFile(url)
+            let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard contents.count <= maximumConfigSize else { throw HelperError.invalidConfig }
+            reply(contents, nil)
         } catch {
             reply(nil, error.localizedDescription)
         }

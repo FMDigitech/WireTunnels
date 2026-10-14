@@ -1278,6 +1278,7 @@ private struct ConfigEditorSheetView: View {
     // Advanced editor
     @State private var advancedContent: String = ""
 
+    @StateObject private var loadingState = TunnelConfigLoadingState()
     @State private var isSaving = false
     @State private var error: String? = nil
 
@@ -1300,6 +1301,7 @@ private struct ConfigEditorSheetView: View {
     }
 
     private var canSave: Bool {
+        guard loadingState.canEdit else { return false }
         let name = tunnelName.trimmingCharacters(in: .whitespacesAndNewlines)
         if selectedTab == 0 {
             return !name.isEmpty && !privateKey.isEmpty && !address.isEmpty
@@ -1329,7 +1331,18 @@ private struct ConfigEditorSheetView: View {
 
             Divider()
 
-            if selectedTab == 0 {
+            if loadingState.isLoading {
+                ProgressView("Loading configuration...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError = loadingState.error {
+                VStack(spacing: 12) {
+                    Text("Unable to load configuration").font(.headline)
+                    Text(loadError).foregroundStyle(.secondary)
+                    Button("Retry") { Task { await loadFields() } }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selectedTab == 0 {
                 basicFormView
             } else {
                 advancedEditorView
@@ -1350,7 +1363,7 @@ private struct ConfigEditorSheetView: View {
             .padding()
         }
         .frame(width: 560, height: 600)
-        .onAppear { loadFields() }
+        .task { await loadFields() }
         .alert("Save Error", isPresented: .init(
             get: { error != nil },
             set: { if !$0 { error = nil } }
@@ -1439,9 +1452,15 @@ private struct ConfigEditorSheetView: View {
         }
     }
 
-    private func loadFields() {
+    private func loadFields() async {
         tunnelName = tunnel.name
-        advancedContent = (try? String(contentsOfFile: tunnel.configPath, encoding: .utf8)) ?? ""
+        await loadingState.load(
+            configURL: URL(fileURLWithPath: tunnel.configPath),
+            managedTunnelID: tunnel.scope == .managed ? tunnel.id : nil,
+            readManagedConfig: { try await tunnelManager.readManagedConfig(id: $0) }
+        )
+        guard let contents = loadingState.contents else { return }
+        advancedContent = contents
         let parsed = WireGuardConfigParser().parse(string: advancedContent)
         privateKey = parsed.privateKey ?? ""
         address = parsed.address.joined(separator: ", ")
@@ -1454,6 +1473,7 @@ private struct ConfigEditorSheetView: View {
     }
 
     private func save() {
+        guard canSave, !isSaving else { return }
         let sanitizedName = ConfigStorageService.sanitize(name: tunnelName)
         isSaving = true
         Task {

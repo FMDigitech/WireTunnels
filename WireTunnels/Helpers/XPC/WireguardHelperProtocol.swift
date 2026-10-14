@@ -7,6 +7,7 @@ import Foundation
     func generateKeyPair(reply: @escaping (String?, String?, String?) -> Void)
     func stageConfig(named name: String, contents: Data, reply: @escaping (Bool, String?) -> Void)
     func listManagedTunnels(reply: @escaping (Data?, String?) -> Void)
+    func readManagedConfig(id: String, authorization: Data, reply: @escaping (Data?, String?) -> Void)
     func installManagedTunnel(named name: String, contents: Data, authorization: Data, reply: @escaping (Bool, String?) -> Void)
     func updateManagedTunnel(id: String, name: String, contents: Data?, policy: Data, autoConnectRule: Data, authorization: Data, reply: @escaping (Bool, String?) -> Void)
     func deleteManagedTunnel(id: String, authorization: Data, reply: @escaping (Bool, String?) -> Void)

@@ -720,6 +720,13 @@ final class TunnelManager: ObservableObject {
         log.info("Created tunnel: \(storedName)")
     }
 
+    func readManagedConfig(id: UUID) async throws -> Data {
+        guard currentUserIsAdministrator else {
+            throw CommandError.managedTunnelFailed("Only an administrator can edit a shared tunnel.")
+        }
+        return try await commandService.readManagedConfig(id: id)
+    }
+
     func updateTunnel(_ tunnel: Tunnel, name: String, configContent: String) async throws {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
         let liveTunnel = tunnels[index]
