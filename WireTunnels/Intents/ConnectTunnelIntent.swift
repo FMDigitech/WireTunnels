@@ -15,7 +15,14 @@ struct ConnectTunnelIntent: AppIntent {
         guard let live = tunnelManager.tunnels.first(where: { $0.id == tunnel.id }) else {
             return .result()
         }
+        guard tunnelManager.canConnectTunnels else {
+            throw ConnectionUnavailableError(errorDescription: tunnelManager.connectionUnavailableReason)
+        }
         await tunnelManager.connectTunnel(live)
         return .result()
     }
+}
+
+private struct ConnectionUnavailableError: LocalizedError {
+    let errorDescription: String?
 }

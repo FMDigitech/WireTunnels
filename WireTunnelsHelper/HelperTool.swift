@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.6"
-private let helperProtocolRevisionValue = "split-dns-v1"
+private let helperProtocolRevisionValue = "quit-dns-recovery-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -583,6 +583,40 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             reply(Self.redactingPrivateKeys(in: result.stdout), nil)
         } else {
             reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+        }
+    }
+
+    func runtimeStatusSnapshot(reply: @escaping (Data?, String?) -> Void) {
+        do {
+            let directory = URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true)
+            let paths = try RuntimeConfigLocator.configPaths(
+                in: directory,
+                resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
+            )
+            struct Snapshot: Encodable {
+                let output: String
+                let configPaths: [String: String]
+            }
+            let wg = systemBinDir.appendingPathComponent("wg")
+            if !fileManager.isExecutableFile(atPath: wg.path) {
+                // Allow a fresh installation to quit without tools. A surviving
+                // userspace socket requires real status confirmation instead.
+                guard try !RuntimeConfigLocator.hasUserspaceSockets(in: directory) else {
+                    reply(nil, "Install the WireGuard tools to confirm and stop existing tunnels before quitting.")
+                    return
+                }
+                reply(try JSONEncoder().encode(Snapshot(output: "", configPaths: [:])), nil)
+                return
+            }
+            let result = runCommand(executable: wg, arguments: ["show", "all", "dump"])
+            guard result.exitCode == 0 else {
+                reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+                return
+            }
+            let snapshot = Snapshot(output: Self.redactingPrivateKeys(in: result.stdout), configPaths: paths)
+            reply(try JSONEncoder().encode(snapshot), nil)
+        } catch {
+            reply(nil, "Unable to resolve active tunnel configurations: \(error.localizedDescription)")
         }
     }
 
@@ -1689,6 +1723,46 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             .ownerAccountID: 0,
             .groupOwnerAccountID: 0
         ], ofItemAtPath: url.path)
+    }
+
+    func recoverDNSState(reply: @escaping (Bool, String?) -> Void) {
+        let journal = systemRoot.appendingPathComponent("dns-state", isDirectory: true)
+        guard fileManager.fileExists(atPath: journal.path) else {
+            reply(true, nil)
+            return
+        }
+        guard let executable = Bundle.main.executableURL else {
+            reply(false, "DNS recovery helper is unavailable")
+            return
+        }
+        // The DNS journal and root-only CLI are supplied by the DNS recovery change.
+        // Never report success if its CLI is absent or its journal cannot be restored.
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["--dns-recover"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let deadline = ProcessInfo.processInfo.systemUptime + 15
+            while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning {
+                process.terminate()
+                let grace = ProcessInfo.processInfo.systemUptime + 1
+                while process.isRunning && ProcessInfo.processInfo.systemUptime < grace {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                reply(false, "DNS cleanup timed out. Retry quit to restore it.")
+                return
+            }
+            reply(process.terminationStatus == 0,
+                  process.terminationStatus == 0 ? nil : "DNS cleanup remains pending. Retry quit to restore it.")
+        } catch {
+            reply(false, "DNS recovery helper could not start")
+        }
     }
 
     private func wireGuardEnvironment() -> [String: String] {

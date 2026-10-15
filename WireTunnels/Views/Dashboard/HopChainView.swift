@@ -87,6 +87,8 @@ struct HopChainView: View {
                     toggle(chain)
                 }
                 .buttonStyle(.bordered)
+                .disabled(tunnelManager.isShuttingDown || (!active && !tunnelManager.canConnectTunnels))
+                .help(active ? "Disconnect this chain" : (tunnelManager.connectionUnavailableReason ?? "Connect this chain"))
             }
 
             Button {
@@ -103,6 +105,8 @@ struct HopChainView: View {
     }
 
     private func toggle(_ chain: HopChain) {
+        guard !tunnelManager.isShuttingDown,
+              isActive(chain) || tunnelManager.canConnectTunnels else { return }
         busyChainID = chain.id
         Task {
             if isActive(chain) {

@@ -86,6 +86,7 @@ struct MenuBarView: View {
                     TunnelMenuRow(
                         tunnel: tunnel,
                         isActive: false,
+                        canConnect: tunnelManager.canConnectTunnels,
                         detailAction: { openDashboard(tunnelID: tunnel.id) }
                     ) {
                         Task { await tunnelManager.connectTunnel(tunnel) }
@@ -113,6 +114,8 @@ struct MenuBarView: View {
                 MenuActionButton(label: "Start Favorites", systemImage: "star.fill") {
                     Task { await tunnelManager.startAllFavorites() }
                 }
+                .disabled(!tunnelManager.canConnectTunnels)
+                .help(tunnelManager.connectionUnavailableReason ?? "Start favorite tunnels")
             }
 
             if tunnelManager.hasActiveTunnels {
@@ -238,6 +241,7 @@ private struct SectionHeader: View {
 private struct TunnelMenuRow: View {
     let tunnel: Tunnel
     let isActive: Bool
+    var canConnect = true
     let detailAction: () -> Void
     let action: () -> Void
 
@@ -276,6 +280,7 @@ private struct TunnelMenuRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(!isActive && !canConnect)
                 .accessibilityLabel("Connection for \(tunnel.name)")
             }
 

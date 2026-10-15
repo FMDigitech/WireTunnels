@@ -30,7 +30,7 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.6"
-    nonisolated static let expectedHelperProtocolRevision = "split-dns-v1"
+    nonisolated static let expectedHelperProtocolRevision = "quit-dns-recovery-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
@@ -200,6 +200,7 @@ final class WireGuardCommandService {
 
     private func performHelperOperation<T>(
         timeoutDescription: String,
+        timeoutNanoseconds: UInt64 = WireGuardCommandService.operationTimeoutNanoseconds,
         invoke: @escaping (
             WireguardHelperProtocol,
             @escaping (Result<T, Error>) -> Void
@@ -215,7 +216,7 @@ final class WireGuardCommandService {
             }
 
             let timeoutTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: Self.operationTimeoutNanoseconds)
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 guard !Task.isCancelled else { return }
                 self?.invalidateConnection()
                 resume(.failure(CommandError.operationTimedOut(timeoutDescription)))
@@ -362,7 +363,7 @@ final class WireGuardCommandService {
 
     func startTunnel(configPath: String) async throws {
         let name = URL(fileURLWithPath: configPath).lastPathComponent
-        return try await performHelperOperation(timeoutDescription: "Starting tunnel") { helper, complete in
+        return try await performHelperOperation(timeoutDescription: "Starting tunnel", timeoutNanoseconds: 75_000_000_000) { helper, complete in
             helper.startTunnel(named: name) { success, errorMessage in
                 complete(success
                     ? .success(())
@@ -373,11 +374,19 @@ final class WireGuardCommandService {
 
     func stopTunnel(configPath: String) async throws {
         let name = URL(fileURLWithPath: configPath).lastPathComponent
-        return try await performHelperOperation(timeoutDescription: "Stopping tunnel") { helper, complete in
+        return try await performHelperOperation(timeoutDescription: "Stopping tunnel", timeoutNanoseconds: 75_000_000_000) { helper, complete in
             helper.stopTunnel(named: name) { success, errorMessage in
                 complete(success
                     ? .success(())
                     : .failure(CommandError.tunnelStopFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
+    func recoverDNSState() async throws {
+        try await performHelperOperation(timeoutDescription: "Restoring tunnel DNS", timeoutNanoseconds: 20_000_000_000) { helper, complete in
+            helper.recoverDNSState { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.statusFailed(errorMessage ?? "DNS recovery failed")))
             }
         }
     }
@@ -419,6 +428,20 @@ final class WireGuardCommandService {
             }
         }
     }
+
+    func getRuntimeStatusSnapshot() async throws -> WireGuardStatusSnapshot {
+        let data: Data = try await performHelperOperation(timeoutDescription: "Refreshing tunnel status") { helper, complete in
+            helper.runtimeStatusSnapshot { data, errorMessage in
+                if let data {
+                    complete(.success(data))
+                } else {
+                    complete(.failure(CommandError.statusFailed(errorMessage ?? "Unknown")))
+                }
+            }
+        }
+        return try JSONDecoder().decode(WireGuardStatusSnapshot.self, from: data)
+    }
+
 
     func getWgShowOutput() async throws -> String {
         try await performHelperOperation(timeoutDescription: "Refreshing tunnel status") { helper, complete in

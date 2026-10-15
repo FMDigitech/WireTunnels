@@ -9,7 +9,14 @@ struct WireGuardEnvironment: Equatable {
     var runtimeStatus: WireGuardRuntimeStatus?
 
     var isReady: Bool {
-        helperInstalled && binariesInstalled && wgPath != nil && wgQuickPath != nil
+        guard helperInstalled, binariesInstalled,
+              let wgPath, let wgQuickPath, let wireguardGoPath,
+              let runtimeStatus, runtimeStatus.location == .installed, runtimeStatus.isValid else {
+            return false
+        }
+        return [wgPath, wgQuickPath, wireguardGoPath].allSatisfy {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
     }
 
     init() {

@@ -275,7 +275,8 @@ struct NewTunnelView: View {
                 save(andConnect: true)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canSave || isSaving || isConnecting)
+            .disabled(!canSave || isSaving || isConnecting || !tunnelManager.canConnectTunnels)
+            .help(tunnelManager.connectionUnavailableReason ?? "Save the tunnel and connect")
             .keyboardShortcut(.defaultAction)
 
             if isSaving || isConnecting {

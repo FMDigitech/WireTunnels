@@ -52,6 +52,8 @@ struct TunnelRowView: View {
 
     private var connectionDisabled: Bool {
         isProcessing
+            || tunnelManager.isShuttingDown
+            || (!tunnel.isActive && !tunnelManager.canConnectTunnels)
             || (tunnel.scope == .managed && tunnel.isActive && tunnel.managedPolicy?.usersCanDisconnect == false)
             || (tunnel.scope == .managed && !tunnel.isActive && tunnel.managedPolicy?.usersCanConnect == false)
     }
@@ -157,6 +159,7 @@ struct TunnelRowView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .disabled(connectionDisabled)
+                .help(tunnel.isActive ? "Disconnect \(tunnel.name)" : (tunnelManager.connectionUnavailableReason ?? "Connect \(tunnel.name)"))
                 .controlSize(.small)
                 .accessibilityLabel("Connection for \(tunnel.name)")
             }
