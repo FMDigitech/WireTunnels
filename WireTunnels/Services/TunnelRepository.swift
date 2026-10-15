@@ -1,33 +1,19 @@
 import Foundation
 
 final class TunnelRepository {
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    private let store: RecoverableJSONStore<[Tunnel]>
 
-    init() {
-        encoder.outputFormatting = .prettyPrinted
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
-        createDirectoriesIfNeeded()
+    var recoveryWarning: String? { store.recoveryWarning }
+
+    init(file: URL = AppPaths.metadataFile) {
+        store = RecoverableJSONStore(file: file, emptyValue: [])
     }
 
-    func load() -> [Tunnel] {
-        guard FileManager.default.fileExists(atPath: AppPaths.metadataFile.path),
-              let data = try? Data(contentsOf: AppPaths.metadataFile),
-              let tunnels = try? decoder.decode([Tunnel].self, from: data) else {
-            return []
-        }
-        return tunnels
+    func load() throws -> [Tunnel] {
+        try store.load()
     }
 
-    func save(_ tunnels: [Tunnel]) {
-        guard let data = try? encoder.encode(tunnels) else { return }
-        try? data.write(to: AppPaths.metadataFile, options: .atomic)
-    }
-
-    private func createDirectoriesIfNeeded() {
-        let dir = AppPaths.metadataFile.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: AppPaths.userConfigDir, withIntermediateDirectories: true)
+    func save(_ tunnels: [Tunnel]) throws {
+        try store.save(tunnels)
     }
 }

@@ -110,10 +110,20 @@ final class TunnelManager: ObservableObject {
         log.info("App initializing")
 
         // Load persisted personal tunnels first
-        tunnels = repository.load().filter { $0.scope == .personal }
+        do {
+            tunnels = try repository.load().filter { $0.scope == .personal }
+            if let warning = repository.recoveryWarning { reportStorageIssue(warning) }
+        } catch {
+            reportStorageIssue("Unable to load saved tunnels: \(error.localizedDescription)")
+        }
         log.info("Loaded \(tunnels.count) tunnels from storage")
 
-        hopChains = hopChainRepository.load()
+        do {
+            hopChains = try hopChainRepository.load()
+            if let warning = hopChainRepository.recoveryWarning { reportStorageIssue(warning) }
+        } catch {
+            reportStorageIssue("Unable to load saved multi-hop chains: \(error.localizedDescription)")
+        }
 
         // Backfill publicKey / address for tunnels saved before these fields were populated
         var needsSave = false
@@ -135,6 +145,17 @@ final class TunnelManager: ObservableObject {
             }
         }
         if needsSave { savePersonalTunnelsOnly() }
+
+        // Helper setup can update its own error message. Preserve a storage
+        // warning until initialization finishes so recovery is visible to users.
+        let startupStorageIssue = errorMessage
+        defer {
+            if let startupStorageIssue {
+                let messages = [errorMessage, startupStorageIssue].compactMap { $0 }
+                errorMessage = Array(NSOrderedSet(array: messages))
+                    .compactMap { $0 as? String }.joined(separator: "\n")
+            }
+        }
 
         // Detect environment
         setupStatus = "Detecting environment…"
@@ -660,8 +681,7 @@ final class TunnelManager: ObservableObject {
         tunnel.publicKey = parsed.peerPublicKey
         tunnel.localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
 
-        tunnels.append(tunnel)
-        savePersonalTunnelsOnly()
+        try appendPersonalTunnel(tunnel)
         updateWarnings()
         log.info("Imported tunnel: \(name)")
     }
@@ -691,9 +711,16 @@ final class TunnelManager: ObservableObject {
         let configURL = URL(fileURLWithPath: liveTunnel.configPath)
         let contents = try Data(contentsOf: configURL, options: .mappedIfSafe)
         try await commandService.installManagedTunnel(name: liveTunnel.name, contents: contents)
-        tunnels.removeAll { $0.id == liveTunnel.id }
+        let updatedTunnels = tunnels.filter { $0.id != liveTunnel.id }
+        do { try persistPersonalTunnels(updatedTunnels) }
+        catch {
+            // The helper has already exposed the shared copy to other users.
+            // Preserve both copies rather than deleting a possibly live shared tunnel.
+            await loadManagedTunnels()
+            throw CommandError.managedTunnelFailed("The shared copy was created, but the personal tunnel could not be removed from saved metadata. Both copies were kept: \(error.localizedDescription)")
+        }
+        tunnels = updatedTunnels
         try? configStorage.deleteConfig(at: configURL)
-        savePersonalTunnelsOnly()
         await loadManagedTunnels()
         updateWarnings()
         log.info("Made tunnel shared for all users: \(liveTunnel.name)")
@@ -715,8 +742,7 @@ final class TunnelManager: ObservableObject {
         tunnel.publicKey = parsed.peerPublicKey
         tunnel.localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
 
-        tunnels.append(tunnel)
-        savePersonalTunnelsOnly()
+        try appendPersonalTunnel(tunnel)
         log.info("Created tunnel: \(storedName)")
     }
 
@@ -746,25 +772,40 @@ final class TunnelManager: ObservableObject {
         }
 
         let isSameConfig = name == liveTunnel.name
+        let oldURL = URL(fileURLWithPath: liveTunnel.configPath)
+        let oldContents = try configStorage.readConfig(at: oldURL)
         let savedURL = try configStorage.saveConfig(
             name: name,
             content: configContent,
             replacingExisting: isSameConfig
         )
-        // Remove old file if renamed
-        if savedURL.path != liveTunnel.configPath {
-            try? configStorage.deleteConfig(at: URL(fileURLWithPath: liveTunnel.configPath))
+        var updatedTunnels = tunnels
+        updatedTunnels[index].name = name
+        updatedTunnels[index].configPath = savedURL.path
+        updatedTunnels[index].address = parsed.address
+        updatedTunnels[index].allowedIPs = parsed.allowedIPs
+        updatedTunnels[index].dns = parsed.dns
+        updatedTunnels[index].endpoint = parsed.endpoint
+        updatedTunnels[index].publicKey = parsed.peerPublicKey
+        updatedTunnels[index].localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
+        updatedTunnels[index].updatedAt = Date()
+        do {
+            try persistPersonalTunnels(updatedTunnels)
+        } catch {
+            if savedURL == oldURL {
+                do {
+                    try oldContents.write(to: oldURL, atomically: true, encoding: .utf8)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: oldURL.path)
+                } catch {
+                    reportStorageIssue("Unable to restore the original config after a metadata save failure: \(error.localizedDescription)")
+                }
+            } else {
+                try? configStorage.deleteConfig(at: savedURL)
+            }
+            throw error
         }
-        tunnels[index].name = name
-        tunnels[index].configPath = savedURL.path
-        tunnels[index].address = parsed.address
-        tunnels[index].allowedIPs = parsed.allowedIPs
-        tunnels[index].dns = parsed.dns
-        tunnels[index].endpoint = parsed.endpoint
-        tunnels[index].publicKey = parsed.peerPublicKey
-        tunnels[index].localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
-        tunnels[index].updatedAt = Date()
-        savePersonalTunnelsOnly()
+        tunnels = updatedTunnels
+        if savedURL != oldURL { try? configStorage.deleteConfig(at: oldURL) }
         updateWarnings()
         log.info("Updated tunnel: \(name)")
     }
@@ -772,9 +813,14 @@ final class TunnelManager: ObservableObject {
     func deleteTunnel(_ tunnel: Tunnel) {
         guard let liveTunnel = tunnels.first(where: { $0.id == tunnel.id }) else { return }
         guard liveTunnel.scope == .personal else { return }
-        tunnels.removeAll { $0.id == tunnel.id }
+        let updatedTunnels = tunnels.filter { $0.id != tunnel.id }
+        do { try persistPersonalTunnels(updatedTunnels) }
+        catch {
+            reportStorageIssue("Unable to delete saved tunnel: \(error.localizedDescription)")
+            return
+        }
+        tunnels = updatedTunnels
         try? configStorage.deleteConfig(at: URL(fileURLWithPath: liveTunnel.configPath))
-        savePersonalTunnelsOnly()
         updateWarnings()
         log.info("Deleted tunnel: \(liveTunnel.name)")
     }
@@ -1212,14 +1258,23 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) {
-        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
-        guard tunnels[index].scope == .personal else { return }
-        tunnels[index].autoConnectRule = rule
-        tunnels[index].updatedAt = Date()
-        savePersonalTunnelsOnly()
+    @discardableResult
+    func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) -> Bool {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }),
+              tunnels[index].scope == .personal else { return false }
+        guard tunnels[index].autoConnectRule != rule else { return true }
+        var updated = tunnels
+        updated[index].autoConnectRule = rule
+        updated[index].updatedAt = Date()
+        do { try persistPersonalTunnels(updated) }
+        catch {
+            reportStorageIssue("Unable to save On-Demand settings: \(error.localizedDescription)")
+            return false
+        }
+        tunnels = updated
         log.info("Auto-connect rule updated for \(tunnels[index].name): enabled=\(rule.enabled)")
         Task { await handleNetworkChange() }
+        return true
     }
 
     /// Admin-only: pushes an on-demand rule to the shared store so it applies to every user of this managed tunnel.
@@ -1593,13 +1648,11 @@ final class TunnelManager: ObservableObject {
             errorMessage = "One of these tunnels is already part of another multi-hop chain."
             return
         }
-        hopChains.append(HopChain(hopTunnelID: hopTunnelID, exitTunnelID: exitTunnelID))
-        hopChainRepository.save(hopChains)
+        saveHopChains(hopChains + [HopChain(hopTunnelID: hopTunnelID, exitTunnelID: exitTunnelID)])
     }
 
     func removeHopChain(_ chain: HopChain) {
-        hopChains.removeAll { $0.id == chain.id }
-        hopChainRepository.save(hopChains)
+        saveHopChains(hopChains.filter { $0.id != chain.id })
     }
 
     /// Builds the host-route entry that steers `exitTunnel`'s own WireGuard traffic
@@ -1818,8 +1871,39 @@ final class TunnelManager: ObservableObject {
         return (installed, requiresApproval, version)
     }
 
+    private func reportStorageIssue(_ message: String) {
+        errorMessage = message
+        log.error(message)
+    }
+
+    private func persistPersonalTunnels(_ updated: [Tunnel]) throws {
+        try repository.save(updated.filter { $0.scope == .personal })
+        if let warning = repository.recoveryWarning { reportStorageIssue(warning) }
+    }
+
+    private func appendPersonalTunnel(_ tunnel: Tunnel) throws {
+        do {
+            try persistPersonalTunnels(tunnels + [tunnel])
+        } catch {
+            try? configStorage.deleteConfig(at: URL(fileURLWithPath: tunnel.configPath))
+            throw error
+        }
+        tunnels.append(tunnel)
+    }
+
     private func savePersonalTunnelsOnly() {
-        repository.save(tunnels.filter { $0.scope == .personal })
+        do { try persistPersonalTunnels(tunnels) }
+        catch { reportStorageIssue("Unable to save tunnel metadata: \(error.localizedDescription)") }
+    }
+
+    private func saveHopChains(_ updated: [HopChain]) {
+        do {
+            try hopChainRepository.save(updated)
+            hopChains = updated
+            if let warning = hopChainRepository.recoveryWarning { reportStorageIssue(warning) }
+        } catch {
+            reportStorageIssue("Unable to save multi-hop chains: \(error.localizedDescription)")
+        }
     }
 
     private func loadManagedTunnels() async {
