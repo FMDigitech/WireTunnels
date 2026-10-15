@@ -1,18 +1,28 @@
 import AppKit
 import Foundation
-import Network
 import CoreWLAN
 import CoreLocation
 import Combine
 import OSLog
+import SystemConfiguration
 #if canImport(Darwin)
 import Darwin
 #endif
+
+/// The dynamic store retains this context, while the service remains weak.
+private final class NetworkMonitorReference {
+    weak var service: NetworkMonitorService?
+
+    init(_ service: NetworkMonitorService) {
+        self.service = service
+    }
+}
 
 /// Monitors active network interfaces and drives auto-connect/disconnect logic.
 @MainActor
 final class NetworkMonitorService: NSObject, ObservableObject {
     @Published private(set) var isOnEthernet: Bool   = false
+    @Published private(set) var ethernetAddresses: [String] = []
     @Published private(set) var isOnWiFi: Bool       = false
     @Published private(set) var currentSSID: String? = nil
     // macOS only returns a real SSID from CoreWLAN once Location Services access
@@ -20,25 +30,26 @@ final class NetworkMonitorService: NSObject, ObservableObject {
     // On-Demand rules can never match even though "Any Wi-Fi" rules work fine.
     @Published private(set) var hasWiFiNamePermission: Bool = false
 
-    private let monitor = NWPathMonitor()
-    private let queue   = DispatchQueue(label: "com.fmdigitech.WireTunnels.netmon", qos: .utility)
+    private let readPhysicalNetwork: @MainActor () -> PhysicalNetworkSnapshot?
+    private let diagnostics: LogService
     private let log     = Logger(subsystem: "com.fmdigitech.WireTunnels", category: "NetworkMonitor")
     private let locationManager = CLLocationManager()
+    private var addressStore: SCDynamicStore?
 
     /// Called on every network path change (already dispatched to MainActor).
     var onNetworkChange: (() async -> Void)?
     /// Called when the system wakes from sleep (already dispatched to MainActor).
     var onSystemWake: (() async -> Void)?
-    /// Called when the primary physical interface keeps its name (no Wi-Fi/Ethernet
-    /// switch) but its own IPv4 address changes — e.g. a DHCP lease renewal. Distinct
+    /// Called when a connected physical interface keeps its name but its own
+    /// IPv4 address changes, such as a DHCP lease renewal. Distinct
     /// from `onNetworkChange`, which only drives On-Demand rule evaluation and does
     /// nothing for an already-active tunnel that isn't governed by a rule.
     var onLocalAddressChange: (() async -> Void)?
 
-    // Last-seen (interface name, IPv4 address) of the primary physical interface,
-    // used to tell a DHCP renewal (same interface, new address) apart from a real
-    // interface switch (handled separately via onNetworkChange/On-Demand rules).
-    private var lastPrimaryInterfaceFingerprint: (name: String, address: String)?
+    // Keep physical link and address snapshots to distinguish DHCP renewals from
+    // interface switches and ignore notifications caused by VPN routes or DNS.
+    private var lastAddressSnapshot: InterfaceAddressSnapshot?
+    private var lastPhysicalSnapshot: PhysicalNetworkSnapshot?
 
     // Tunnels connected by the auto-connect rule (not by the user)
     private var autoConnectedIDs: Set<UUID>  = []
@@ -46,41 +57,16 @@ final class NetworkMonitorService: NSObject, ObservableObject {
     // prevents immediate reconnect until the matching network is lost and rejoined.
     private var suppressedIDs: Set<UUID>     = []
 
-    override init() {
+    init(readPhysicalNetwork: @escaping @MainActor () -> PhysicalNetworkSnapshot? = PhysicalNetworkSnapshot.readSystem,
+         diagnostics: LogService? = nil) {
+        self.readPhysicalNetwork = readPhysicalNetwork
+        self.diagnostics = diagnostics ?? .shared
         super.init()
         locationManager.delegate = self
         updateWiFiNamePermission()
 
-        monitor.pathUpdateHandler = { [weak self] path in
-            let onWifi     = path.usesInterfaceType(.wifi)
-            let onEthernet = path.usesInterfaceType(.wiredEthernet)
-            let primaryInterfaceName = path.availableInterfaces.first {
-                (onWifi && $0.type == .wifi) || (onEthernet && $0.type == .wiredEthernet)
-            }?.name
-            let primaryAddress = primaryInterfaceName.flatMap { Self.ipv4Address(forInterface: $0) }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let ssid: String? = onWifi ? Self.fetchCurrentSSID() : nil
-                self.isOnWiFi     = onWifi
-                self.isOnEthernet = onEthernet
-                self.currentSSID  = ssid
-                self.log.info("Network change — wifi=\(onWifi) ethernet=\(onEthernet) ssid=\(ssid ?? "nil")")
-
-                let previous = self.lastPrimaryInterfaceFingerprint
-                if let name = primaryInterfaceName, let address = primaryAddress {
-                    self.lastPrimaryInterfaceFingerprint = (name, address)
-                    if let previous, previous.name == name, previous.address != address {
-                        self.log.info("Local IP changed on \(name): \(previous.address) -> \(address)")
-                        await self.onLocalAddressChange?()
-                    }
-                } else {
-                    self.lastPrimaryInterfaceFingerprint = nil
-                }
-
-                await self.onNetworkChange?()
-            }
-        }
-        monitor.start(queue: queue)
+        observeInterfaceChanges()
+        Task { @MainActor [weak self] in await self?.refreshNetworkState() }
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -91,14 +77,92 @@ final class NetworkMonitorService: NSObject, ObservableObject {
     }
 
     deinit {
-        monitor.cancel()
+        if let addressStore {
+            SCDynamicStoreSetDispatchQueue(addressStore, nil)
+        }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    /// Observe physical link, association and address changes. VPN routes and
+    /// tunnel DNS changes must not be interpreted as leaving the physical network.
+    private func observeInterfaceChanges() {
+        let reference = NetworkMonitorReference(self)
+        var context = SCDynamicStoreContext(
+            version: 0,
+            info: Unmanaged.passUnretained(reference).toOpaque(),
+            retain: { info in
+                return UnsafeRawPointer(Unmanaged<NetworkMonitorReference>.fromOpaque(info).retain().toOpaque())
+            },
+            release: { info in
+                Unmanaged<NetworkMonitorReference>.fromOpaque(info).release()
+            },
+            copyDescription: nil
+        )
+        guard let store = withExtendedLifetime(reference, {
+            SCDynamicStoreCreate(nil, "WireTunnels address monitor" as CFString,
+                { _, _, info in
+                    guard let info else { return }
+                    let reference = Unmanaged<NetworkMonitorReference>.fromOpaque(info).takeUnretainedValue()
+                    Task { @MainActor [weak service = reference.service] in
+                        guard let service else { return }
+                        await service.refreshNetworkState()
+                    }
+                }, &context)
+        }) else {
+            log.error("Could not create interface address observer")
+            return
+        }
+        let patterns = [kSCEntNetIPv4, kSCEntNetIPv6, kSCEntNetLink, kSCEntNetAirPort].map {
+            SCDynamicStoreKeyCreateNetworkInterfaceEntity(nil, kSCDynamicStoreDomainState,
+                                                         kSCCompAnyRegex, $0)
+        }
+        let keys = [kSCEntNetIPv4, kSCEntNetIPv6].map {
+            SCDynamicStoreKeyCreateNetworkGlobalEntity(nil, kSCDynamicStoreDomainState, $0)
+        }
+        guard SCDynamicStoreSetNotificationKeys(store, keys as CFArray, patterns as CFArray),
+              SCDynamicStoreSetDispatchQueue(store, .main)
+        else {
+            log.error("Could not start interface address observer")
+            return
+        }
+        addressStore = store
+    }
+
+    func refreshNetworkState() async {
+        guard let physical = readPhysicalNetwork() else {
+            log.error("Could not read physical network state; retaining the previous snapshot")
+            return
+        }
+        let snapshot = physical.addressSnapshot
+        let previous = lastAddressSnapshot
+        let localAddressChanged = physical.hasIPv4Renewal(after: lastPhysicalSnapshot)
+        let ssid = physical.isOnWiFi ? Self.fetchCurrentSSID() : nil
+        let linksChanged = physical.wifiInterfaces != lastPhysicalSnapshot?.wifiInterfaces
+            || physical.ethernetInterfaces != lastPhysicalSnapshot?.ethernetInterfaces
+        let ssidChanged = ssid != currentSSID
+
+        // Publish the whole physical state before either callback evaluates rules.
+        isOnWiFi = physical.isOnWiFi
+        isOnEthernet = physical.isOnEthernet
+        ethernetAddresses = physical.ethernetAddresses
+        currentSSID = ssid
+        lastAddressSnapshot = snapshot
+        lastPhysicalSnapshot = physical
+
+        guard linksChanged || ssidChanged || localAddressChanged || snapshot.requiresRuleEvaluation(after: previous) else { return }
+        diagnostics.info("Physical network change: wifi=\(physical.isOnWiFi), ethernet=\(physical.isOnEthernet)")
+        if localAddressChanged {
+            diagnostics.info("Physical interface IPv4 address changed")
+            await onLocalAddressChange?()
+        }
+        await onNetworkChange?()
     }
 
     @objc private func handleSystemWake() {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.log.info("System woke from sleep")
+            await self.refreshNetworkState()
             await self.onSystemWake?()
         }
     }
@@ -212,32 +276,6 @@ final class NetworkMonitorService: NSObject, ObservableObject {
         return String(lines[portIndex + 1][range.upperBound...]).trimmingCharacters(in: .whitespaces)
     }
 
-    /// The IPv4 address currently bound to a named interface (e.g. "en0"), or nil
-    /// if the interface has none. Used to notice DHCP lease renewals, which change
-    /// the interface's own address without triggering an interface/SSID switch.
-    private nonisolated static func ipv4Address(forInterface interfaceName: String) -> String? {
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else { return nil }
-        defer { freeifaddrs(ifaddrPtr) }
-
-        var pointer: UnsafeMutablePointer<ifaddrs>? = firstAddr
-        while let ifa = pointer {
-            defer { pointer = ifa.pointee.ifa_next }
-            guard let sockaddr = ifa.pointee.ifa_addr, sockaddr.pointee.sa_family == UInt8(AF_INET) else { continue }
-            guard String(cString: ifa.pointee.ifa_name) == interfaceName else { continue }
-
-            var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            let result = getnameinfo(
-                sockaddr, socklen_t(sockaddr.pointee.sa_len),
-                &hostBuffer, socklen_t(hostBuffer.count),
-                nil, 0, NI_NUMERICHOST
-            )
-            guard result == 0 else { continue }
-            return String(cString: hostBuffer)
-        }
-        return nil
-    }
-
     private nonisolated static func runNetworksetup(_ arguments: [String]) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
@@ -261,11 +299,8 @@ extension NetworkMonitorService: CLLocationManagerDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.updateWiFiNamePermission()
-            // Permission just changed — re-read the SSID immediately instead of
-            // waiting for the next network path event.
-            if self.isOnWiFi {
-                self.currentSSID = Self.fetchCurrentSSID()
-            }
+            // Permission can make a specific-SSID rule match immediately.
+            await self.refreshNetworkState()
         }
     }
 }

@@ -1212,14 +1212,19 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) {
-        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
-        guard tunnels[index].scope == .personal else { return }
-        tunnels[index].autoConnectRule = rule
-        tunnels[index].updatedAt = Date()
-        savePersonalTunnelsOnly()
+    @discardableResult
+    func updateAutoConnectRule(for tunnel: Tunnel, rule: AutoConnectRule) -> Bool {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }),
+              tunnels[index].scope == .personal else { return false }
+        guard tunnels[index].autoConnectRule != rule else { return true }
+        var updated = tunnels
+        updated[index].autoConnectRule = rule
+        updated[index].updatedAt = Date()
+        repository.save(updated.filter { $0.scope == .personal })
+        tunnels = updated
         log.info("Auto-connect rule updated for \(tunnels[index].name): enabled=\(rule.enabled)")
         Task { await handleNetworkChange() }
+        return true
     }
 
     /// Admin-only: pushes an on-demand rule to the shared store so it applies to every user of this managed tunnel.
