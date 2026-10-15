@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     @EnvironmentObject var dashboardNavigation: DashboardNavigation
     @Environment(\.openWindow) var openWindow
+    @Environment(\.openSettings) var openSettings
 
     private var activeTunnels: [Tunnel] {
         tunnelManager.tunnels.filter { $0.isActive }
@@ -48,6 +49,27 @@ struct MenuBarView: View {
 
             Divider()
                 .padding(.vertical, 2)
+
+            if let notice = MenuBarSetupNotice(
+                environment: tunnelManager.environment,
+                isInitialized: tunnelManager.isInitialized,
+                helperRequiresApproval: tunnelManager.helperRequiresApproval,
+                toolInstallRequired: tunnelManager.toolInstallRequired
+            ) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(notice.title, systemImage: "exclamationmark.triangle")
+                        .font(.callout.weight(.semibold))
+                    Text(notice.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if notice.showsSettingsButton {
+                        Button("Open Settings") { openSetupSettings() }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                Divider()
+            }
 
             // Connected section
             if !activeTunnels.isEmpty {
@@ -176,6 +198,11 @@ struct MenuBarView: View {
                 tunnelManager.errorMessage = nil
             }
         )
+    }
+
+    private func openSetupSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
     }
 
     private func openDashboard(tunnelID: UUID? = nil) {

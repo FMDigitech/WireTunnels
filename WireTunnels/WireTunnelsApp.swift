@@ -10,10 +10,6 @@ extension Notification.Name {
 private class AppDelegate: NSObject, NSApplicationDelegate {
     var tunnelManager: TunnelManager?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(UserDefaults.standard.bool(forKey: "hideDockIcon") ? .accessory : .regular)
-    }
-
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         // Clicking the Dock icon when all windows are closed re-opens the dashboard.
         if !hasVisibleWindows {
@@ -46,6 +42,10 @@ struct WireTunnelsApp: App {
 
     init() {
         AppMigration.migrateIfNeeded()
+        // Apply the Dock preference before SwiftUI creates the menu-bar item.
+        NSApplication.shared.setActivationPolicy(
+            UserDefaults.standard.bool(forKey: "hideDockIcon") ? .accessory : .regular
+        )
         let manager = TunnelManager()
         _tunnelManager = StateObject(wrappedValue: manager)
         _dashboardNavigation = StateObject(wrappedValue: DashboardNavigation())
