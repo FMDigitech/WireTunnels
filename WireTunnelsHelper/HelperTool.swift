@@ -329,65 +329,6 @@ private enum ResolverStore {
 }
 // END ResolverStore
 
-private enum ConfigName {
-    static func sanitize(_ name: String) -> String {
-        let rawName = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
-        let allowed = CharacterSet(
-            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_=+.-"
-        )
-        let sanitized = rawName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .unicodeScalars
-            .map { allowed.contains($0) ? Character($0) : "_" }
-            .reduce("") { $0 + String($1) }
-            .replacingOccurrences(of: "..", with: "__")
-        return String(sanitized.prefix(50))
-    }
-
-    /// Interface-safe file name (macOS limits interface names to 15 bytes). Must stay
-    /// identical to ConfigStorageService.fileBaseName so personal and shared tunnels agree.
-    static func fileBaseName(_ displayName: String) -> String {
-        guard displayName.utf8.count > 15 else { return displayName }
-        var hash: UInt32 = 2166136261
-        for byte in displayName.utf8 {
-            hash = (hash ^ UInt32(byte)) &* 16777619
-        }
-        let suffix = String(format: "%06x", hash & 0xFFFFFF)
-        return "\(displayName.prefix(15 - suffix.count - 1))-\(suffix)"
-    }
-
-    static func publicKey(fromPrivateKey privateKey: String) -> String? {
-        guard let raw = Data(base64Encoded: privateKey.trimmingCharacters(in: .whitespacesAndNewlines)),
-              raw.count == 32,
-              let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: raw) else { return nil }
-        return key.publicKey.rawRepresentation.base64EncodedString()
-    }
-
-    /// Removes `DNS =` from [Interface] so wg-quick doesn't set DNS system-wide.
-    static func strippingDNS(from contents: Data) -> Data {
-        guard let text = String(data: contents, encoding: .utf8) else { return contents }
-        var inInterface = false
-        let lines = text.components(separatedBy: "\n").filter { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("[") {
-                inInterface = trimmed.caseInsensitiveCompare("[Interface]") == .orderedSame
-                return true
-            }
-            guard inInterface else { return true }
-            let key = trimmed.split(separator: "=", maxSplits: 1).first?
-                .trimmingCharacters(in: .whitespaces) ?? ""
-            return key.caseInsensitiveCompare("DNS") != .orderedSame
-        }
-        return Data(lines.joined(separator: "\n").utf8)
-    }
-
-    static func nonEmptyList(_ value: String) -> [String] {
-        value.components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-    }
-}
-
 private struct ValidatedClient {
     let bundleURL: URL
     let user: ClientUser
@@ -957,8 +898,12 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             try validateAdminAuthorization(authorization)
             guard contents.count <= maximumConfigSize else { throw HelperError.invalidConfig }
             try validateConfigContents(contents)
-            let safeBaseName = ConfigName.sanitize(name)
-            guard let safeName = validatedConfigName("\(ConfigName.fileBaseName(safeBaseName)).conf") else {
+            let displayName = ConfigName.displayName(name)
+            guard !displayName.isEmpty,
+                  !displayName.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+                throw HelperError.invalidConfigName
+            }
+            guard let safeName = validatedConfigName("\(ConfigName.fileBaseName(displayName)).conf") else {
                 throw HelperError.invalidConfigName
             }
             try ensureManagedStore()
@@ -977,7 +922,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             let now = Date()
             records.append(ManagedTunnelRecord(
                 id: UUID(),
-                name: safeBaseName,
+                name: displayName,
                 configPath: configURL.path,
                 runtimeConfigPath: nil,
                 interfaceName: nil,
@@ -1031,8 +976,12 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                   decodedPolicy.splitDNSDomains.allSatisfy({ Self.isValidResolverDomain($0) }) else {
                 throw HelperError.invalidConfig
             }
-            let safeBaseName = ConfigName.sanitize(name)
-            guard let safeName = validatedConfigName("\(ConfigName.fileBaseName(safeBaseName)).conf") else {
+            let displayName = ConfigName.displayName(name)
+            guard !displayName.isEmpty,
+                  !displayName.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+                throw HelperError.invalidConfigName
+            }
+            guard let safeName = validatedConfigName("\(ConfigName.fileBaseName(displayName)).conf") else {
                 throw HelperError.invalidConfigName
             }
 
@@ -1066,7 +1015,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 try? fileManager.removeItem(at: oldConfigURL)
             }
 
-            records[index].name = safeBaseName
+            records[index].name = displayName
             records[index].configPath = newConfigURL.path
             records[index].autoConnectRule = decodedRule
             records[index].managedPolicy = decodedPolicy
@@ -1588,7 +1537,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
               }),
               name == URL(fileURLWithPath: name).lastPathComponent,
               !name.contains(".."),
-              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+              !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
             return nil
         }
         return name

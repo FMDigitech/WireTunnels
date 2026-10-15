@@ -289,19 +289,19 @@ struct NewTunnelView: View {
     // MARK: - Actions
 
     private func save(andConnect: Bool) {
-        let sanitizedName = ConfigStorageService.sanitize(name: tunnelName)
+        let displayName = ConfigStorageService.displayName(for: tunnelName)
 
         isSaving = true
         Task {
             do {
                 try await tunnelManager.createTunnel(
-                    name: sanitizedName,
+                    name: displayName,
                     configContent: effectiveConfig
                 )
 
                 if andConnect {
                     isConnecting = true
-                    if let tunnel = tunnelManager.tunnels.first(where: { $0.name == sanitizedName }) {
+                    if let tunnel = tunnelManager.tunnels.first(where: { $0.name == displayName }) {
                         await tunnelManager.connectTunnel(tunnel)
                     }
                     isConnecting = false

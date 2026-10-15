@@ -9,50 +9,52 @@ final class ConfigStorageService {
         try? fm.createDirectory(at: configDirectory, withIntermediateDirectories: true)
     }
 
-    /// Import a .conf file — copy to userConfigDir, sanitizing filename for wg-quick compatibility
+    /// Import a .conf file using an interface-safe filename.
     func importConfig(from sourceURL: URL) throws -> URL {
         let rawName = sourceURL.deletingPathExtension().lastPathComponent
-        let sanitizedName = ConfigStorageService.sanitize(name: rawName)
-        let destURL = try destinationURL(for: ConfigStorageService.fileBaseName(for: sanitizedName))
+        let name = ConfigStorageService.displayName(for: rawName)
+        try validateDisplayName(name)
+        let destURL = try destinationURL(for: ConfigStorageService.fileBaseName(for: name))
         guard !fm.fileExists(atPath: destURL.path) else {
-            throw ConfigStorageError.alreadyExists(sanitizedName)
+            throw ConfigStorageError.alreadyExists(name)
         }
         try fm.copyItem(at: sourceURL, to: destURL)
         try secureConfigPermissions(at: destURL)
         return destURL
     }
 
-    /// Sanitize a tunnel name for use as a wg-quick interface name.
-    /// Spaces and non-alphanumeric chars (except - and _) become underscores.
-    static func sanitize(name: String) -> String {
-        let allowed = CharacterSet(
-            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_=+.-"
-        )
-        let sanitized = name
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .unicodeScalars
-            .map { allowed.contains($0) ? Character($0) : "_" }
-            .reduce("") { $0 + String($1) }
-        let traversalSafe = sanitized.replacingOccurrences(of: "..", with: "__")
-        return String(traversalSafe.prefix(50))
+    /// Keep the user's display name separate from the restricted config filename.
+    static func displayName(for name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(50))
     }
 
-    /// wg-quick derives the interface name from the config filename, and macOS
-    /// limits interface names to 15 bytes. The display name (up to 50 characters)
-    /// is kept on the Tunnel; the file gets this short, deterministic name instead.
-    /// Names that already fit are used unchanged.
+    /// wg-quick accepts only 1-15 ASCII interface-name characters in filenames.
+    /// Preserve existing safe aliases; hash names that need conversion or shortening.
     static let maxInterfaceNameLength = 15
 
     static func fileBaseName(for displayName: String) -> String {
-        let base = displayName.hasSuffix(".conf") ? String(displayName.dropLast(".conf".count)) : displayName
-        guard base.utf8.count > maxInterfaceNameLength else { return base }
+        // Swift compares canonically equivalent display names as equal.
+        // Their config aliases must agree as well, including when editing.
+        let name = self.displayName(for: displayName).precomposedStringWithCanonicalMapping
+        let base = name.hasSuffix(".conf") ? String(name.dropLast(".conf".count)) : name
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_=+.-"
+        )
+        let safeBase = base
+            .unicodeScalars
+            .map { allowed.contains($0) ? Character($0) : "_" }
+            .reduce("") { $0 + String($1) }
+            .replacingOccurrences(of: "..", with: "__")
+        // A trailing dot would create ".." when the .conf extension is appended.
+        guard base.isEmpty || base.hasSuffix(".") || safeBase != base || base.utf8.count > maxInterfaceNameLength else { return base }
         // FNV-1a keeps the suffix stable across launches (Hasher is randomly seeded).
         var hash: UInt32 = 2166136261
-        for byte in base.utf8 {
+        for byte in (base.isEmpty ? name : base).utf8 {
             hash = (hash ^ UInt32(byte)) &* 16777619
         }
         let suffix = String(format: "%06x", hash & 0xFFFFFF)
-        return "\(base.prefix(maxInterfaceNameLength - suffix.count - 1))-\(suffix)"
+        let prefix = safeBase.isEmpty ? "tunnel" : String(safeBase.prefix(maxInterfaceNameLength - suffix.count - 1))
+        return "\(prefix)-\(suffix)"
     }
 
     /// Save config content as a new file. `name` is the display name.
@@ -61,6 +63,7 @@ final class ConfigStorageService {
         content: String,
         replacingExisting: Bool = false
     ) throws -> URL {
+        try validateDisplayName(ConfigStorageService.displayName(for: name))
         let destURL = try destinationURL(for: ConfigStorageService.fileBaseName(for: name))
         if fm.fileExists(atPath: destURL.path), !replacingExisting {
             throw ConfigStorageError.alreadyExists(name)
@@ -92,9 +95,7 @@ final class ConfigStorageService {
     }
 
     private func destinationURL(for name: String) throws -> URL {
-        let baseName = name.hasSuffix(".conf")
-            ? String(name.dropLast(".conf".count))
-            : name
+        let baseName = name
         guard !baseName.isEmpty,
               baseName.utf8.count <= ConfigStorageService.maxInterfaceNameLength,
               !baseName.contains(".."),
@@ -106,6 +107,13 @@ final class ConfigStorageService {
             throw ConfigStorageError.invalidName(name)
         }
         return configDirectory.appendingPathComponent("\(baseName).conf", isDirectory: false)
+    }
+
+    private func validateDisplayName(_ name: String) throws {
+        guard !name.isEmpty,
+              !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+            throw ConfigStorageError.invalidName(name)
+        }
     }
 
     private func secureConfigPermissions(at url: URL) throws {
@@ -120,7 +128,7 @@ enum ConfigStorageError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidName:
-            return "Tunnel names must use 1-50 ASCII letters, digits, or _ = + . -"
+            return "Enter a tunnel name without control characters (up to 50 characters)."
         case .alreadyExists(let name):
             return "A tunnel named \"\(name)\" already exists"
         }

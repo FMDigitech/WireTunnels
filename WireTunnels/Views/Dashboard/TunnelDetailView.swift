@@ -1454,11 +1454,11 @@ private struct ConfigEditorSheetView: View {
     }
 
     private func save() {
-        let sanitizedName = ConfigStorageService.sanitize(name: tunnelName)
+        let displayName = ConfigStorageService.displayName(for: tunnelName)
         isSaving = true
         Task {
             do {
-                try await tunnelManager.updateTunnel(tunnel, name: sanitizedName, configContent: effectiveConfig)
+                try await tunnelManager.updateTunnel(tunnel, name: displayName, configContent: effectiveConfig)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription
