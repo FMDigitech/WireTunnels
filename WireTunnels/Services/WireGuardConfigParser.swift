@@ -13,6 +13,52 @@ enum WireGuardKey {
     }
 }
 
+/// Detects wg-quick root command hooks the way wg-quick itself parses a config, so no
+/// line can be read as a hook by wg-quick but as something else here. wg-quick's
+/// parse_options splits on "\n" only (bash `read` also silently drops NUL bytes),
+/// strips everything from the first "#", takes the text before the first "=" — or the
+/// whole line when there is none — as the key, trims [[:space:]] and matches
+/// case-insensitively, anywhere in the line. All of this works on Unicode scalars, not
+/// Characters: Swift folds "\r\n" and "=" + combining mark into single Characters that
+/// bash sees as separate bytes. Control characters (other than tab, newline, and a CR
+/// ending a CRLF line) are rejected outright because Swift and bash disagree on them.
+/// Keep in sync with WireTunnelsHelper/HelperTool.swift.
+enum ConfigSafety {
+    enum Violation: Equatable {
+        case controlCharacter
+        case hook(String)
+    }
+
+    static let hookDirectives: Set<String> = ["preup", "postup", "predown", "postdown"]
+
+    static func firstViolation(in text: String) -> Violation? {
+        let scalars = Array(text.unicodeScalars)
+        for (index, scalar) in scalars.enumerated() {
+            switch scalar.value {
+            case 0x09, 0x0A:
+                continue
+            case 0x0D where index + 1 < scalars.count && scalars[index + 1] == "\n":
+                continue
+            case 0x00...0x1F, 0x7F...0x9F, 0x2028, 0x2029:
+                return .controlCharacter
+            default:
+                continue
+            }
+        }
+        for line in text.unicodeScalars.split(separator: "\n") {
+            let stripped = line.prefix { $0 != "#" }
+            let keyScalars = stripped.firstIndex(of: "=").map { stripped[..<$0] } ?? stripped
+            let key = String(String.UnicodeScalarView(keyScalars))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if hookDirectives.contains(key) {
+                return .hook(key)
+            }
+        }
+        return nil
+    }
+}
+
 struct ParsedConfig {
     // Interface section
     var privateKey: String?
@@ -41,6 +87,7 @@ enum ConfigValidationError: Equatable, Hashable {
     case missingPeerPublicKey
     case missingAllowedIPs
     case unsupportedDirective(String)
+    case controlCharacters
 
     var message: String {
         switch self {
@@ -54,6 +101,8 @@ enum ConfigValidationError: Equatable, Hashable {
             return "AllowedIPs is missing"
         case .unsupportedDirective(let directive):
             return "\(directive) is not supported because it executes commands with root privileges"
+        case .controlCharacters:
+            return "Configuration contains control characters"
         }
     }
 }
@@ -66,10 +115,6 @@ enum ConfigWarning: String {
 }
 
 final class WireGuardConfigParser {
-    private static let privilegedHookNames: Set<String> = [
-        "preup", "postup", "predown", "postdown"
-    ]
-
     func parse(contentsOf url: URL) throws -> ParsedConfig {
         let contents = try String(contentsOf: url, encoding: .utf8)
         return parse(string: contents)
@@ -79,6 +124,23 @@ final class WireGuardConfigParser {
         var config = ParsedConfig()
         var currentSection = ""
         var peerCount = 0
+
+        // The helper rejects the same things; flagging them here gives a clear error at import.
+        switch ConfigSafety.firstViolation(in: string) {
+        case .controlCharacter?:
+            config.validationErrors.append(.controlCharacters)
+        case .hook(let key)?:
+            let canonicalName: String
+            switch key {
+            case "preup": canonicalName = "PreUp"
+            case "postup": canonicalName = "PostUp"
+            case "predown": canonicalName = "PreDown"
+            default: canonicalName = "PostDown"
+            }
+            config.validationErrors.append(.unsupportedDirective(canonicalName))
+        case nil:
+            break
+        }
 
         for rawLine in string.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -95,21 +157,6 @@ final class WireGuardConfigParser {
             let key = parts[0].trimmingCharacters(in: .whitespaces)
             let value = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespaces)
             let normalizedKey = key.lowercased()
-
-            if Self.privilegedHookNames.contains(normalizedKey) {
-                let canonicalName: String
-                switch normalizedKey {
-                case "preup": canonicalName = "PreUp"
-                case "postup": canonicalName = "PostUp"
-                case "predown": canonicalName = "PreDown"
-                default: canonicalName = "PostDown"
-                }
-                let error = ConfigValidationError.unsupportedDirective(canonicalName)
-                if !config.validationErrors.contains(error) {
-                    config.validationErrors.append(error)
-                }
-                continue
-            }
 
             if currentSection == "[interface]" {
                 switch normalizedKey {

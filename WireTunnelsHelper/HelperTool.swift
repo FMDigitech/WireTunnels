@@ -388,6 +388,52 @@ private enum ConfigName {
     }
 }
 
+/// Detects wg-quick root command hooks the way wg-quick itself parses a config, so no
+/// line can be read as a hook by wg-quick but as something else here. wg-quick's
+/// parse_options splits on "\n" only (bash `read` also silently drops NUL bytes),
+/// strips everything from the first "#", takes the text before the first "=" — or the
+/// whole line when there is none — as the key, trims [[:space:]] and matches
+/// case-insensitively, anywhere in the line. All of this works on Unicode scalars, not
+/// Characters: Swift folds "\r\n" and "=" + combining mark into single Characters that
+/// bash sees as separate bytes. Control characters (other than tab, newline, and a CR
+/// ending a CRLF line) are rejected outright because Swift and bash disagree on them.
+/// Keep in sync with WireTunnels/Services/WireGuardConfigParser.swift.
+private enum ConfigSafety {
+    enum Violation: Equatable {
+        case controlCharacter
+        case hook(String)
+    }
+
+    static let hookDirectives: Set<String> = ["preup", "postup", "predown", "postdown"]
+
+    static func firstViolation(in text: String) -> Violation? {
+        let scalars = Array(text.unicodeScalars)
+        for (index, scalar) in scalars.enumerated() {
+            switch scalar.value {
+            case 0x09, 0x0A:
+                continue
+            case 0x0D where index + 1 < scalars.count && scalars[index + 1] == "\n":
+                continue
+            case 0x00...0x1F, 0x7F...0x9F, 0x2028, 0x2029:
+                return .controlCharacter
+            default:
+                continue
+            }
+        }
+        for line in text.unicodeScalars.split(separator: "\n") {
+            let stripped = line.prefix { $0 != "#" }
+            let keyScalars = stripped.firstIndex(of: "=").map { stripped[..<$0] } ?? stripped
+            let key = String(String.UnicodeScalarView(keyScalars))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if hookDirectives.contains(key) {
+                return .hook(key)
+            }
+        }
+        return nil
+    }
+}
+
 private struct ValidatedClient {
     let bundleURL: URL
     let user: ClientUser
@@ -1598,21 +1644,10 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         guard let text = String(data: contents, encoding: .utf8) else {
             throw HelperError.invalidConfig
         }
-        let forbiddenDirectives: Set<String> = [
-            "preup", "postup", "predown", "postdown"
-        ]
-        for rawLine in text.components(separatedBy: .newlines) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            guard !line.isEmpty, !line.hasPrefix("#"),
-                  let separator = line.firstIndex(of: "=") else {
-                continue
-            }
-            let key = line[..<separator]
-                .trimmingCharacters(in: .whitespaces)
-                .lowercased()
-            if forbiddenDirectives.contains(key) {
-                throw HelperError.privilegedHook(key)
-            }
+        switch ConfigSafety.firstViolation(in: text) {
+        case .controlCharacter?: throw HelperError.controlCharacter
+        case .hook(let key)?: throw HelperError.privilegedHook(key)
+        case nil: break
         }
     }
 
@@ -1781,6 +1816,7 @@ private enum HelperError: LocalizedError {
     case managedTunnelExists
     case managedTunnelNotFound
     case privilegedHook(String)
+    case controlCharacter
 
     var errorDescription: String? {
         switch self {
@@ -1795,6 +1831,8 @@ private enum HelperError: LocalizedError {
         case .managedTunnelNotFound: return "Managed tunnel was not found"
         case .privilegedHook(let name):
             return "Tunnel configuration contains forbidden root command hook: \(name)"
+        case .controlCharacter:
+            return "Tunnel configuration contains control characters"
         }
     }
 }
