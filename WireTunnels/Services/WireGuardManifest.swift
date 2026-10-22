@@ -114,8 +114,8 @@ struct WireGuardManifestVerifier {
                 }
 
                 let actualHash = try sha256(of: url)
-                // For bundled artifacts, use the actual post-signing hash as the reference
-                // so bundledBinariesMatchInstalled() can compare against the installed manifest.
+                // Bundled verification uses the actual post-signing hash; installed
+                // verification still requires the hash recorded during installation.
                 let referenceHash = location == .bundled ? actualHash : artifact.sha256
                 return WireGuardArtifactStatus(
                     name: artifact.name,
@@ -147,6 +147,79 @@ struct WireGuardManifestVerifier {
                 errorMessage: error.localizedDescription
             )
         }
+    }
+
+    func runtimesMatch(
+        bundledDirectory: URL,
+        bundledManifestURL: URL,
+        installedDirectory: URL,
+        installedManifestURL: URL
+    ) -> Bool {
+        runtimesMatch(
+            bundled: inspect(directory: bundledDirectory, manifestURL: bundledManifestURL, location: .bundled),
+            bundledDirectory: bundledDirectory,
+            installed: inspect(directory: installedDirectory, manifestURL: installedManifestURL, location: .installed),
+            installedDirectory: installedDirectory
+        )
+    }
+
+    /// Tools match when every artifact has the same version, source, revision and
+    /// architectures, and the executables differ at most in their code signatures.
+    func runtimesMatch(
+        bundled: WireGuardRuntimeStatus,
+        bundledDirectory: URL,
+        installed: WireGuardRuntimeStatus,
+        installedDirectory: URL
+    ) -> Bool {
+        guard bundled.isValid, installed.isValid else { return false }
+
+        let installedByName = Dictionary(uniqueKeysWithValues: installed.artifacts.map { ($0.name, $0) })
+        do {
+            for artifact in bundled.artifacts {
+                guard let existing = installedByName[artifact.name],
+                      artifact.version == existing.version,
+                      artifact.sourceURL == existing.sourceURL,
+                      artifact.revision == existing.revision,
+                      Set(artifact.architectures) == Set(existing.architectures),
+                      let bundledHash = artifact.actualSHA256,
+                      let installedHash = existing.actualSHA256 else { return false }
+                if bundledHash == installedHash { continue }
+                // The script has no code signature. Every byte remains significant.
+                guard artifact.name != "wg-quick" else { return false }
+                let bundledPayload = try unsignedSHA256(
+                    of: bundledDirectory.appendingPathComponent(artifact.name), expectedSHA256: bundledHash)
+                let installedPayload = try unsignedSHA256(
+                    of: installedDirectory.appendingPathComponent(artifact.name), expectedSHA256: installedHash)
+                guard bundledPayload == installedPayload else { return false }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Normalize signatures only on private copies, after verifying their full
+    /// bytes still match the files inspected above. Original signatures stay intact.
+    private func unsignedSHA256(of url: URL, expectedSHA256: String) throws -> String {
+        let fm = FileManager.default
+        let temporary = fm.temporaryDirectory.appendingPathComponent("wiretunnels-runtime-\(UUID().uuidString)")
+        try fm.createDirectory(at: temporary, withIntermediateDirectories: false,
+                               attributes: [.posixPermissions: 0o700])
+        defer { try? fm.removeItem(at: temporary) }
+        let copy = temporary.appendingPathComponent("executable")
+        try fm.copyItem(at: url, to: copy)
+        guard try sha256(of: copy) == expectedSHA256 else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["--remove-signature", copy.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw CocoaError(.fileReadCorruptFile) }
+        return try sha256(of: copy)
     }
 
     func sha256(of url: URL) throws -> String {

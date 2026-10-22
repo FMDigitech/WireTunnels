@@ -41,14 +41,22 @@ final class WireGuardToolLocator {
             manifestURL: bundledManifest,
             location: .bundled
         )
+        // A broken bundle cannot be installed, so it must not demand a reinstall.
+        guard bundled.isValid else { return true }
+
         let installed = verifier.inspect(
             directory: AppPaths.systemBinDir,
             manifestURL: AppPaths.installedManifest,
             location: .installed
         )
-        return !bundled.isValid
-            || (installed.isValid
-                && bundled.artifacts.map(\.expectedSHA256) == installed.artifacts.map(\.expectedSHA256))
+        // Signing the app re-signs the bundled tools, so builds signed by another
+        // identity differ only in code signatures and need no reinstall.
+        return verifier.runtimesMatch(
+            bundled: bundled,
+            bundledDirectory: bundledDir,
+            installed: installed,
+            installedDirectory: AppPaths.systemBinDir
+        )
     }
 
     func inspectBundledRuntime() -> WireGuardRuntimeStatus? {
