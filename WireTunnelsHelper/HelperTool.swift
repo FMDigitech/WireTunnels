@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.7"
-private let helperProtocolRevisionValue = "inventory-routing-v2"
+private let helperProtocolRevisionValue = "ethernet-subnets-v1"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -46,17 +46,20 @@ private struct ManagedAutoConnectNetworkMatch: Codable, Equatable {
     var enabled: Bool = false
     var interface: ManagedAutoConnectInterface = .wifi
     var wifiSSIDs: [String] = []
+    var ethernetSubnets: [String] = []
 
     private enum CodingKeys: String, CodingKey {
         case enabled
         case interface
         case wifiSSIDs
+        case ethernetSubnets
     }
 
-    init(enabled: Bool = false, interface: ManagedAutoConnectInterface = .wifi, wifiSSIDs: [String] = []) {
+    init(enabled: Bool = false, interface: ManagedAutoConnectInterface = .wifi, wifiSSIDs: [String] = [], ethernetSubnets: [String] = []) {
         self.enabled = enabled
         self.interface = interface
         self.wifiSSIDs = wifiSSIDs
+        self.ethernetSubnets = ethernetSubnets
     }
 
     init(from decoder: Decoder) throws {
@@ -64,6 +67,7 @@ private struct ManagedAutoConnectNetworkMatch: Codable, Equatable {
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         interface = try container.decodeIfPresent(ManagedAutoConnectInterface.self, forKey: .interface) ?? .wifi
         wifiSSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+        ethernetSubnets = try container.decodeIfPresent([String].self, forKey: .ethernetSubnets) ?? []
     }
 }
 
@@ -90,6 +94,7 @@ private struct ManagedAutoConnectRule: Codable, Equatable {
         case interface
         case action
         case wifiSSIDs
+        case ethernetSubnets
     }
 
     private enum LegacyAction: String, Codable {
@@ -112,10 +117,12 @@ private struct ManagedAutoConnectRule: Codable, Equatable {
         let legacyInterface = try container.decodeIfPresent(ManagedAutoConnectInterface.self, forKey: .interface) ?? .wifi
         let legacyAction = try container.decodeIfPresent(LegacyAction.self, forKey: .action) ?? .connect
         let legacySSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+        let legacySubnets = try container.decodeIfPresent([String].self, forKey: .ethernetSubnets) ?? []
         let legacyMatch = ManagedAutoConnectNetworkMatch(
             enabled: legacyEnabled,
             interface: legacyInterface,
-            wifiSSIDs: legacySSIDs
+            wifiSSIDs: legacySSIDs,
+            ethernetSubnets: legacySubnets
         )
         switch legacyAction {
         case .connect:

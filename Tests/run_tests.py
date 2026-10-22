@@ -28,6 +28,18 @@ def main():
         subprocess.run(['bash', str(ROOT / 'Tests/test_inventory_routing.sh')], check=True)
         subprocess.run(['python3', '-m', 'unittest', 'discover', '-s', 'Tests', '-p', 'test_server_ips.py'],
                        cwd=ROOT, env={**os.environ, 'PYTHONPATH': str(ROOT)}, check=True)
+        run_suite(directory, 'ethernet-subnets', ['WireTunnels/Models/AutoConnectRule.swift',
+                  'WireTunnels/Models/IPSubnet.swift', 'WireTunnels/Services/AutoConnectNetworkMatcher.swift',
+                  'Tests/EthernetSubnetTests.swift'])
+        run_suite(directory, 'interface-addresses', ['WireTunnels/Services/InterfaceAddressCollector.swift',
+                  'Tests/InterfaceAddressCollectorTests.swift'])
+        helper = (ROOT / 'WireTunnelsHelper/HelperTool.swift').read_text()
+        start = helper.index('private enum ManagedAutoConnectInterface:')
+        end = helper.index('private struct SystemSettings:', start)
+        managed_fixture = directory / 'ManagedOnDemandFixture.swift'
+        managed_fixture.write_text('import Foundation\n' + helper[start:end] + '\n'
+                                   + (ROOT / 'Tests/ManagedOnDemandPersistenceTests.swift').read_text())
+        run_suite(directory, 'managed-on-demand', ['WireTunnels/Models/AutoConnectRule.swift', managed_fixture])
         run_suite(directory, 'shutdown', ['WireTunnels/Services/TunnelShutdownCoordinator.swift', 'Tests/TunnelShutdownTests.swift'])
         run_suite(directory, 'readiness', ['WireTunnels/Models/WireGuardRuntimeStatus.swift',
                   'WireTunnels/Models/WireGuardEnvironment.swift', 'WireTunnels/Models/TunnelConnectionReadiness.swift',

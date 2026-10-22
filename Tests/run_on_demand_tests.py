@@ -14,6 +14,7 @@ def main():
         subprocess.run([
             'swiftc', '-module-cache-path', str(directory / 'module-cache'),
             str(ROOT / 'WireTunnels/Models/AutoConnectRule.swift'),
+            str(ROOT / 'WireTunnels/Models/IPSubnet.swift'),
             str(ROOT / 'WireTunnels/Views/Dashboard/OnDemandMatchSection.swift'),
             str(ROOT / 'Tests/OnDemandEditorTests.swift'),
             '-o', str(executable)

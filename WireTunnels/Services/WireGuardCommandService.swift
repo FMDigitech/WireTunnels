@@ -24,7 +24,7 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.7"
-    nonisolated static let expectedHelperProtocolRevision = "inventory-routing-v2"
+    nonisolated static let expectedHelperProtocolRevision = "ethernet-subnets-v1"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     nonisolated private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000

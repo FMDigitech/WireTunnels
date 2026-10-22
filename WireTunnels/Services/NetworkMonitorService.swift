@@ -208,19 +208,9 @@ final class NetworkMonitorService: NSObject, ObservableObject {
     }
 
     private func matches(_ rule: AutoConnectNetworkMatch) -> Bool {
-        guard rule.enabled else { return false }
-        switch rule.interface {
-        case .ethernet: return isOnEthernet
-        case .wifi:     return matchesWiFi(rule: rule)
-        case .both:     return isOnEthernet || matchesWiFi(rule: rule)
-        }
-    }
-
-    private func matchesWiFi(rule: AutoConnectNetworkMatch) -> Bool {
-        guard isOnWiFi else { return false }
-        if rule.matchesAnyWiFi { return true }
-        guard let ssid = currentSSID else { return false }
-        return rule.wifiSSIDs.contains(ssid)
+        AutoConnectNetworkMatcher.matches(rule, isOnEthernet: isOnEthernet,
+                                          ethernetAddresses: ethernetAddresses,
+                                          isOnWiFi: isOnWiFi, currentSSID: currentSSID)
     }
 
     // MARK: - Auto-connect state tracking

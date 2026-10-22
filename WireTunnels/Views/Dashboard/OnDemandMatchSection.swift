@@ -11,8 +11,12 @@ struct OnDemandMatchSection: View {
     @Binding var anyWiFi: Bool
     @Binding var ssids: [String]
     @Binding var newSSID: String
+    @Binding var anyEthernet: Bool
+    @Binding var ethernetSubnets: [String]
+    @Binding var newEthernetSubnet: String
     let knownNetworks: [String]
     let currentSSID: String?
+    let currentEthernetAddresses: [String]
     let canEdit: Bool
     let hasWiFiNamePermission: Bool
     let onRequestWiFiPermission: () -> Void
@@ -21,6 +25,19 @@ struct OnDemandMatchSection: View {
 
     private var showWiFiOptions: Bool {
         enabled && (interface == .wifi || interface == .both)
+    }
+
+    private var showEthernetOptions: Bool {
+        enabled && (interface == .ethernet || interface == .both)
+    }
+
+    private var enteredSubnet: IPSubnet? {
+        IPSubnet(newEthernetSubnet.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private var subnetAlreadyAdded: Bool {
+        guard let enteredSubnet else { return false }
+        return ethernetSubnets.contains { IPSubnet($0)?.canonicalCIDR == enteredSubnet.canonicalCIDR }
     }
 
     var body: some View {
@@ -53,6 +70,10 @@ struct OnDemandMatchSection: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .disabled(!canEdit)
+                }
+
+                if showEthernetOptions {
+                    ethernetOptions
                 }
 
                 if showWiFiOptions {
@@ -155,6 +176,84 @@ struct OnDemandMatchSection: View {
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private var ethernetOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Any Ethernet Network", isOn: Binding(
+                get: { anyEthernet },
+                set: { isAny in
+                    anyEthernet = isAny
+                    if isAny {
+                        ethernetSubnets = []
+                        onSave()
+                    }
+                    // Wait for a valid subnet before persisting a specific-network rule.
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .disabled(!canEdit)
+
+            if !anyEthernet {
+                ForEach(ethernetSubnets, id: \.self) { subnet in
+                    HStack {
+                        Image(systemName: "network")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        Text(subnet)
+                            .font(.system(.subheadline, design: .monospaced))
+                        Spacer()
+                        Button {
+                            ethernetSubnets.removeAll { $0 == subnet }
+                            if ethernetSubnets.isEmpty { anyEthernet = true }
+                            onSave()
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .accessibilityLabel("Remove subnet \(subnet)")
+                        .buttonStyle(.plain)
+                        .disabled(!canEdit)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                }
+
+                HStack {
+                    TextField("192.168.10.0/24 or fd00::/64", text: $newEthernetSubnet)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .disabled(!canEdit)
+                        .onSubmit { addEthernetSubnet() }
+                    Button("Add Subnet") { addEthernetSubnet() }
+                        .buttonStyle(.bordered)
+                        .disabled(!canEdit || enteredSubnet == nil || subnetAlreadyAdded)
+                }
+
+                if !newEthernetSubnet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if enteredSubnet == nil {
+                        Text("Enter a valid IPv4 or IPv6 subnet with a CIDR prefix, such as 192.168.10.0/24 or fd00::/64.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else if subnetAlreadyAdded {
+                        Text("This subnet is already in the list.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("Matches when a local Ethernet IP address is within a listed subnet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !currentEthernetAddresses.isEmpty {
+                    Text("Current Ethernet addresses: \(currentEthernetAddresses.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+
     private var wifiPermissionWarning: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(
@@ -179,6 +278,13 @@ struct OnDemandMatchSection: View {
         guard !s.isEmpty, !ssids.contains(s) else { return }
         ssids.append(s)
         newSSID = ""
+        onSave()
+    }
+
+    private func addEthernetSubnet() {
+        guard canEdit, let enteredSubnet, !subnetAlreadyAdded else { return }
+        ethernetSubnets.append(enteredSubnet.canonicalCIDR)
+        newEthernetSubnet = ""
         onSave()
     }
 }

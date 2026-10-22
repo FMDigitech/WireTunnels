@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory(prefix='wiretunnels-network-tests-') as tempora
     subprocess.run([
         'swiftc', '-module-cache-path', str(directory / 'module-cache'),
         *[str(ROOT / source) for source in [
-            'WireTunnels/Models/AutoConnectRule.swift', 'WireTunnels/Models/Tunnel.swift',
+            'Shared/InventoryRouting.swift', 'WireTunnels/Models/AutoConnectRule.swift', 'WireTunnels/Models/Tunnel.swift',
+            'WireTunnels/Models/IPSubnet.swift', 'WireTunnels/Services/AutoConnectNetworkMatcher.swift',
             'WireTunnels/Services/InterfaceAddressCollector.swift',
             'WireTunnels/Services/PhysicalNetworkSnapshot.swift',
             'WireTunnels/Services/NetworkMonitorService.swift',

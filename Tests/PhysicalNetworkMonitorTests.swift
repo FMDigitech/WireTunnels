@@ -69,8 +69,9 @@ struct PhysicalNetworkMonitorTests {
         ], preferredPrimaryInterface: "en7")
         await service.refreshNetworkState()
         expect(!service.matchesConnect(tunnel), "an actual Wi-Fi link loss must stop matching even with stale addresses")
-        tunnel.autoConnectRule.connect = .init(enabled: true, interface: .ethernet)
-        expect(service.matchesConnect(tunnel), "the active Ethernet interface must match its rule")
+        tunnel.autoConnectRule.connect = .init(enabled: true, interface: .ethernet,
+                                               ethernetSubnets: ["198.51.100.0/24"])
+        expect(service.matchesConnect(tunnel), "the actual Ethernet address must match its subnet rule")
         expect(service.ethernetAddresses == ["198.51.100.20", "2001:db8::20"],
             "only active Ethernet addresses may be published")
         expect(renewals == 2, "a real interface switch must not count as DHCP renewal")

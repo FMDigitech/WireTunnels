@@ -23,23 +23,29 @@ struct AutoConnectNetworkMatch: Codable, Equatable, Hashable {
     var interface: AutoConnectInterface = .wifi
     /// Empty = any Wi-Fi network; non-empty = only the listed SSIDs
     var wifiSSIDs: [String]             = []
+    /// Empty = any Ethernet network; non-empty = only the listed IP subnets.
+    var ethernetSubnets: [String]       = []
 
     var matchesAnyWiFi: Bool { wifiSSIDs.isEmpty }
+    var matchesAnyEthernet: Bool { ethernetSubnets.isEmpty }
 
     init(
         enabled: Bool = false,
         interface: AutoConnectInterface = .wifi,
-        wifiSSIDs: [String] = []
+        wifiSSIDs: [String] = [],
+        ethernetSubnets: [String] = []
     ) {
         self.enabled = enabled
         self.interface = interface
         self.wifiSSIDs = wifiSSIDs
+        self.ethernetSubnets = ethernetSubnets
     }
 
     private enum CodingKeys: String, CodingKey {
         case enabled
         case interface
         case wifiSSIDs
+        case ethernetSubnets
     }
 
     init(from decoder: Decoder) throws {
@@ -47,6 +53,7 @@ struct AutoConnectNetworkMatch: Codable, Equatable, Hashable {
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         interface = try container.decodeIfPresent(AutoConnectInterface.self, forKey: .interface) ?? .wifi
         wifiSSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+        ethernetSubnets = try container.decodeIfPresent([String].self, forKey: .ethernetSubnets) ?? []
     }
 }
 
@@ -75,6 +82,7 @@ struct AutoConnectRule: Codable, Equatable, Hashable {
         case interface
         case action
         case wifiSSIDs
+        case ethernetSubnets
     }
 
     private enum LegacyAction: String, Codable {
@@ -97,10 +105,12 @@ struct AutoConnectRule: Codable, Equatable, Hashable {
         let legacyInterface = try container.decodeIfPresent(AutoConnectInterface.self, forKey: .interface) ?? .wifi
         let legacyAction = try container.decodeIfPresent(LegacyAction.self, forKey: .action) ?? .connect
         let legacySSIDs = try container.decodeIfPresent([String].self, forKey: .wifiSSIDs) ?? []
+        let legacySubnets = try container.decodeIfPresent([String].self, forKey: .ethernetSubnets) ?? []
         let legacyMatch = AutoConnectNetworkMatch(
             enabled: legacyEnabled,
             interface: legacyInterface,
-            wifiSSIDs: legacySSIDs
+            wifiSSIDs: legacySSIDs,
+            ethernetSubnets: legacySubnets
         )
         switch legacyAction {
         case .connect:
