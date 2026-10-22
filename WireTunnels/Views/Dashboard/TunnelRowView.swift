@@ -53,6 +53,8 @@ struct TunnelRowView: View {
     private var connectionDisabled: Bool {
         isProcessing
             || tunnelManager.isShuttingDown
+            || tunnelManager.connectionStatus(for: tunnel) == .connecting
+            || tunnelManager.connectionStatus(for: tunnel) == .reconnecting
             || (!tunnel.isActive && !tunnelManager.canConnectTunnels)
             || (tunnel.scope == .managed && tunnel.isActive && tunnel.managedPolicy?.usersCanDisconnect == false)
             || (tunnel.scope == .managed && !tunnel.isActive && tunnel.managedPolicy?.usersCanConnect == false)

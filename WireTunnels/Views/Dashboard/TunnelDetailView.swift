@@ -120,6 +120,8 @@ struct TunnelDetailView: View {
     private var connectionDisabled: Bool {
         isProcessing
             || tunnelManager.isShuttingDown
+            || tunnelManager.connectionStatus(for: live) == .connecting
+            || tunnelManager.connectionStatus(for: live) == .reconnecting
             || (!live.isActive && !tunnelManager.canConnectTunnels)
             || (isManaged && live.isActive && live.managedPolicy?.usersCanDisconnect == false)
             || (isManaged && !live.isActive && live.managedPolicy?.usersCanConnect == false)

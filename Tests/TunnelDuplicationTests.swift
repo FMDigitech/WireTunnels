@@ -71,6 +71,9 @@ struct TunnelDuplicationTests {
         guard try storage.readConfig(at: path) == content,
               try storage.readConfig(at: URL(fileURLWithPath: second.configPath)) == content else { fatalError("Editing one copy changed another profile") }
         var longSource = source
+        longSource.name = "Office VPN (東京)"
+        let namedCopy = try duplicator.duplicate(longSource, existingTunnels: [source])
+        guard namedCopy.name == "Office VPN (東京)_copy" else { fatalError("Duplication replaced display-name characters") }
         longSource.name = String(repeating: "a", count: 50)
         let longCopy = try duplicator.duplicate(longSource, existingTunnels: [source])
         guard longCopy.name == String(repeating: "a", count: 45) + "_copy",

@@ -63,7 +63,12 @@ struct HopChainView: View {
         let hopName = tunnel(chain.hopTunnelID)?.name ?? "Deleted tunnel"
         let exitName = tunnel(chain.exitTunnelID)?.name ?? "Deleted tunnel"
         let active = isActive(chain)
-        let busy = busyChainID == chain.id
+        let busy = busyChainID == chain.id || [chain.hopTunnelID, chain.exitTunnelID]
+            .compactMap { tunnel($0) }
+            .contains {
+                let status = tunnelManager.connectionStatus(for: $0)
+                return status == .connecting || status == .reconnecting
+            }
 
         return HStack(spacing: 12) {
             Circle()
