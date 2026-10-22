@@ -29,6 +29,19 @@ def main():
         subprocess.run(['python3', '-m', 'unittest', 'discover', '-s', 'Tests', '-p', 'test_server_ips.py'],
                        cwd=ROOT, env={**os.environ, 'PYTHONPATH': str(ROOT)}, check=True)
         run_suite(directory, 'shutdown', ['WireTunnels/Services/TunnelShutdownCoordinator.swift', 'Tests/TunnelShutdownTests.swift'])
+        run_suite(directory, 'network-changes', ['WireTunnels/Services/NetworkChangeScheduler.swift',
+                  'Tests/NetworkChangeSchedulerTests.swift'])
+        manager = (ROOT / 'WireTunnels/Services/TunnelManager.swift').read_text()
+        stop_start = manager.index('    @discardableResult\n    func disconnectTunnel(')
+        stop_end = manager.index('    // MARK: - Config Management', stop_start)
+        reconnect_start = manager.index('    private func reconnectAfterWake(')
+        reconnect_end = manager.index('    @discardableResult\n    func updateAutoConnectRule(', reconnect_start)
+        policy_fixture = directory / 'NetworkPolicyStopFixture.swift'
+        policy_fixture.write_text((ROOT / 'Tests/NetworkPolicyStopTests.swift').read_text()
+            .replace('    // PRODUCTION_STOP_METHODS', manager[stop_start:stop_end])
+            .replace('    // PRODUCTION_RECONNECT_METHOD', manager[reconnect_start:reconnect_end]))
+        run_suite(directory, 'network-policy-stop', ['Shared/InventoryRouting.swift',
+                  'WireTunnels/Models/AutoConnectRule.swift', 'WireTunnels/Models/Tunnel.swift', str(policy_fixture)])
         run_suite(directory, 'readiness', ['WireTunnels/Models/WireGuardRuntimeStatus.swift',
                   'WireTunnels/Models/WireGuardEnvironment.swift', 'WireTunnels/Models/TunnelConnectionReadiness.swift',
                   'Tests/TunnelConnectionReadinessTests.swift'])

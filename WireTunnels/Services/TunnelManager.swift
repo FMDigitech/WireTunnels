@@ -50,8 +50,10 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     private lazy var statusMonitor = StatusMonitorService(commandService: commandService)
     private var pollingTask: Task<Void, Never>?
     private var networkCancellable: AnyCancellable?
-    private var networkChangeDebounceTask: Task<Void, Never>?
-    private var localAddressChangeDebounceTask: Task<Void, Never>?
+    private lazy var networkChangeScheduler = NetworkChangeScheduler(
+        evaluateRules: { [weak self] in await self?.evaluateNetworkRulesWhenIdle() },
+        reconnect: { [weak self] in await self?.handleLocalAddressChange() }
+    )
     /// Guards against overlapping restart passes — a DHCP renewal detected right
     /// around a system wake would otherwise trigger two concurrent stop/start
     /// cycles on the same tunnel interfaces.
@@ -101,28 +103,13 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         networkCancellable = self.networkMonitor.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
         self.networkMonitor.onNetworkChange = { [weak self] in
-            // Debounce: NWPathMonitor fires multiple times per real network change
-            // (e.g. wireguard-go creating a utun triggers another path update).
-            // Wait 500 ms before acting so only the final stable state matters.
-            self?.networkChangeDebounceTask?.cancel()
-            self?.networkChangeDebounceTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                guard !Task.isCancelled else { return }
-                await self?.handleNetworkChange()
-            }
+            self?.networkChangeScheduler.schedule()
         }
         self.networkMonitor.onSystemWake = { [weak self] in
             await self?.handleSystemWake()
         }
         self.networkMonitor.onLocalAddressChange = { [weak self] in
-            // Same debounce reasoning as onNetworkChange above — coalesce the
-            // handful of path updates a single DHCP renewal tends to produce.
-            self?.localAddressChangeDebounceTask?.cancel()
-            self?.localAddressChangeDebounceTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                guard !Task.isCancelled else { return }
-                await self?.handleLocalAddressChange()
-            }
+            self?.networkChangeScheduler.schedule(addressChanged: true)
         }
         Task { await initialize() }
     }
@@ -718,34 +705,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 throw CommandError.managedTunnelFailed("Users are not allowed to disconnect this managed tunnel")
             }
             try await commandService.stopTunnel(configPath: configPath)
-            if killSwitchArmedTunnelIDs.contains(liveTunnel.id) {
-                await disarmKillSwitch(for: liveTunnel)
-            }
-            if !liveTunnel.excludedRoutes.isEmpty {
-                try? await commandService.syncRoutes(ownerId: liveTunnel.id, entries: [])
-            }
-            if liveTunnel.scope == .managed {
-                do {
-                    try await commandService.markManagedTunnelDisconnected(id: liveTunnel.id)
-                } catch {
-                    log.warning("Unable to clear connected user for \(liveTunnel.name): \(error.localizedDescription)")
-                }
-            }
-            guard let index = tunnels.firstIndex(where: { $0.id == liveTunnel.id }) else { throw InventoryError.staleOperation }
-            tunnels[index].isActive = false
-            tunnels[index].connectedAt = nil
-            tunnels[index].runtimeConfigPath = nil
-            tunnels[index].interfaceName = nil
-            tunnels[index].lastHandshake = nil
-            tunnels[index].rxBytes = 0
-            tunnels[index].txBytes = 0
-            tunnels[index].updatedAt = Date()
-            trafficHistory.removeValue(forKey: liveTunnel.id)
-            trafficSnapshots.removeValue(forKey: liveTunnel.id)
-            savePersonalTunnelsOnly()
-            updateWarnings()
-            await syncSplitDNSState()
-            connectionFeedback.disconnected(liveTunnel.id)
+            try await finalizeStoppedTunnel(liveTunnel)
             log.info("Tunnel \(liveTunnel.name) disconnected in \(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - disconnectStarted))s")
             if !isAutoDisconnect && !isShuttingDown {
                 try? await notificationService.postDisconnected(tunnelName: liveTunnel.name)
@@ -758,6 +718,38 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 automatic: isAutoDisconnect)
             return false
         }
+    }
+
+    /// Completes an intentional stop, including one made during a network restart.
+    private func finalizeStoppedTunnel(_ liveTunnel: Tunnel) async throws {
+        if killSwitchArmedTunnelIDs.contains(liveTunnel.id) {
+            await disarmKillSwitch(for: liveTunnel)
+        }
+        if !liveTunnel.excludedRoutes.isEmpty {
+            try? await commandService.syncRoutes(ownerId: liveTunnel.id, entries: [])
+        }
+        if liveTunnel.scope == .managed {
+            do {
+                try await commandService.markManagedTunnelDisconnected(id: liveTunnel.id)
+            } catch {
+                log.warning("Unable to clear connected user for \(liveTunnel.name): \(error.localizedDescription)")
+            }
+        }
+        guard let index = tunnels.firstIndex(where: { $0.id == liveTunnel.id }) else { throw InventoryError.staleOperation }
+        tunnels[index].isActive = false
+        tunnels[index].connectedAt = nil
+        tunnels[index].runtimeConfigPath = nil
+        tunnels[index].interfaceName = nil
+        tunnels[index].lastHandshake = nil
+        tunnels[index].rxBytes = 0
+        tunnels[index].txBytes = 0
+        tunnels[index].updatedAt = Date()
+        trafficHistory.removeValue(forKey: liveTunnel.id)
+        trafficSnapshots.removeValue(forKey: liveTunnel.id)
+        savePersonalTunnelsOnly()
+        updateWarnings()
+        await syncSplitDNSState()
+        connectionFeedback.disconnected(liveTunnel.id)
     }
 
     // MARK: - Config Management
@@ -1227,6 +1219,18 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
 
     // MARK: - Auto-Connect
 
+    private func evaluateNetworkRulesWhenIdle() async {
+        // A manual connect, wake restart or disconnect may already be running.
+        // Keep the event queued until rules can act on its confirmed result.
+        while !connectingTunnels.isEmpty || !disconnectingTunnels.isEmpty
+                || !connectingChains.isEmpty || isRestartingActiveTunnelInterfaces {
+            guard !Task.isCancelled, !isShuttingDown else { return }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        guard !Task.isCancelled, !isShuttingDown else { return }
+        await handleNetworkChange()
+    }
+
     func handleNetworkChange() async {
         guard !isShuttingDown, !isLoading, !needsSetup else { return }
 
@@ -1243,8 +1247,9 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             if networkMonitor.matchesDisconnect(tunnel) {
                 if tunnel.isActive {
                     log.info("Auto-disconnect rule triggered for \(tunnel.name)")
-                    networkMonitor.markAutoDisconnected(tunnel.id)
-                    await disconnectTunnel(tunnel, isAutoDisconnect: true)
+                    if await disconnectTunnel(tunnel, isAutoDisconnect: true) {
+                        networkMonitor.markAutoDisconnected(tunnel.id)
+                    }
                 }
             } else if networkMonitor.matchesConnect(tunnel) {
                 if !tunnel.isActive && !networkMonitor.isSuppressed(tunnel.id) && !connectingTunnels.contains(tunnel.id) {
@@ -1257,8 +1262,9 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 networkMonitor.clearSuppression(tunnel.id)
                 if tunnel.isActive && networkMonitor.wasAutoConnected(tunnel.id) {
                     log.info("Auto-disconnect triggered for \(tunnel.name)")
-                    networkMonitor.markAutoDisconnected(tunnel.id)
-                    await disconnectTunnel(tunnel, isAutoDisconnect: true)
+                    if await disconnectTunnel(tunnel, isAutoDisconnect: true) {
+                        networkMonitor.markAutoDisconnected(tunnel.id)
+                    }
                 }
             }
         }
@@ -1360,6 +1366,8 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         for chain in hopChains where chain.isEnabled {
             await reconnectHopChainAfterWake(chain)
         }
+        // Retry any rule action deferred while this restart was busy.
+        await handleNetworkChange()
     }
 
     /// Re-resolves each active tunnel's configured `Endpoint` hostname and
@@ -1421,6 +1429,20 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             if liveTunnel.inventoryCommand != nil { try await protectInventory(liveTunnel) }
             try await commandService.stopTunnel(configPath: configPath)
             guard !isShuttingDown else { return }
+            // Rules can't run while this restart is busy, so apply them here
+            // instead of bringing back a tunnel the current network should stop.
+            let current = tunnels.first(where: { $0.id == liveTunnel.id }) ?? liveTunnel
+            let usersCanDisconnect = current.scope != .managed || current.managedPolicy?.usersCanDisconnect != false
+            // Chain legs stop only through the chain controls, as in disconnectTunnel.
+            let isChainLeg = activeOrBusyChain(containing: current.id) != nil
+            if usersCanDisconnect && !isChainLeg && (networkMonitor.matchesDisconnect(current)
+                || (networkMonitor.wasAutoConnected(current.id) && current.autoConnectRule.connect.enabled
+                    && !networkMonitor.matchesConnect(current))) {
+                log.info("Network no longer permits automatic reconnection for \(current.name)")
+                try await finalizeStoppedTunnel(current)
+                networkMonitor.markAutoDisconnected(current.id)
+                return
+            }
             try await commandService.startTunnel(configPath: configPath)
             // The restart pass confirms all interfaces together once setup ends.
             // Keep feedback until that snapshot verifies this tunnel is present.
@@ -2189,8 +2211,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     func beginShutdown() {
         isShuttingDown = true
         stopPolling()
-        networkChangeDebounceTask?.cancel()
-        localAddressChangeDebounceTask?.cancel()
+        networkChangeScheduler.cancel()
         for tunnel in tunnels { networkMonitor.userDidDisconnect(tunnel.id) }
         log.info("Quit: waiting for pending operations before disconnecting tunnels")
     }
@@ -2213,7 +2234,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     func waitForPendingOperations() async -> Bool {
         let deadline = ProcessInfo.processInfo.systemUptime + 90
         while !isInitialized || isLoading || !connectingTunnels.isEmpty || !connectingChains.isEmpty
-                || !disconnectingTunnels.isEmpty || isRestartingActiveTunnelInterfaces || pollingInProgress || networkSettingsOperations > 0 {
+                || !disconnectingTunnels.isEmpty || isRestartingActiveTunnelInterfaces || pollingInProgress || networkSettingsOperations > 0 || networkChangeScheduler.isProcessing {
             guard ProcessInfo.processInfo.systemUptime < deadline else { return false }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
