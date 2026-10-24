@@ -2221,6 +2221,12 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     }
 
     func refreshForShutdown() async -> Bool {
+        // The helper may have been removed while the app ran (e.g. by an uninstall).
+        // Every request to it would fail, so judge by runtime evidence instead.
+        if environment.helperInstalled, !WireGuardCommandService.launchdDiagnostics().registered {
+            log.error("Quit: privileged helper is no longer registered with launchd")
+            environment.helperInstalled = false
+        }
         guard environment.helperInstalled else {
             let clean = !hasActiveTunnels && TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence(
                 in: URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true))

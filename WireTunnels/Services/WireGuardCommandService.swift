@@ -72,6 +72,9 @@ final class WireGuardCommandService {
         /// was registered: the mach endpoint stays alive so XPC connects, but
         /// every call times out because the helper process never starts.
         let staleRegistration: Bool
+        /// launchd has a job for the helper. False once it was removed (e.g. by an
+        /// uninstall) even though SMAppService may still report it enabled.
+        var registered = true
     }
 
     nonisolated static let staleRegistrationRecoveryMessage = """
@@ -107,7 +110,8 @@ final class WireGuardCommandService {
         guard process.terminationStatus == 0 else {
             return HelperLaunchdDiagnostics(
                 summary: "helper has no launchd registration (launchctl exit \(process.terminationStatus))",
-                staleRegistration: false
+                staleRegistration: false,
+                registered: false
             )
         }
         let markers = ["state =", "last exit code", "runs =", "path =", "program identifier"]
