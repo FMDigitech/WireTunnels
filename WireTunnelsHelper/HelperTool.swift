@@ -1,5 +1,6 @@
 import CryptoKit
 import Darwin
+import Darwin.membership
 import Foundation
 import Security
 
@@ -555,6 +556,17 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 guard request.action != .apply || Self.inventoryMonitoringAvailable else {
                     throw InventoryError.operation("Inventory interface monitoring is unavailable; restart the helper before connecting")
                 }
+                // apply changes routes and AllowedIPs on the named tunnel, so it must be one the
+                // caller may connect. Checked here rather than in inventoryInterface: that also
+                // resolves every other user's policy whenever the guard is reinstalled.
+                if request.action == .apply {
+                    guard let config = self.validatedRuntimeConfig(named: request.configName, allowLegacy: false) else {
+                        throw InventoryError.staleOperation
+                    }
+                    if let denial = self.runtimeAccessDenial(for: config, action: .connect) {
+                        throw InventoryError.operation(denial)
+                    }
+                }
                 try self.inventoryService.perform(request, uid: uid_t(self.clientUser.uid))
                 reply(true, nil)
             } catch { reply(false, error.localizedDescription) }
@@ -632,6 +644,10 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             reply(false, "Invalid tunnel configuration name")
             return
         }
+        if let denial = runtimeAccessDenial(for: configURL, action: .connect) {
+            reply(false, denial)
+            return
+        }
 
         let alreadyRunning = (try? RuntimeConfigLocator.configPaths(
             in: URL(fileURLWithPath: "/var/run/wireguard"),
@@ -677,6 +693,10 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
     func stopTunnel(named name: String, reply: @escaping (Bool, String?) -> Void) {
         guard let configURL = validatedRuntimeConfig(named: name, allowLegacy: true) else {
             reply(false, "Invalid or missing tunnel configuration")
+            return
+        }
+        if let denial = runtimeAccessDenial(for: configURL, action: .disconnect) {
+            reply(false, denial)
             return
         }
 
@@ -1073,11 +1093,23 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             try validateConfigContents(contents)
             try createDirectory(runtimeConfigDir, permissions: 0o700)
             let destination = runtimeConfigDir.appendingPathComponent(safeName, isDirectory: false)
+            if !callerIsAdministrator {
+                // A personal config must not replace a shared tunnel's runtime config, or
+                // another user's personal one.
+                if try managedRecord(forRuntimeFileName: safeName) != nil {
+                    throw HelperError.accessDenied("A shared tunnel already uses this name")
+                }
+                if let owner = runtimeConfigOwner(destination), owner != 0, owner != clientUser.uid {
+                    throw HelperError.accessDenied("Another user's tunnel already uses this name")
+                }
+            }
             let temporary = runtimeConfigDir.appendingPathComponent(".\(UUID().uuidString).tmp")
             try contents.write(to: temporary, options: [.atomic])
+            // Owned by the staging user (the directory itself stays root-only 0700) so
+            // start/stop can tell whose personal tunnel this is.
             try fileManager.setAttributes([
                 .posixPermissions: 0o600,
-                .ownerAccountID: 0,
+                .ownerAccountID: clientUser.uid,
                 .groupOwnerAccountID: 0
             ], ofItemAtPath: temporary.path)
             if fileManager.fileExists(atPath: destination.path) {
@@ -1333,6 +1365,9 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             guard let uuid = UUID(uuidString: id),
                   let record = records.first(where: { $0.id == uuid }) else {
                 throw HelperError.managedTunnelNotFound
+            }
+            if !(record.managedPolicy?.usersCanConnect ?? true), !callerIsAdministrator {
+                throw HelperError.accessDenied("Users are not allowed to connect this shared tunnel")
             }
             let source = URL(fileURLWithPath: record.configPath)
             try validateManagedConfigFile(source)
@@ -1676,6 +1711,74 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
+    private enum RuntimeAction {
+        case connect
+        case disconnect
+    }
+
+    /// The managed-tunnel access policy and personal-tunnel ownership used to be enforced
+    /// only by the app. Enforced here, they also hold for any caller that gets past client
+    /// validation. Returns an error message, or nil if the caller may proceed.
+    private func runtimeAccessDenial(for configURL: URL, action: RuntimeAction) -> String? {
+        guard !callerIsAdministrator else { return nil }
+        guard configURL.deletingLastPathComponent().standardizedFileURL.path
+                == runtimeConfigDir.standardizedFileURL.path else {
+            return nil // legacy runtime directories predate ownership tracking
+        }
+        let record: ManagedTunnelRecord?
+        do {
+            record = try managedRecord(forRuntimeFileName: configURL.lastPathComponent)
+        } catch {
+            return "Unable to read shared tunnel policy: \(error.localizedDescription)"
+        }
+        if let record {
+            let policy = record.managedPolicy ?? ManagedTunnelPolicy()
+            switch action {
+            case .connect where !policy.usersCanConnect:
+                return "Users are not allowed to connect this shared tunnel"
+            case .disconnect where !policy.usersCanDisconnect:
+                return "Users are not allowed to disconnect this shared tunnel"
+            default:
+                return nil
+            }
+        }
+        // Root-owned personal configs were staged before ownership was tracked.
+        if let owner = runtimeConfigOwner(configURL), owner != 0, owner != clientUser.uid {
+            return "This tunnel belongs to another user"
+        }
+        return nil
+    }
+
+    private func managedRecord(forRuntimeFileName name: String) throws -> ManagedTunnelRecord? {
+        try loadManagedRecords().first { URL(fileURLWithPath: $0.configPath).lastPathComponent == name }
+    }
+
+    private func runtimeConfigOwner(_ url: URL) -> Int? {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return nil }
+        return Int(info.st_uid)
+    }
+
+    private var callerIsAdministrator: Bool {
+        guard clientUser.uid != 0 else { return true }
+        guard let group = getgrnam("admin") else { return false }
+        var userUUID = UUID().uuid
+        var groupUUID = UUID().uuid
+        var isMember: Int32 = 0
+        let resolved = withUnsafeMutableBytes(of: &userUUID) { user in
+            withUnsafeMutableBytes(of: &groupUUID) { group_ in
+                mbr_uid_to_uuid(uid_t(clientUser.uid), user.baseAddress!.assumingMemoryBound(to: UInt8.self)) == 0
+                    && mbr_gid_to_uuid(group.pointee.gr_gid, group_.baseAddress!.assumingMemoryBound(to: UInt8.self)) == 0
+                    && mbr_check_membership(
+                        user.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        group_.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        &isMember
+                    ) == 0
+            }
+        }
+        return resolved && isMember == 1
+    }
+
     private func validateManagedConfigFile(_ url: URL) throws {
         guard url.standardizedFileURL.path.hasPrefix(managedConfigDir.standardizedFileURL.path + "/"),
               validatedConfigName(url.lastPathComponent) != nil else {
@@ -2002,6 +2105,7 @@ private enum HelperError: LocalizedError {
     case managedTunnelNotFound
     case privilegedHook(String)
     case controlCharacter
+    case accessDenied(String)
 
     var errorDescription: String? {
         switch self {
@@ -2018,6 +2122,8 @@ private enum HelperError: LocalizedError {
             return "Tunnel configuration contains forbidden root command hook: \(name)"
         case .controlCharacter:
             return "Tunnel configuration contains control characters"
+        case .accessDenied(let reason):
+            return reason
         }
     }
 }
