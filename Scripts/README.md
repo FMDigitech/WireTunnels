@@ -68,7 +68,7 @@ binaries required by WireTunnels into the app bundle.
 
 ```
 <project root>/build/wireguard-cache/
-├── .built_version          # recorded git hashes; used for cache invalidation
+├── .built_version          # revisions, patch hashes and signing identity; used for cache invalidation
 ├── wireguard-go            # universal binary
 ├── wireguard-go-arm64      # intermediate slice
 ├── wireguard-go-amd64      # intermediate slice
@@ -123,9 +123,16 @@ hashes recorded in `Scripts/wireguard-versions.env`. The tracked macOS patches
 are applied after checkout.
 
 Every build writes `Resources/wireguard/manifest.json` with source URLs,
-revisions, architectures, patch hashes, artifact sizes, and SHA256 values. The
-app verifies this manifest before requesting installation, and the privileged
-helper repeats the checks independently.
+revisions, architectures, patch hashes, artifact sizes, and SHA256 values for
+display in Settings. Nothing trusts it for installation.
+
+The privileged helper installs the tools itself, only from its own app bundle,
+at start and whenever they fail verification. It checks each staged copy
+against anchors compiled into the helper: `wg` and `wireguard-go` must be
+signed with the app's team and their own identifier, and `wg-quick` must match
+the SHA-256 that `Scripts/generate_tool_anchors.sh` generates before the helper
+compiles. The app's copy step fails the build if the bundled `wg-quick` doesn't
+match that hash. Right before each run, the helper re-checks the tools that run.
 
 Before distributing a release:
 
@@ -135,5 +142,5 @@ Before distributing a release:
 4. Staple with `xcrun stapler staple WireTunnels.app`.
 5. Verify with `xcrun stapler validate WireTunnels.app` and
    `spctl --assess --type execute --verbose WireTunnels.app`.
-6. Install the app in `/Applications` and test helper approval, tool
-   installation, SHA256 status, connect, and disconnect on a clean account.
+6. Install the app in `/Applications` and test helper approval, automatic tool
+   installation, connect, and disconnect on a clean account.

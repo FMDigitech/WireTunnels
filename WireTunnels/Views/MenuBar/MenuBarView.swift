@@ -58,8 +58,7 @@ struct MenuBarView: View {
             if let notice = MenuBarSetupNotice(
                 environment: tunnelManager.environment,
                 isInitialized: tunnelManager.isInitialized,
-                helperRequiresApproval: tunnelManager.helperRequiresApproval,
-                toolInstallRequired: tunnelManager.toolInstallRequired
+                helperRequiresApproval: tunnelManager.helperRequiresApproval
             ) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(notice.title, systemImage: "exclamationmark.triangle")

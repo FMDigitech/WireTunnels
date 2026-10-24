@@ -6,29 +6,17 @@ struct WireGuardArtifactStatus: Equatable, Identifiable {
     let sourceURL: String
     let revision: String
     let architectures: [String]
-    let expectedSHA256: String
-    let actualSHA256: String?
-    let isValid: Bool
 
     var id: String { name }
 }
 
+/// Provenance of the bundled tools, read from their manifest for display.
+/// Whether the installed tools are genuine is up to the helper (`toolStatus`).
 struct WireGuardRuntimeStatus: Equatable {
-    enum Location: String {
-        case bundled = "Bundled"
-        case installed = "Installed"
-    }
-
-    let location: Location
     let source: String
     let generatedAt: Date?
-    let verifiedAt: Date
     let artifacts: [WireGuardArtifactStatus]
     let errorMessage: String?
-
-    var isValid: Bool {
-        errorMessage == nil && artifacts.count == 3 && artifacts.allSatisfy(\.isValid)
-    }
 
     var architectureSummary: String {
         Array(Set(artifacts.flatMap(\.architectures))).sorted().joined(separator: " / ")

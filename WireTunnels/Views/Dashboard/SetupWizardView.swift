@@ -4,14 +4,13 @@ import SwiftUI
 
 struct SetupWizardView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
-    @State private var isInstallingTools = false
 
     private var helperReady: Bool {
         !tunnelManager.helperRequiresApproval && tunnelManager.environment.helperInstalled
     }
 
     private var toolsReady: Bool {
-        !tunnelManager.toolInstallRequired && tunnelManager.environment.isReady
+        tunnelManager.environment.isReady
     }
 
     var body: some View {
@@ -79,21 +78,22 @@ struct SetupWizardView: View {
                     tunnelManager.openHelperApprovalSettings()
                 }
 
+                // The helper installs the tools itself once it runs; this step only waits for
+                // its answer and offers a retry if the install failed.
                 SetupStepRow(
                     number: 2,
-                    title: "Install WireGuard Tools",
-                    description: "Verified binaries bundled with the app. No download required.",
+                    title: "Prepare WireGuard Tools",
+                    description: "The helper installs verified binaries bundled with the app. No download required.",
                     isComplete: toolsReady,
                     isActive: helperReady && !toolsReady,
-                    isLoading: isInstallingTools || (tunnelManager.isLoading && helperReady && !toolsReady),
-                    actionLabel: "Install Tools",
-                    actionIcon: "shippingbox.and.arrow.backward",
+                    isLoading: tunnelManager.isLoading && helperReady && !toolsReady,
+                    actionLabel: "Retry",
+                    actionIcon: "arrow.clockwise",
                     statusMessage: (helperReady && !toolsReady) ? tunnelManager.setupStatus : nil,
                     errorMessage: (helperReady && !toolsReady) ? tunnelManager.errorMessage : nil
                 ) {
-                    installTools()
+                    retryTools()
                 }
-                .disabled(tunnelManager.bundledRuntimeStatus?.isValid != true)
             }
             .frame(maxWidth: 500)
         }
@@ -108,12 +108,10 @@ struct SetupWizardView: View {
 
     // MARK: - Actions
 
-    private func installTools() {
-        guard !isInstallingTools && !tunnelManager.isLoading else { return }
-        isInstallingTools = true
+    private func retryTools() {
+        guard !tunnelManager.isLoading else { return }
         Task { @MainActor in
-            await tunnelManager.installBundledTools()
-            isInstallingTools = false
+            await tunnelManager.redetectEnvironment()
         }
     }
 }

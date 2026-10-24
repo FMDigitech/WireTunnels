@@ -24,14 +24,14 @@ struct RouteEntry: Codable, Equatable {
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
     nonisolated static let expectedHelperVersion = "1.0.7"
-    nonisolated static let expectedHelperProtocolRevision = "inventory-routing-v2"
+    nonisolated static let expectedHelperProtocolRevision = "inventory-routing-v2-helper-tools"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     nonisolated private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
     // Startup can need a separate DNS recovery attempt after a terminated
     // wg-quick command. Let those bounded helper operations finish first.
     nonisolated private static let tunnelOperationTimeoutNanoseconds: UInt64 = 75_000_000_000
-    private static let toolInstallTimeoutNanoseconds: UInt64 = 60_000_000_000
+    private static let toolStatusTimeoutNanoseconds: UInt64 = 60_000_000_000
     // Plist must be at Contents/Library/LaunchDaemons/ in the app bundle
     nonisolated static let helperPlistName = "com.fmdigitech.WireTunnels.helper.plist"
 
@@ -349,46 +349,21 @@ final class WireGuardCommandService {
         }
     }
 
-    func installBundledTools() async throws {
-        _ = try getHelper()
-        return try await withCheckedThrowingContinuation { continuation in
-            var hasResumed = false
-            let resume: (Result<Void, Error>) -> Void = { result in
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(with: result)
-            }
-
-            let timeoutTask = Task { @MainActor [weak self] in
-                try? await AwakeTimeout.wait(nanoseconds: Self.toolInstallTimeoutNanoseconds)
-                guard !Task.isCancelled else { return }
-                self?.invalidateConnection()
-                resume(.failure(CommandError.operationTimedOut("Installing WireGuard tools")))
-            }
-
-            guard let proxy = proxyWithErrorHandler({ [weak self] error in
-                Task { @MainActor in
-                    timeoutTask.cancel()
-                    self?.connection = nil
-                    resume(.failure(CommandError.connectionInterrupted(error.localizedDescription)))
-                }
-            }) else {
-                timeoutTask.cancel()
-                resume(.failure(CommandError.connectionFailed))
-                return
-            }
-
-            proxy.installBundledTools { success, errorMessage in
-                Task { @MainActor in
-                    timeoutTask.cancel()
-                    if success {
-                        resume(.success(()))
-                    } else {
-                        resume(.failure(CommandError.installFailed(errorMessage ?? "Unknown")))
-                    }
-                }
+    /// Asks the helper whether its WireGuard tools verify; nil when they do, otherwise why
+    /// not. The helper first reinstalls them from its own bundle when they fail, so a call
+    /// right after registering waits for that install.
+    func toolStatus() async throws -> String? {
+        let problem: String? = try await performHelperOperation(
+            timeoutDescription: "Checking WireGuard tools",
+            timeoutNanoseconds: Self.toolStatusTimeoutNanoseconds
+        ) { helper, complete in
+            helper.toolStatus { ready, errorMessage in
+                complete(.success(ready ? nil : errorMessage ?? "WireGuard tools failed verification"))
             }
         }
+        // Shows reinstalls and failed checks, including those from helper start and earlier runs.
+        await logCommandDiagnostics()
+        return problem
     }
 
     func startTunnel(configPath: String) async throws {
@@ -435,6 +410,11 @@ final class WireGuardCommandService {
             }
             let events = try JSONDecoder().decode([HelperCommandEvent].self, from: data)
             for event in events where !seenCommandEvents.contains(event.id) {
+                if let message = event.message {
+                    if event.isError == true { LogService.shared.error("Helper: \(message)") }
+                    else { LogService.shared.info("Helper: \(message)") }
+                    continue
+                }
                 let status = event.exitCode.map { "; exit=\($0)" } ?? ""
                 let line = "Helper command \(String(event.commandID.uuidString.prefix(8))) \(event.command): \(event.stage) at \(String(format: "%.3f", event.elapsed))s\(status)"
                 if event.timedOut || event.exitCode.map({ $0 != 0 }) == true { LogService.shared.error(line) }
@@ -805,7 +785,6 @@ enum CommandError: LocalizedError {
     case operationTimedOut(String)
     case helperCheckTimedOut
     case bundleNotFound
-    case installFailed(String)
     case tunnelStartFailed(String)
     case tunnelStopFailed(String)
     case statusFailed(String)
@@ -830,7 +809,6 @@ enum CommandError: LocalizedError {
             return "\(operation) timed out because the privileged helper did not respond."
         case .helperCheckTimedOut: return "Privileged helper did not respond within 3 seconds"
         case .bundleNotFound: return "App bundle path not found"
-        case .installFailed(let msg): return "Binary install failed: \(msg)"
         case .tunnelStartFailed(let msg): return "Failed to start tunnel: \(msg)"
         case .tunnelStopFailed(let msg): return "Failed to stop tunnel: \(msg)"
         case .statusFailed(let msg): return "Failed to get status: \(msg)"

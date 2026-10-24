@@ -17,7 +17,6 @@ struct SettingsView: View {
 
     @State private var showingResetConfirm = false
     @State private var isRedetecting = false
-    @State private var isInstallingTools = false
     @ObservedObject private var logService: LogService = .shared
     private let notificationService = NotificationService.shared
 
@@ -27,9 +26,9 @@ struct SettingsView: View {
 
                 // MARK: WireGuard Tools
                 SettingsSection(title: "WireGuard Tools", systemImage: "wrench.and.screwdriver") {
-                    if let runtime = tunnelManager.environment.runtimeStatus {
-                        RuntimeMetadataView(status: runtime)
-                    } else if let bundled = tunnelManager.bundledRuntimeStatus {
+                    // The helper installs exactly these bundled tools, so their metadata
+                    // describes what runs once the helper reports them ready.
+                    if let bundled = tunnelManager.bundledRuntimeStatus {
                         RuntimeMetadataView(status: bundled)
                     }
 
@@ -52,8 +51,8 @@ struct SettingsView: View {
                         StatusIndicatorRow(
                             label: "Binaries",
                             isOK: tunnelManager.environment.binariesInstalled,
-                            okText: "Found",
-                            failText: "Missing"
+                            okText: "Verified",
+                            failText: "Not Ready"
                         )
                     }
 
@@ -80,7 +79,7 @@ struct SettingsView: View {
                                     )
                             }
                             if !tunnelManager.isLoading && !tunnelManager.environment.isReady {
-                                Text("Installation uses verified tools bundled with the signed app. There is no download and no Homebrew dependency.")
+                                Text("The helper installs verified tools bundled with the signed app. There is no download and no Homebrew dependency. Re-detect retries a failed installation.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -89,24 +88,6 @@ struct SettingsView: View {
                         Spacer()
 
                         HStack {
-                            Button {
-                                installTools()
-                            } label: {
-                                if isInstallingTools {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Label(
-                                        tunnelManager.environment.binariesInstalled
-                                            ? "Reinstall Tools"
-                                            : "Install Tools",
-                                        systemImage: "shippingbox.and.arrow.backward"
-                                    )
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isInstallingTools || tunnelManager.isLoading || tunnelManager.bundledRuntimeStatus?.isValid != true)
-
                             Button {
                                 redetect()
                             } label: {
@@ -118,7 +99,7 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.bordered)
-                            .disabled(isRedetecting || isInstallingTools || tunnelManager.isLoading)
+                            .disabled(isRedetecting || tunnelManager.isLoading)
                         }
                     }
 
@@ -426,14 +407,6 @@ struct SettingsView: View {
         }
     }
 
-    private func installTools() {
-        isInstallingTools = true
-        Task {
-            await tunnelManager.installBundledTools()
-            isInstallingTools = false
-        }
-    }
-
     private func applyLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {
@@ -631,29 +604,11 @@ private struct SettingsSection<Content: View>: View {
 private struct RuntimeMetadataView: View {
     let status: WireGuardRuntimeStatus
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
-        return formatter
-    }()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PathDisplayRow(label: "Runtime", path: status.versionSummary)
             PathDisplayRow(label: "Source", path: status.source)
             PathDisplayRow(label: "Architecture", path: status.architectureSummary)
-            PathDisplayRow(
-                label: "Last verified",
-                path: Self.dateFormatter.string(from: status.verifiedAt)
-            )
-
-            HStack(spacing: 6) {
-                Image(systemName: status.isValid ? "checkmark.shield.fill" : "xmark.shield.fill")
-                    .foregroundStyle(status.isValid ? .green : .red)
-                Text("SHA256: \(status.isValid ? "valid" : "invalid")")
-                    .font(.subheadline.weight(.medium))
-            }
 
             ForEach(status.artifacts) { artifact in
                 HStack {
@@ -665,8 +620,6 @@ private struct RuntimeMetadataView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
-                    Image(systemName: artifact.isValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundStyle(artifact.isValid ? .green : .red)
                 }
             }
 

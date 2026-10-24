@@ -4,8 +4,6 @@ enum AppPaths {
     static let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
     static let systemBinDir = systemRoot.appendingPathComponent("bin", isDirectory: true)
     static let runtimeConfigDir = systemRoot.appendingPathComponent("runtime", isDirectory: true)
-    static let systemMetadataDir = systemRoot.appendingPathComponent("metadata", isDirectory: true)
-    static let installedManifest = systemMetadataDir.appendingPathComponent("manifest.json")
     static let managedRoot = systemRoot.appendingPathComponent("managed", isDirectory: true)
     static let managedConfigDir = managedRoot.appendingPathComponent("configs", isDirectory: true)
     static let managedMetadataDir = managedRoot.appendingPathComponent("metadata", isDirectory: true)

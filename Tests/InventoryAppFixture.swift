@@ -90,8 +90,8 @@ final class InventoryHelperFixture: NSObject, WireguardHelperProtocol {
             if pauseInventory { pendingReply = reply } else { reply(true, nil) }
         } catch { reply(false, error.localizedDescription) }
     }
-    func installBundledTools(reply: @escaping (Bool, String?) -> Void) {
-        preconditionFailure("Unexpected helper call: installBundledTools")
+    func toolStatus(reply: @escaping (Bool, String?) -> Void) {
+        preconditionFailure("Unexpected helper call: toolStatus")
     }
     func helperVersion(reply: @escaping (String) -> Void) {
         preconditionFailure("Unexpected helper call: helperVersion")
@@ -159,12 +159,6 @@ extension InventoryRoutingTests {
         manager.environment.helperInstalled = true; manager.environment.binariesInstalled = true
         manager.environment.wgPath = try executable("wg"); manager.environment.wgQuickPath = try executable("wg-quick")
         manager.environment.wireguardGoPath = try executable("wireguard-go")
-        manager.environment.runtimeStatus = WireGuardRuntimeStatus(
-            location: .installed, source: "test", generatedAt: nil, verifiedAt: Date(),
-            artifacts: ["wg", "wg-quick", "wireguard-go"].map {
-                WireGuardArtifactStatus(name: $0, version: "test", sourceURL: "", revision: "", architectures: [],
-                                        expectedSHA256: "", actualSHA256: nil, isValid: true)
-            }, errorMessage: nil)
         manager.isInitialized = true
         let command = InventoryCommand(executable: "/usr/bin/printf", arguments: ["203.0.113.1\\n2001:db8::1\\n"])
 
