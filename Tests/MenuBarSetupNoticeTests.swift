@@ -7,10 +7,15 @@ struct MenuBarSetupNoticeTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         var environment = WireGuardEnvironment()
+        let missingHelper = notice(environment)
+        precondition(missingHelper?.title == "Privileged helper is not installed", "A missing helper must be explained first")
+        precondition(missingHelper?.showsSettingsButton == true, "A missing helper must offer Settings")
+        environment.helperInstalled = true
         let missing = notice(environment)
-        precondition(missing?.title == "WireGuard tools are not installed", "Missing tools must be explained in the menu")
-        precondition(missing?.showsSettingsButton == true, "Missing tools must offer Settings")
+        precondition(missing?.title == "WireGuard tools are not ready", "Tools the helper hasn't verified must be explained in the menu")
+        precondition(missing?.showsSettingsButton == true, "Unverified tools must offer Settings")
         precondition(missing?.message.contains("Settings") == true)
+        environment.helperInstalled = false
         let starting = notice(environment, initialized: false)
         precondition(starting?.title == "Checking WireGuard setup", "Starting must not report an unconfirmed missing installation")
         precondition(starting?.showsSettingsButton == false)
@@ -25,23 +30,17 @@ struct MenuBarSetupNoticeTests {
         environment.wgQuickPath = directory.appendingPathComponent("wg-quick").path
         environment.wireguardGoPath = directory.appendingPathComponent("wireguard-go").path
         environment.binariesInstalled = true
-        environment.runtimeStatus = WireGuardRuntimeStatus(location: .installed, source: "Test fixture", generatedAt: nil,
-            verifiedAt: Date(), artifacts: ["wg", "wg-quick", "wireguard-go"].map {
-                WireGuardArtifactStatus(name: $0, version: "test", sourceURL: "https://example.invalid/tools",
-                    revision: "fixture", architectures: ["arm64"], expectedSHA256: "fixture", actualSHA256: "fixture", isValid: true)
-            }, errorMessage: nil)
         precondition(notice(environment)?.title == "Privileged helper is not installed")
         environment.helperInstalled = true
         precondition(notice(environment) == nil, "Ready installations must not show a setup warning")
-        precondition(notice(environment, update: true)?.title == "WireGuard tools need an update")
         environment.wireguardGoPath = nil
-        precondition(notice(environment)?.title == "WireGuard tools need reinstalling", "A damaged installation must explain disabled controls")
-        print("PASS: menu explains missing tools, helper approval, updates, and incomplete setup without warning on ready installations")
+        precondition(notice(environment)?.title == "WireGuard tools are incomplete", "A damaged installation must explain disabled controls")
+        print("PASS: menu explains a missing helper, unverified tools, helper approval, and incomplete setup without warning on ready installations")
     }
 
     private static func notice(_ environment: WireGuardEnvironment, initialized: Bool = true,
-                               approval: Bool = false, update: Bool = false) -> MenuBarSetupNotice? {
+                               approval: Bool = false) -> MenuBarSetupNotice? {
         MenuBarSetupNotice(environment: environment, isInitialized: initialized,
-                           helperRequiresApproval: approval, toolInstallRequired: update)
+                           helperRequiresApproval: approval)
     }
 }

@@ -57,8 +57,9 @@ ruleset can still bypass these anchors and are outside the supported setup.
 The helper starts at boot (`RunAtLoad`) to restore saved blocks and watch interface
 changes without waiting for the app. Restoring only on the next app launch would
 leave cached destinations unprotected until then. With no policies, it installs
-no inventory rules. The helper protocol revision is `inventory-routing-v2`; app
-and helper must ship together, with helper approval coordinated for the release.
+no inventory rules. The helper protocol revision is
+`inventory-routing-v2-helper-tools`; app and helper must ship together, with helper
+approval coordinated for the release.
 
 Settings saves, connect, disconnect, and wake reconnect cannot modify the same
 tunnel at once. A busy disconnect now reports an error and can be retried after

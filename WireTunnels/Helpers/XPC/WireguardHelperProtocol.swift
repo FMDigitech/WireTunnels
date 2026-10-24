@@ -24,7 +24,7 @@ import Foundation
     func syncSplitDNS(entries: Data, reply: @escaping (Bool, String?) -> Void)
     func syncRoutes(ownerId: String, entries: Data, reply: @escaping (Bool, String?) -> Void)
     func updateInventoryRouting(request: Data, reply: @escaping (Bool, String?) -> Void)
-    func installBundledTools(reply: @escaping (Bool, String?) -> Void)
+    func toolStatus(reply: @escaping (Bool, String?) -> Void)
     func helperVersion(reply: @escaping (String) -> Void)
     func helperProtocolRevision(reply: @escaping (String) -> Void)
 }

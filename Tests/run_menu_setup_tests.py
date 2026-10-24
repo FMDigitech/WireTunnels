@@ -6,7 +6,6 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = [
-    "WireTunnels/Models/WireGuardRuntimeStatus.swift",
     "WireTunnels/Models/WireGuardEnvironment.swift",
     "WireTunnels/Models/MenuBarSetupNotice.swift",
     "Tests/MenuBarSetupNoticeTests.swift",

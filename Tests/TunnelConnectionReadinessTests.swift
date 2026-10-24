@@ -19,7 +19,6 @@ struct TunnelConnectionReadinessTests {
         installed.wireguardGoPath = paths[2]
         installed.helperInstalled = true
         installed.binariesInstalled = true
-        installed.runtimeStatus = runtimeStatus()
         precondition(installed.isReady, "A fully installed, verified environment must be ready")
 
         for missingPath in [\WireGuardEnvironment.wgPath, \.wgQuickPath, \.wireguardGoPath] {
@@ -29,18 +28,8 @@ struct TunnelConnectionReadinessTests {
         }
 
         var partial = installed
-        partial.runtimeStatus = nil
-        precondition(!partial.isReady, "An unverified runtime must not connect")
-        partial.runtimeStatus = runtimeStatus(location: .bundled)
-        precondition(!partial.isReady, "Bundled tools must not count as installed tools")
-        partial.runtimeStatus = runtimeStatus(invalidArtifact: "wg-quick")
-        precondition(!partial.isReady, "Failed tool verification must prevent connection")
-        partial.runtimeStatus = runtimeStatus(errorMessage: "Verification failed")
-        precondition(!partial.isReady, "A verification error must prevent connection")
-
-        partial = installed
         partial.binariesInstalled = false
-        precondition(!partial.isReady, "Paths alone must not bypass installation state")
+        precondition(!partial.isReady, "Paths alone must not bypass the helper's tool verification")
         partial = installed
         partial.helperInstalled = false
         precondition(!partial.isReady, "Connection requires the installed helper")
@@ -76,27 +65,6 @@ struct TunnelConnectionReadinessTests {
 
         try FileManager.default.removeItem(atPath: paths[2])
         precondition(!installed.isReady, "A removed tool must invalidate stale detected paths")
-        print("PASS: connections require installed executable tools, verified runtime, and an app ready to connect")
-    }
-
-    private static func runtimeStatus(
-        location: WireGuardRuntimeStatus.Location = .installed,
-        invalidArtifact: String? = nil,
-        errorMessage: String? = nil
-    ) -> WireGuardRuntimeStatus {
-        WireGuardRuntimeStatus(
-            location: location,
-            source: "Test fixture",
-            generatedAt: nil,
-            verifiedAt: Date(),
-            artifacts: ["wg", "wg-quick", "wireguard-go"].map { name in
-                WireGuardArtifactStatus(
-                    name: name, version: "test", sourceURL: "https://example.invalid/tools",
-                    revision: "fixture", architectures: ["arm64"], expectedSHA256: "fixture",
-                    actualSHA256: "fixture", isValid: name != invalidArtifact
-                )
-            },
-            errorMessage: errorMessage
-        )
+        print("PASS: connections require installed executable tools verified by the helper, and an app ready to connect")
     }
 }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AAAA00102FDC11AA00000010 /* ToolAnchors.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000F2FDC11AA0000000F /* ToolAnchors.generated.swift */; };
 		AAAA000B2FDC11AA0000000B /* com.fmdigitech.WireTunnels.helper in Embed Helper */ = {isa = PBXBuildFile; fileRef = AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DCF55BF22FDC20EE00D04703 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DCF55BF12FDC20EE00D04702 /* Sparkle */; };
 /* End PBXBuildFile section */
@@ -36,6 +37,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AAAA000F2FDC11AA0000000F /* ToolAnchors.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolAnchors/ToolAnchors.generated.swift; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.fmdigitech.WireTunnels.helper; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCF55BA02FDC10DD00D04602 /* WireTunnels.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WireTunnels.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -105,6 +107,7 @@
 			children = (
 				DCF55BA02FDC10DD00D04602 /* WireTunnels.app */,
 				AAAA00022FDC11AA00000002 /* com.fmdigitech.WireTunnels.helper */,
+				AAAA000F2FDC11AA0000000F /* ToolAnchors.generated.swift */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,6 +119,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = AAAA00082FDC11AA00000008 /* Build configuration list for PBXNativeTarget "WireTunnelsHelper" */;
 			buildPhases = (
+				AAAA000E2FDC11AA0000000E /* Generate Tool Anchors */,
 				AAAA00032FDC11AA00000003 /* Sources */,
 				AAAA00042FDC11AA00000004 /* Frameworks */,
 			);
@@ -232,6 +236,7 @@
 				"$(SRCROOT)/Scripts/wg-quick-active-dns.patch",
 				"$(SRCROOT)/Scripts/wg-quick-dns-recovery.patch",
 				"$(SRCROOT)/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist",
+				"$(BUILT_PRODUCTS_DIR)/ToolAnchors/wg-quick.sha256",
 			);
 			name = "Build Wireguard Binaries";
 			outputFileListPaths = (
@@ -247,6 +252,35 @@
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\n\n# Build and bundle wireguard binaries\nbash \"${SRCROOT}/Scripts/build_wireguard_binaries.sh\"\n\n# Copy launchd plist for SMAppService daemon registration\nLAUNCH_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"\nmkdir -p \"$LAUNCH_DIR\"\ncp \"${SRCROOT}/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist\" \\\n   \"$LAUNCH_DIR/com.fmdigitech.WireTunnels.helper.plist\"\n";
 		};
+		AAAA000E2FDC11AA0000000E /* Generate Tool Anchors */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Scripts/generate_tool_anchors.sh",
+				"$(SRCROOT)/Scripts/build_wireguard_binaries.sh",
+				"$(SRCROOT)/Scripts/wireguard-versions.env",
+				"$(SRCROOT)/Scripts/test_wg_quick_validator_path.sh",
+				"$(SRCROOT)/Scripts/wg-quick-bash3.patch",
+				"$(SRCROOT)/Scripts/wg-quick-dns-cleanup.patch",
+				"$(SRCROOT)/Scripts/wg-quick-cleanup.patch",
+				"$(SRCROOT)/Scripts/wg-quick-active-dns.patch",
+				"$(SRCROOT)/Scripts/wg-quick-dns-recovery.patch",
+			);
+			name = "Generate Tool Anchors";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/ToolAnchors/ToolAnchors.generated.swift",
+				"$(BUILT_PRODUCTS_DIR)/ToolAnchors/wg-quick.sha256",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n\n# Compile the patched wg-quick's hash into the helper\nbash \"${SRCROOT}/Scripts/generate_tool_anchors.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -254,6 +288,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AAAA00102FDC11AA00000010 /* ToolAnchors.generated.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

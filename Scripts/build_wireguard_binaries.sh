@@ -2,6 +2,10 @@
 # build_wireguard_binaries.sh
 # Xcode build phase script: builds and bundles wg, wg-quick, wireguard-go
 # as universal binaries (arm64 + x86_64) into the app bundle Resources/wireguard/
+#
+# --prepare-wg-quick only produces the patched wg-quick in the cache. The helper
+# target runs it through generate_tool_anchors.sh before compiling, so the hash
+# compiled into the helper comes from the same patch chain as the bundled script.
 
 set -euo pipefail
 
@@ -19,7 +23,8 @@ echo_error()   { echo -e "${RED}[WG-BUILD] ERROR:${NC} $*" >&2; }
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SRCROOT="${SRCROOT:-.}"
-OUTPUT_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/wireguard"
+OUTPUT_DIR="${BUILT_PRODUCTS_DIR:-}/${CONTENTS_FOLDER_PATH:-}/Resources/wireguard"
+TOOL_ANCHOR="${BUILT_PRODUCTS_DIR:-}/ToolAnchors/wg-quick.sha256"
 CACHE_DIR="${SRCROOT}/build/wireguard-cache"
 WG_GO_DIR="${CACHE_DIR}/wireguard-go-src"
 WG_TOOLS_DIR="${CACHE_DIR}/wireguard-tools-src"
@@ -79,7 +84,9 @@ get_versions() {
     local bash3_hash dns_hash
     bash3_hash=$(shasum -a 256 "$WG_QUICK_PATCH" | awk '{print $1}')
     dns_hash=$(shasum -a 256 "$WG_QUICK_DNS_PATCH" | awk '{print $1}')
-    echo "${WIREGUARD_GO_REVISION}:${WIREGUARD_TOOLS_REVISION}:${bash3_hash}:${dns_hash}"
+    # The signing scheme and identity are part of the key: the helper rejects tools
+    # signed ad-hoc or by another team, so a cache from such a build must not be reused.
+    echo "${WIREGUARD_GO_REVISION}:${WIREGUARD_TOOLS_REVISION}:${bash3_hash}:${dns_hash}:sign-identifier-v1:${EXPANDED_CODE_SIGN_IDENTITY:--}"
 }
 
 is_cache_valid() {
@@ -128,11 +135,15 @@ checkout_revision() {
 # used to do from copy_to_bundle) made the bundled binaries' hashes drift from
 # what's already installed on every single rebuild, forcing a spurious
 # "Reinstall Tools" prompt even when the actual WireGuard revision hadn't changed.
+# The identifier is set explicitly: the helper only installs a tool whose signature
+# has exactly this identifier and the app's team (see toolRequirement in HelperTool.swift).
+# Without it, codesign derives one from the linker signature, like "wg-55554944…".
 sign_cached_binary() {
     local path="$1"
     if file "$path" | grep -q "Mach-O"; then
         echo_info "Signing $(basename "$path") with Hardened Runtime..."
-        codesign --force --options runtime --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$path"
+        codesign --force --options runtime --identifier "$(basename "$path")" \
+            --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$path"
     fi
 }
 
@@ -196,6 +207,13 @@ build_wireguard_tools() {
     sign_cached_binary "${CACHE_DIR}/wg"
     echo_success "wg built: $(lipo -info "${CACHE_DIR}/wg" 2>&1 | tail -1)"
 
+}
+
+ensure_wireguard_tools_source() {
+    if [ "$(git -C "$WG_TOOLS_DIR" rev-parse HEAD 2>/dev/null)" != "$WIREGUARD_TOOLS_REVISION" ] ||
+        [ ! -f "${WG_TOOLS_DIR}/src/wg-quick/darwin.bash" ]; then
+        checkout_revision "$WIREGUARD_TOOLS_REPO" "$WIREGUARD_TOOLS_REVISION" "$WG_TOOLS_DIR"
+    fi
 }
 
 prepare_wg_quick() {
@@ -301,6 +319,17 @@ copy_to_bundle() {
         chmod +x "${OUTPUT_DIR}/${f}"
     done
 
+    # The helper only installs a wg-quick matching the hash compiled into it
+    # (generate_tool_anchors.sh), so fail the build instead of users' installs.
+    if [ ! -f "$TOOL_ANCHOR" ]; then
+        echo_error "Missing $TOOL_ANCHOR; build the WireTunnelsHelper target first"
+        exit 1
+    fi
+    if [ "$(shasum -a 256 "${OUTPUT_DIR}/wg-quick" | awk '{print $1}')" != "$(cat "$TOOL_ANCHOR")" ]; then
+        echo_error "Bundled wg-quick does not match the hash compiled into the helper"
+        exit 1
+    fi
+
     # wg and wireguard-go are already signed in the cache (see sign_cached_binary,
     # called from build_wireguard_go/build_wireguard_tools) — signing here again
     # on every build, even a cache hit, is what made their bytes (and manifest
@@ -320,6 +349,13 @@ copy_to_bundle() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 main() {
+    if [ "${1:-}" = "--prepare-wg-quick" ]; then
+        mkdir -p "$CACHE_DIR"
+        ensure_wireguard_tools_source
+        prepare_wg_quick
+        return
+    fi
+
     echo_info "=== WireTunnels Binary Build Phase ==="
     echo_info "Output: $OUTPUT_DIR"
     echo_info "Cache:  $CACHE_DIR"

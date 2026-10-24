@@ -35,7 +35,7 @@ grep -Fq 'expectedHelperVersion = "1.0"' "$COMMAND_SERVICE" ||
 
 grep -Fq 'func generateKeyPair(reply: @escaping (String?, String?, String?) -> Void)' "$HELPER" ||
     fail "helper must implement key-pair generation"
-grep -Fq 'verifiedInstalledWg()' "$HELPER" ||
+grep -Fq 'toolInstaller.ensureInstalled(' "$HELPER" ||
     fail "helper must verify the installed wg binary before execution"
 grep -Fq 'arguments: ["genkey"]' "$HELPER" ||
     fail "helper must execute wg genkey"

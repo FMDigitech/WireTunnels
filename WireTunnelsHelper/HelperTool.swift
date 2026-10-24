@@ -1,10 +1,9 @@
-import CryptoKit
 import Darwin
 import Foundation
 import Security
 
 private let helperVersionNumber = "1.0.7"
-private let helperProtocolRevisionValue = "inventory-routing-v2"
+private let helperProtocolRevisionValue = "inventory-routing-v2-helper-tools"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let systemRoot = URL(fileURLWithPath: "/Library/Application Support/WireTunnels")
@@ -21,19 +20,24 @@ private let legacyRuntimeConfigDirs = [
     legacySystemRoot.appendingPathComponent("runtime", isDirectory: true),
     legacySystemRoot.appendingPathComponent("wireguard", isDirectory: true)
 ]
-private let metadataDir = systemRoot.appendingPathComponent("metadata", isDirectory: true)
 private let maximumConfigSize = 1024 * 1024
-private let expectedArtifactNames: Set<String> = ["wg", "wg-quick", "wireguard-go"]
 
-private struct RuntimeManifest: Decodable {
-    struct Artifact: Decodable {
-        let name: String
-        let sha256: String
-        let size: Int64
-    }
+// The helper installs the tools from its own bundle and checks them against these anchors.
+// Mach-O tools must be signed by the same team the XPC client check requires; wg-quick is
+// pinned to the hash generated when the helper was built (Scripts/generate_tool_anchors.sh).
+private let toolInstaller = ToolInstaller(
+    tools: [
+        ToolInstaller.Tool(name: "wg", check: .codeSignature(requirement: toolRequirement("wg"))),
+        ToolInstaller.Tool(name: "wireguard-go", check: .codeSignature(requirement: toolRequirement("wireguard-go"))),
+        ToolInstaller.Tool(name: "wg-quick", check: .sha256(ToolAnchors.wgQuickSHA256))
+    ],
+    source: { try ToolInstaller.bundledToolsDirectory() },
+    binDirectory: systemBinDir,
+    onEvent: { isError, message in HelperCommandLog.shared.recordMessage(message, isError: isError) }
+)
 
-    let schemaVersion: Int
-    let artifacts: [Artifact]
+private func toolRequirement(_ identifier: String) -> String {
+    "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(applicationTeamIdentifier)\""
 }
 
 private enum ManagedAutoConnectInterface: String, Codable {
@@ -370,7 +374,6 @@ private enum ConfigSafety {
 }
 
 private struct ValidatedClient {
-    let bundleURL: URL
     let user: ClientUser
 
     init?(connection: NSXPCConnection) {
@@ -437,7 +440,6 @@ private struct ValidatedClient {
                 .hasPrefix(candidateBundle.path + "/") else {
             return nil
         }
-        bundleURL = candidateBundle
         self.user = user
     }
 
@@ -480,7 +482,13 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
                 _ = CommandRunner().run(executable: executable, arguments: ["--dns-recover"], timeout: 15, terminationGrace: 3)
             }
         }
-        let bootstrap = HelperSession(clientBundleURL: Bundle.main.bundleURL, clientUser: ClientUser(uid: 0, username: "root"))
+        // launchd starts the helper at boot and whenever the app registers a new version, so
+        // this keeps bin/ matching the tools shipped in this helper's own bundle.
+        DispatchQueue.global(qos: .utility).async {
+            // ToolInstaller logs the outcome itself.
+            try? toolInstaller.ensureInstalled()
+        }
+        let bootstrap = HelperSession(clientUser: ClientUser(uid: 0, username: "root"))
         do { try bootstrap.restoreInventoryProtection() }
         catch { NSLog("Inventory protection could not be restored: %@", error.localizedDescription) }
         do {
@@ -504,7 +512,7 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
             return false
         }
 
-        let session = HelperSession(clientBundleURL: client.bundleURL, clientUser: client.user)
+        let session = HelperSession(clientUser: client.user)
         connection.exportedInterface = NSXPCInterface(with: WireguardHelperProtocol.self)
         connection.exportedObject = session
         connection.invalidationHandler = { _ = session }
@@ -516,7 +524,6 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
 private final class HelperSession: NSObject, WireguardHelperProtocol {
     static let inventoryQueue = DispatchQueue(label: "com.fmdigitech.wiretunnels.inventory")
     static var inventoryMonitoringAvailable = false
-    private let clientBundleURL: URL
     private let clientUser: ClientUser
     private let fileManager = FileManager.default
 
@@ -532,7 +539,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         resolve: { [unowned self] request in try self.inventoryInterface(request) },
         updatePeer: { [unowned self] interface, peer, prefixes in
             guard if_nametoindex(interface.name) == interface.index else { throw InventoryError.staleOperation }
-            let wg = try self.verifiedInstalledWg()
+            let wg = systemBinDir.appendingPathComponent("wg")
             let result = self.runCommand(executable: wg, arguments: ["addconf", interface.name, "/dev/stdin"],
                 standardInput: "[Peer]\nPublicKey = \(peer)\nAllowedIPs = \(prefixes.joined(separator: ","))\n")
             guard result.exitCode == 0 else { throw InventoryError.operation("Unable to update WireGuard AllowedIPs") }
@@ -594,7 +601,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         try validateRootOwnedFile(alias)
         let interface = try String(contentsOf: alias, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isValidInterfaceName(interface) else { throw InventoryError.staleOperation }
-        let wg = try verifiedInstalledWg()
+        let wg = systemBinDir.appendingPathComponent("wg")
         let key = runCommand(executable: wg, arguments: ["show", interface, "public-key"])
         guard key.exitCode == 0, key.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == request.localPublicKey else {
             throw InventoryError.staleOperation
@@ -609,8 +616,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         return live
     }
 
-    init(clientBundleURL: URL, clientUser: ClientUser) {
-        self.clientBundleURL = clientBundleURL
+    init(clientUser: ClientUser) {
         self.clientUser = clientUser
     }
 
@@ -728,11 +734,11 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 let configPaths: [String: String]
             }
             let wg = systemBinDir.appendingPathComponent("wg")
-            if !fileManager.isExecutableFile(atPath: wg.path) {
-                // Allow a fresh installation to quit without tools. A surviving
+            if (try? toolInstaller.ensureInstalled(["wg"])) == nil {
+                // Allow quitting while the tools are unavailable. A surviving
                 // userspace socket requires real status confirmation instead.
                 guard try !RuntimeConfigLocator.hasUserspaceSockets(in: directory) else {
-                    reply(nil, "Install the WireGuard tools to confirm and stop existing tunnels before quitting.")
+                    reply(nil, "The WireGuard tools are unavailable, so existing tunnels can't be confirmed and stopped before quitting.")
                     return
                 }
                 reply(try JSONEncoder().encode(Snapshot(output: "", configPaths: [:])), nil)
@@ -1025,42 +1031,38 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
     }
 
     func generateKeyPair(reply: @escaping (String?, String?, String?) -> Void) {
-        do {
-            let wg = try verifiedInstalledWg()
-            let privateKeyResult = runCommand(executable: wg, arguments: ["genkey"])
-            guard privateKeyResult.exitCode == 0 else {
-                reply(nil, nil, commandError(privateKeyResult, fallback: "wg genkey failed"))
-                return
-            }
-
-            let privateKey = privateKeyResult.stdout
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !privateKey.isEmpty else {
-                reply(nil, nil, "wg genkey returned an empty private key")
-                return
-            }
-
-            let publicKeyResult = runCommand(
-                executable: wg,
-                arguments: ["pubkey"],
-                standardInput: privateKey + "\n"
-            )
-            guard publicKeyResult.exitCode == 0 else {
-                reply(nil, nil, commandError(publicKeyResult, fallback: "wg pubkey failed"))
-                return
-            }
-
-            let publicKey = publicKeyResult.stdout
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !publicKey.isEmpty else {
-                reply(nil, nil, "wg pubkey returned an empty public key")
-                return
-            }
-
-            reply(privateKey, publicKey, nil)
-        } catch {
-            reply(nil, nil, error.localizedDescription)
+        let wg = systemBinDir.appendingPathComponent("wg")
+        let privateKeyResult = runCommand(executable: wg, arguments: ["genkey"])
+        guard privateKeyResult.exitCode == 0 else {
+            reply(nil, nil, commandError(privateKeyResult, fallback: "wg genkey failed"))
+            return
         }
+
+        let privateKey = privateKeyResult.stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !privateKey.isEmpty else {
+            reply(nil, nil, "wg genkey returned an empty private key")
+            return
+        }
+
+        let publicKeyResult = runCommand(
+            executable: wg,
+            arguments: ["pubkey"],
+            standardInput: privateKey + "\n"
+        )
+        guard publicKeyResult.exitCode == 0 else {
+            reply(nil, nil, commandError(publicKeyResult, fallback: "wg pubkey failed"))
+            return
+        }
+
+        let publicKey = publicKeyResult.stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !publicKey.isEmpty else {
+            reply(nil, nil, "wg pubkey returned an empty public key")
+            return
+        }
+
+        reply(privateKey, publicKey, nil)
     }
 
     func stageConfig(named name: String, contents: Data, reply: @escaping (Bool, String?) -> Void) {
@@ -1413,133 +1415,16 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    func installBundledTools(reply: @escaping (Bool, String?) -> Void) {
+    /// Reports whether the installed tools verify, reinstalling them from the helper's own
+    /// bundle first when they don't. The caller supplies nothing, so this can only ever
+    /// install the genuine tools.
+    func toolStatus(reply: @escaping (Bool, String?) -> Void) {
         do {
-            try installVerifiedTools()
+            try toolInstaller.ensureInstalled()
             reply(true, nil)
         } catch {
             reply(false, error.localizedDescription)
         }
-    }
-
-    private func installVerifiedTools() throws {
-        let sourceDirectory = clientBundleURL
-            .appendingPathComponent("Contents/Resources/wireguard", isDirectory: true)
-        let sourceManifest = sourceDirectory.appendingPathComponent("manifest.json")
-        let manifestData = try Data(contentsOf: sourceManifest, options: .mappedIfSafe)
-        let manifest = try JSONDecoder().decode(RuntimeManifest.self, from: manifestData)
-        let names = manifest.artifacts.map(\.name)
-        guard manifest.schemaVersion == 1,
-              names.count == expectedArtifactNames.count,
-              Set(names).count == names.count,
-              Set(names) == expectedArtifactNames else {
-            throw HelperError.invalidManifest
-        }
-
-        try createDirectory(systemRoot, permissions: 0o755)
-        try createDirectory(metadataDir, permissions: 0o755)
-
-        let transaction = systemRoot.appendingPathComponent(".install-\(UUID().uuidString)", isDirectory: true)
-        let stagedBin = transaction.appendingPathComponent("bin", isDirectory: true)
-        let backupBin = systemRoot.appendingPathComponent(".bin-backup-\(UUID().uuidString)", isDirectory: true)
-        try createDirectory(stagedBin, permissions: 0o755)
-        defer {
-            try? fileManager.removeItem(at: transaction)
-            try? fileManager.removeItem(at: backupBin)
-        }
-
-        // Bundled Mach-O binaries are re-signed by Xcode after the build phase writes
-        // the manifest, so their size/sha256 in the manifest may be stale. We verify
-        // copy faithfulness (source hash == destination hash) instead of comparing to
-        // the potentially-stale manifest values. The installed manifest is written with
-        // the actual post-signing sha256/size so verifiedInstalledWg() can verify later.
-        var installedArtifactInfo: [(name: String, sha256: String, size: Int64)] = []
-
-        for artifact in manifest.artifacts {
-            guard validatedConfigName(artifact.name) == nil,
-                  expectedArtifactNames.contains(artifact.name) else {
-                throw HelperError.invalidManifest
-            }
-            let source = sourceDirectory.appendingPathComponent(artifact.name, isDirectory: false)
-            try validateRegularFile(source, expectedSize: nil)
-            let sourceHash = try sha256(of: source)
-            let sourceSize = Int64(
-                (try source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            )
-
-            let destination = stagedBin.appendingPathComponent(artifact.name, isDirectory: false)
-            try fileManager.copyItem(at: source, to: destination)
-            try fileManager.setAttributes([
-                .posixPermissions: 0o755,
-                .ownerAccountID: 0,
-                .groupOwnerAccountID: 0
-            ], ofItemAtPath: destination.path)
-            guard try sha256(of: destination).caseInsensitiveCompare(sourceHash) == .orderedSame else {
-                throw HelperError.hashMismatch(artifact.name)
-            }
-            installedArtifactInfo.append((name: artifact.name, sha256: sourceHash, size: sourceSize))
-        }
-
-        let installedManifest = metadataDir.appendingPathComponent("manifest.json")
-        let stagedManifest = transaction.appendingPathComponent("manifest.json")
-
-        // Build installed manifest with actual sha256/size so verifiedInstalledWg() can
-        // verify the installed binary matches what was copied from the app bundle.
-        let updatedManifestData: Data
-        do {
-            guard var json = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-                  var jsonArtifacts = json["artifacts"] as? [[String: Any]] else {
-                throw HelperError.invalidManifest
-            }
-            let infoByName = Dictionary(uniqueKeysWithValues: installedArtifactInfo.map { ($0.name, $0) })
-            for i in 0..<jsonArtifacts.count {
-                if let name = jsonArtifacts[i]["name"] as? String, let info = infoByName[name] {
-                    jsonArtifacts[i]["sha256"] = info.sha256
-                    jsonArtifacts[i]["size"] = info.size
-                }
-            }
-            json["artifacts"] = jsonArtifacts
-            updatedManifestData = try JSONSerialization.data(withJSONObject: json)
-        } catch {
-            throw HelperError.invalidManifest
-        }
-        try updatedManifestData.write(to: stagedManifest, options: .atomic)
-        try fileManager.setAttributes([
-            .posixPermissions: 0o644,
-            .ownerAccountID: 0,
-            .groupOwnerAccountID: 0
-        ], ofItemAtPath: stagedManifest.path)
-
-        let hadExistingBin = fileManager.fileExists(atPath: systemBinDir.path)
-        do {
-            if hadExistingBin {
-                _ = try fileManager.replaceItemAt(
-                    systemBinDir,
-                    withItemAt: stagedBin,
-                    backupItemName: backupBin.lastPathComponent,
-                    options: []
-                )
-            } else {
-                try fileManager.moveItem(at: stagedBin, to: systemBinDir)
-            }
-            if fileManager.fileExists(atPath: installedManifest.path) {
-                _ = try fileManager.replaceItemAt(installedManifest, withItemAt: stagedManifest)
-            } else {
-                try fileManager.moveItem(at: stagedManifest, to: installedManifest)
-            }
-            // backupBin cleanup is handled by the defer block (try?).
-            // replaceItemAt on macOS 10.13+ auto-removes the backup on success,
-            // so an explicit `try` removal here would throw "file not found" and
-            // incorrectly unwind an already-successful installation.
-        } catch {
-            try? fileManager.removeItem(at: systemBinDir)
-            if hadExistingBin, fileManager.fileExists(atPath: backupBin.path) {
-                try? fileManager.moveItem(at: backupBin, to: systemBinDir)
-            }
-            throw error
-        }
-
-        try createDirectory(runtimeConfigDir, permissions: 0o700)
     }
 
     private func ensureManagedStore() throws {
@@ -1831,31 +1716,6 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    private func verifiedInstalledWg() throws -> URL {
-        let manifestURL = metadataDir.appendingPathComponent("manifest.json", isDirectory: false)
-        try validateRegularFile(manifestURL, expectedSize: nil)
-        try validateRootOwnedFile(manifestURL)
-
-        let manifestData = try Data(contentsOf: manifestURL, options: .mappedIfSafe)
-        let manifest = try JSONDecoder().decode(RuntimeManifest.self, from: manifestData)
-        let names = manifest.artifacts.map(\.name)
-        guard manifest.schemaVersion == 1,
-              names.count == expectedArtifactNames.count,
-              Set(names).count == names.count,
-              Set(names) == expectedArtifactNames,
-              let artifact = manifest.artifacts.first(where: { $0.name == "wg" }) else {
-            throw HelperError.invalidInstalledWg
-        }
-
-        let wg = systemBinDir.appendingPathComponent("wg", isDirectory: false)
-        try validateRegularFile(wg, expectedSize: artifact.size)
-        try validateRootOwnedFile(wg)
-        guard try sha256(of: wg).caseInsensitiveCompare(artifact.sha256) == .orderedSame else {
-            throw HelperError.invalidInstalledWg
-        }
-        return wg
-    }
-
     private func validateRootOwnedFile(_ url: URL) throws {
         let attributes = try fileManager.attributesOfItem(atPath: url.path)
         guard (attributes[.ownerAccountID] as? NSNumber)?.intValue == 0,
@@ -1931,16 +1791,6 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         return environment
     }
 
-    private func sha256(of url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while let data = try handle.read(upToCount: 1024 * 1024), !data.isEmpty {
-            hasher.update(data: data)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-
     private func runCommand(
         executable: URL,
         arguments: [String],
@@ -1953,6 +1803,12 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         let name = executable.lastPathComponent
         let operation = arguments.first.flatMap { ["up", "down", "show", "genkey", "pubkey"].contains($0) ? $0 : nil }
         let label = operation.map { "\(name) \($0)" } ?? name
+        // Verify the tools this command runs right before launching it, reinstalling them from
+        // the helper's own bundle if needed. wg-quick runs wg and wireguard-go itself.
+        if executable.deletingLastPathComponent().standardizedFileURL == systemBinDir.standardizedFileURL {
+            do { try toolInstaller.ensureInstalled(name == "wg-quick" ? nil : [name]) }
+            catch { return ("", error.localizedDescription, -1) }
+        }
         let trace = name == "wg-quick"
         var lastStage = "starting command"
         if trace {
@@ -1991,9 +1847,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
 }
 
 private enum HelperError: LocalizedError {
-    case invalidManifest
     case invalidFile(String)
-    case hashMismatch(String)
     case invalidInstalledWg
     case invalidConfig
     case invalidConfigName
@@ -2005,9 +1859,7 @@ private enum HelperError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidManifest: return "Bundled WireGuard manifest is invalid"
         case .invalidFile(let name): return "Bundled WireGuard file is invalid: \(name)"
-        case .hashMismatch(let name): return "SHA256 verification failed for \(name)"
         case .invalidInstalledWg: return "Installed WireGuard binary failed verification"
         case .invalidConfig: return "Tunnel configuration is not valid UTF-8"
         case .invalidConfigName: return "Managed tunnel name is invalid"

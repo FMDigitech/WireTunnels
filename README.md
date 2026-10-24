@@ -80,7 +80,7 @@ WireTunnels is distributed as a signed and notarized macOS `.dmg` disk image, an
 1. Download the latest release (.dmg)
 2. Open the disk image
 3. Drag WireTunnels.app to Applications
-4. Open WireTunnels and install the WireGuard tools when prompted
+4. Open WireTunnels and approve the privileged helper when prompted
 5. Import or create your tunnels
 6. Connect from the menu bar
 ```
@@ -221,7 +221,7 @@ Administrators can create tunnels shared across every local user on the Mac. Sha
 
 ### Secure, verified WireGuard runtime
 
-Bundled WireGuard binaries are installed through a narrowly constrained privileged helper that validates the calling app's signature, a manifest, and file hashes before any privileged operation — installation requires explicit user consent, nothing runs silently. An outdated helper is detected and you are prompted to update it.
+The privileged helper installs the WireGuard binaries itself, only from its own signed app bundle, and only after you approve the helper. It checks every tool against anchors compiled into the helper — the app's code signature for `wg` and `wireguard-go`, a build-time hash for `wg-quick` — and re-checks them right before each run. A tool that fails is replaced, and the event is logged. The helper also validates the calling app's signature, and an outdated helper is detected and replaced.
 
 ### Smarter warnings
 
@@ -258,7 +258,7 @@ Always review imported WireGuard configuration files before connecting, especial
 1. Download the latest `.dmg` from the [Releases page](https://github.com/FMDigitech/WireTunnels/releases/latest).
 2. Open the disk image and drag `WireTunnels.app` into the `Applications` folder.
 3. Open the app from `Applications` (shared tunnels and the helper require running it from there).
-4. Install the bundled WireGuard tools and the privileged helper when prompted — both require your explicit consent and administrator authorization.
+4. Approve the privileged helper when prompted. It then installs the WireGuard tools bundled with the signed app by itself; there is no download.
 5. Import or create your WireGuard tunnel configurations.
 6. Connect your tunnels from the menu bar or dashboard.
 

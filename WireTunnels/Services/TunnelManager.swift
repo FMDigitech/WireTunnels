@@ -19,7 +19,6 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     @Published var errorMessage: String? = nil
     @Published var helperRequiresApproval: Bool = false
     @Published var bundledRuntimeStatus: WireGuardRuntimeStatus?
-    @Published var toolInstallRequired: Bool = false
     @Published var activeWarnings: [TunnelWarning] = []
     @Published var isDashboardOpen: Bool = false
     @Published var isInitialized: Bool = false
@@ -262,12 +261,8 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             }
         }
 
-        toolInstallRequired = !environment.binariesInstalled
-            || !toolLocator.bundledBinariesMatchInstalled()
-        if toolInstallRequired {
-            log.warning("WireGuard tools require explicit installation or reinstallation in Settings")
-            return
-        }
+        setupStatus = "Preparing WireGuard tools…"
+        guard await refreshToolStatus() else { return }
 
         await loadManagedTunnels()
 
@@ -332,12 +327,13 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
 
         log.info("Environment re-detection started")
         bundledRuntimeStatus = toolLocator.inspectBundledRuntime()
+        let toolsVerified = environment.binariesInstalled
         environment = toolLocator.detect()
+        // Keep the helper's last answer until it is asked again below.
+        environment.binariesInstalled = toolsVerified
         let helperStatus = await effectiveHelperStatus()
         environment.helperInstalled = helperStatus.installed
         helperRequiresApproval = helperStatus.requiresApproval
-        toolInstallRequired = !environment.binariesInstalled
-            || !toolLocator.bundledBinariesMatchInstalled()
 
         if helperRequiresApproval {
             // Waiting for user to approve in System Settings — not an error worth surfacing
@@ -412,10 +408,8 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             }
         }
 
-        guard !toolInstallRequired else {
-            log.info("Helper verified; waiting for explicit WireGuard tool installation")
-            return
-        }
+        setupStatus = "Preparing WireGuard tools…"
+        guard await refreshToolStatus() else { return }
 
         await loadManagedTunnels()
 
@@ -460,82 +454,40 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         }
     }
 
-    func installBundledTools() async {
-        isLoading = true
-        setupStatus = "Verifying bundled WireGuard tools…"
-        errorMessage = nil
-        defer {
-            isLoading = false
-            setupStatus = nil
-        }
-
-        guard let bundled = toolLocator.inspectBundledRuntime(), bundled.isValid else {
-            let message = bundledRuntimeStatus?.errorMessage ?? "Bundled WireGuard tools failed verification"
-            log.error(message)
-            errorMessage = message
-            return
-        }
-        bundledRuntimeStatus = bundled
-
-        if !commandService.isHelperInstalled() {
-            setupStatus = "Installing privileged helper…"
-            do {
-                try await commandService.installHelper()
-            } catch {
-                helperRequiresApproval = commandService.helperRequiresApproval()
-                log.error("Helper installation failed: \(error.localizedDescription)")
-                let stale = logHelperLaunchdDiagnostics()
-                errorMessage = stale
-                    ? WireGuardCommandService.staleRegistrationRecoveryMessage
-                    : error.localizedDescription
-                return
-            }
-        }
-
-        log.info("Installing verified WireGuard tools from the signed app bundle")
-        log.info("  Source: \(bundled.source)")
-        for artifact in bundled.artifacts {
-            log.info("  \(artifact.name): revision \(artifact.revision), SHA256 \(artifact.expectedSHA256) valid")
-        }
-
-        setupStatus = "Installing verified tools…"
+    /// Asks the helper whether its WireGuard tools are ready. The helper installs them from
+    /// its own bundle at start and reinstalls them whenever they fail verification, so the
+    /// app only reports the result; asking again (Re-detect) also retries a failed install.
+    private func refreshToolStatus() async -> Bool {
+        var problem: String?
         do {
             do {
-                try await commandService.installBundledTools()
+                problem = try await commandService.toolStatus()
             } catch {
-                // Retry once for transient XPC failures — helper may still be settling
-                // after launchd activation (e.g. user just enabled it in Settings).
+                // Retry once for transient XPC failures: the helper may still be starting
+                // after launchd activation (e.g. the user just enabled it in Settings).
                 let isConnectionError: Bool
                 if case CommandError.connectionFailed = error { isConnectionError = true }
                 else if case CommandError.connectionInterrupted(_) = error { isConnectionError = true }
                 else { isConnectionError = false }
                 guard isConnectionError else { throw error }
-                setupStatus = "Connecting to privileged helper…"
                 commandService.invalidateConnection()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                try await commandService.installBundledTools()
+                problem = try await commandService.toolStatus()
             }
-            setupStatus = "Verifying installed tools…"
-            environment = toolLocator.detect()
-            environment.helperInstalled = commandService.isHelperInstalled()
-            toolInstallRequired = !environment.binariesInstalled
-                || !toolLocator.bundledBinariesMatchInstalled()
-            guard !toolInstallRequired else {
-                throw CommandError.installFailed(
-                    environment.runtimeStatus?.errorMessage ?? "Installed tools did not match the bundle"
-                )
-            }
-            log.info("WireGuard tools installed and verified successfully")
-            await refreshStatus()
-            startPolling()
-            await handleNetworkChange()
         } catch {
-            log.error("WireGuard tool installation failed: \(error.localizedDescription)")
-            let stale = logHelperLaunchdDiagnostics()
-            errorMessage = stale
-                ? WireGuardCommandService.staleRegistrationRecoveryMessage
-                : error.localizedDescription
+            problem = error.localizedDescription
         }
+        let helperInstalled = environment.helperInstalled
+        environment = toolLocator.detect()
+        environment.helperInstalled = helperInstalled
+        environment.binariesInstalled = problem == nil
+        if let problem {
+            log.error("WireGuard tools are unavailable: \(problem)")
+            errorMessage = "WireGuard tools are unavailable: \(problem)"
+            return false
+        }
+        log.info("WireGuard tools verified by the privileged helper")
+        return true
     }
 
     // MARK: - Tunnel Operations
@@ -2170,7 +2122,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     }
 
     var needsSetup: Bool {
-        helperRequiresApproval || !environment.helperInstalled || toolInstallRequired
+        helperRequiresApproval || !environment.helperInstalled || !environment.binariesInstalled
     }
 
     private var connectionReadiness: TunnelConnectionReadiness {

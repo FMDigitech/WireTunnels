@@ -2,6 +2,46 @@
 
 This file tracks work in progress toward the next release and keeps the shipped ones as technical/QA reference. It's more detailed than the public release notes in `appcast.xml` — distill the "Public release notes (draft)" section of the unreleased version into `appcast.xml` once a build is actually signed and tagged.
 
+## Unreleased
+
+### Security
+- **The helper installs the WireGuard tools itself** (issue #34, @tobikris). Previously the app picked the files and the helper copied them after checking hashes from a manifest in the same bundle. The app's checks could be raced, the hashes weren't anchored to anything the helper trusted, symlinks were followed, and `wg-quick` was never checked again after installation. Now the helper copies the tools only from its own app bundle into a staging folder only root can write, rejects anything that isn't a regular file, and checks each copy against anchors compiled into the helper: `wg` and `wireguard-go` must be signed by the app's team with their own identifier, and `wg-quick` must match the SHA-256 generated when the helper was built. `bin/` is replaced only when all three pass.
+- **Tools are checked before every run.** The helper installs at start and whenever a check fails. Right before launching a tool it checks it again (all three for `wg-quick`, only `wg` for other `wg` commands). A tool that fails is replaced from the bundle and the event is logged as an error, both in the system log (`tool-installer` category) and in the app's log as `Helper: …`.
+
+### Changes
+- No more *Install Tools* / *Reinstall Tools* buttons. Approving the helper is enough; the setup wizard's second step is now *Prepare WireGuard Tools* with *Retry*, and connecting waits until the helper reports the tools ready.
+- Settings > WireGuard Tools shows the bundled tools' provenance (versions, source, revisions, architectures). The "SHA256: valid" shield and "Last verified" time are gone: for bundled tools they compared each file with itself. "Binaries: Verified / Not Ready" shows the helper's actual result.
+
+### Bug fixes
+- An install interrupted by a helper restart no longer leaves a half-filled staging folder in `/Library/Application Support/WireTunnels`; the next install removes it.
+
+### Build
+- `Scripts/generate_tool_anchors.sh` runs before the helper compiles: it prepares the patched `wg-quick` (`build_wireguard_binaries.sh --prepare-wg-quick`) and compiles its hash into the helper. The app's copy step fails the build if the bundled `wg-quick` doesn't match.
+- `wg` and `wireguard-go` are signed with an explicit identifier (`codesign` otherwise derived ones like `wg-55554944…`), and the signing identity is part of the tool cache key. The first build after updating rebuilds the tools once.
+
+### Helper
+- Protocol revision `inventory-routing-v2-helper-tools` (`installBundledTools` removed, `toolStatus` added): installed helpers are detected as stale and replaced on first launch.
+
+### Known limitations / follow-ups
+- Builds signed by another team, or ad-hoc, can't install the tools: the helper requires the team in `applicationTeamIdentifier`. Local test builds need their own team ID and bundle ID.
+- Right after the helper is approved, the app may re-register it once, which stops the first install; the restarted helper installs again.
+- Rebuilding without a version or protocol change doesn't restart a running helper; restart it with `sudo launchctl kickstart -k system/com.fmdigitech.WireTunnels.helper`.
+
+### Public release notes (draft — for `appcast.xml` once this is actually built, signed, and tagged)
+
+```html
+<ul>
+    <li>Security: the privileged helper now installs the WireGuard tools itself, only from the signed app, and checks them before every use; modified tools are replaced and logged</li>
+    <li>No more Install Tools step: approving the helper is enough</li>
+</ul>
+<p><strong>Notes</strong></p>
+<ul>
+    <li>Existing installs will be prompted to update the privileged helper on first launch after upgrading</li>
+</ul>
+```
+
+---
+
 ## 1.0.7 — released 2026-10-21
 
 Integrates the community pull requests #9–#26 (thanks @007hacky007, @tobikris and @chocholom) and closes the open issues #6, #7 and #27. Per-app split tunneling (#5) is deferred to a later version.
