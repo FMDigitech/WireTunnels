@@ -23,6 +23,7 @@ private final class NetworkMonitorReference {
 final class NetworkMonitorService: NSObject, ObservableObject {
     @Published private(set) var isOnEthernet: Bool   = false
     @Published private(set) var ethernetAddresses: [String] = []
+    @Published private(set) var physicalAddresses: [String] = []
     @Published private(set) var isOnWiFi: Bool       = false
     @Published private(set) var currentSSID: String? = nil
     // macOS only returns a real SSID from CoreWLAN once Location Services access
@@ -45,6 +46,8 @@ final class NetworkMonitorService: NSObject, ObservableObject {
     /// from `onNetworkChange`, which only drives On-Demand rule evaluation and does
     /// nothing for an already-active tunnel that isn't governed by a rule.
     var onLocalAddressChange: (() async -> Void)?
+    /// Called when Wi-Fi or Ethernet gains or loses an address, e.g. IPv6 arriving after the link is up.
+    var onPhysicalAddressesChange: (() async -> Void)?
 
     // Keep physical link and address snapshots to distinguish DHCP renewals from
     // interface switches and ignore notifications caused by VPN routes or DNS.
@@ -150,6 +153,9 @@ final class NetworkMonitorService: NSObject, ObservableObject {
         currentSSID = ssid
         lastAddressSnapshot = snapshot
         lastPhysicalSnapshot = physical
+        let physicalAddressesChanged = physical.connectedAddresses != physicalAddresses
+        physicalAddresses = physical.connectedAddresses
+        if physicalAddressesChanged { await onPhysicalAddressesChange?() }
 
         guard linksChanged || ssidChanged || localAddressChanged || snapshot.requiresRuleEvaluation(after: previous) else { return }
         diagnostics.info("Physical network change: wifi=\(physical.isOnWiFi), ethernet=\(physical.isOnEthernet)")

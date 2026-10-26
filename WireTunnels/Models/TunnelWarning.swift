@@ -5,6 +5,7 @@ enum TunnelWarning: Identifiable, Equatable {
     case overlappingAllowedIPs(String, String) // tunnel A and B have overlapping IPs
     case conflictingDNS([String])            // active tunnels with different DNS
     case killSwitchBlocking(String)          // tunnel dropped unexpectedly, kill switch is blocking traffic
+    case ipFamilyLeak(String, IPFamilyLeak)  // route-all tunnel lets one IP family reach the physical network
 
     var id: String {
         switch self {
@@ -12,6 +13,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .overlappingAllowedIPs(let a, let b): return "overlappingIPs-\(a)-\(b)"
         case .conflictingDNS(let names): return "conflictingDNS-\(names.joined())"
         case .killSwitchBlocking(let name): return "killSwitchBlocking-\(name)"
+        case .ipFamilyLeak(let name, let leak): return "ipFamilyLeak-\(name)-\(leak.family.rawValue)"
         }
     }
 
@@ -21,6 +23,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .overlappingAllowedIPs: return "Overlapping Routes"
         case .conflictingDNS: return "DNS Conflict"
         case .killSwitchBlocking: return "Kill Switch Active"
+        case .ipFamilyLeak(_, let leak): return "\(leak.family.displayName) Leak"
         }
     }
 
@@ -34,6 +37,8 @@ enum TunnelWarning: Identifiable, Equatable {
             return "Active tunnels \(names.joined(separator: ", ")) define different DNS servers. Resolution may be unpredictable."
         case .killSwitchBlocking(let name):
             return "\"\(name)\" dropped unexpectedly. All non-tunnel traffic is blocked until it reconnects or you disable its kill switch."
+        case .ipFamilyLeak(let name, let leak):
+            return "\"\(name)\": \(leak.problem)" + (leak.fixDescription == nil ? "" : " Use the menu bar menu to fix it.")
         }
     }
 
@@ -43,6 +48,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .overlappingAllowedIPs: return .warning
         case .conflictingDNS: return .info
         case .killSwitchBlocking: return .error
+        case .ipFamilyLeak: return .warning
         }
     }
 }

@@ -116,6 +116,7 @@ private final class StopFixture {
     func savePersonalTunnelsOnly() { saved += 1 }
     func updateWarnings() { warningUpdates += 1 }
     func syncSplitDNSState() async { splitDNSUpdates += 1 }
+    func checkIPFamilyRoutes() async {}
     func reportTunnelFailure(_ tunnel: Tunnel, message: String, automatic: Bool) async {
         failures.append(message)
     }

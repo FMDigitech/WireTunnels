@@ -14,6 +14,7 @@ struct PhysicalNetworkSnapshot: Equatable {
     let wifiInterfaces: [String]
     let ethernetInterfaces: [String]
     let ethernetAddresses: [String]
+    let connectedAddresses: [String]
     let ipv4AddressesByInterface: [String: [String]]
     let primaryInterfaceName: String?
     let primaryIPv4Address: String?
@@ -30,6 +31,7 @@ struct PhysicalNetworkSnapshot: Equatable {
         wifiInterfaces = Array(Set(connected.filter { $0.kind == .wifi }.map(\.name))).sorted()
         ethernetInterfaces = Array(Set(connected.filter { $0.kind == .ethernet }.map(\.name))).sorted()
         ethernetAddresses = Array(Set(connected.filter { $0.kind == .ethernet }.flatMap(\.addresses))).sorted()
+        connectedAddresses = Array(Set(connected.flatMap(\.addresses))).sorted()
         ipv4AddressesByInterface = Dictionary(grouping: connected, by: \.name).mapValues { interfaces in
             Array(Set(interfaces.flatMap(\.addresses).filter { !$0.contains(":") })).sorted()
         }

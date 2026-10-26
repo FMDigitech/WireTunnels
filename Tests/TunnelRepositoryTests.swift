@@ -66,6 +66,17 @@ struct TunnelRepositoryTests {
         chain.createdAt = first.createdAt
         try chains.save([chain])
         guard try chains.load() == [chain] else { fatalError("Hop-chain metadata did not use protected persistence") }
+        var acknowledged = first
+        acknowledged.ipFamilyLeakWarningAcknowledged = true
+        let acknowledgements = TunnelRepository(file: root.appendingPathComponent("acknowledged.json"))
+        try acknowledgements.save([acknowledged])
+        guard try acknowledgements.load().first?.ipFamilyLeakWarningAcknowledged == true else {
+            fatalError("The IP leak acknowledgement was not saved")
+        }
+        var stored = try JSONSerialization.jsonObject(with: JSONEncoder().encode(acknowledged)) as! [String: Any]
+        stored.removeValue(forKey: "ipFamilyLeakWarningAcknowledged")
+        let legacy = try JSONDecoder().decode(Tunnel.self, from: JSONSerialization.data(withJSONObject: stored))
+        guard !legacy.ipFamilyLeakWarningAcknowledged else { fatalError("Older metadata must load with the IP leak warning on") }
         print("PASS: metadata recovers valid backups, preserves corrupt originals, blocks destructive saves, and reports write failures")
     }
 }

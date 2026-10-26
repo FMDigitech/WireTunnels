@@ -33,6 +33,7 @@ struct TunnelDuplicationTests {
         source.autoConnectRule.connect.wifiSSIDs = ["Test network"]
         source.autoConnectRule.disconnect.enabled = true
         source.killSwitchEnabled = true
+        source.ipFamilyLeakWarningAcknowledged = true
         source.excludedRoutes = ["192.0.2.0/24"]
         source.splitDNSDomains = ["example"]
         source.speedTestURL = "https://example.com/test"
@@ -51,7 +52,7 @@ struct TunnelDuplicationTests {
         guard copy.endpoint == "vpn.example:13231", copy.allowedIPs == ["192.168.88.0/24"],
               copy.address == ["192.168.89.2/32"], copy.dns == ["192.168.88.1"],
               copy.localPublicKey == WireGuardKey.publicKey(fromPrivateKey: key),
-              copy.killSwitchEnabled, copy.excludedRoutes == source.excludedRoutes,
+              copy.killSwitchEnabled, copy.ipFamilyLeakWarningAcknowledged, copy.excludedRoutes == source.excludedRoutes,
               copy.splitDNSDomains == source.splitDNSDomains, copy.speedTestURL == source.speedTestURL,
               copy.autoConnectRule.connect.wifiSSIDs == ["Test network"] else { fatalError("Duplicate lost saved config or routing settings") }
         let attributes = try FileManager.default.attributesOfItem(atPath: copy.configPath)

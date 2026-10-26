@@ -51,6 +51,7 @@ final class TunnelDuplicationService {
         copy.publicKey = parsed.peerPublicKey
         copy.localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
         copy.killSwitchEnabled = source.killSwitchEnabled
+        copy.ipFamilyLeakWarningAcknowledged = source.ipFamilyLeakWarningAcknowledged
         copy.excludedRoutes = source.excludedRoutes
         copy.splitDNSDomains = source.splitDNSDomains
         copy.speedTestURL = source.speedTestURL
