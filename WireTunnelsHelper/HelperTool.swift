@@ -206,8 +206,8 @@ private struct RouteEntry: Codable, Equatable {
     let interfaceName: String?
 }
 
-/// Tracks the routes currently installed per owner (a tunnel or hop-chain UUID
-/// string) so `syncRoutes` can diff and issue precise add/delete calls. Deliberately
+/// Tracks the routes currently installed per owner (the calling user's uid plus a
+/// tunnel or hop-chain UUID) so `syncRoutes` can diff and issue precise add/delete calls. Deliberately
 /// module-level rather than a `HelperSession` property — `HelperSession` is
 /// recreated per XPC connection, but the app only ever holds one connection at a
 /// time and may transparently reconnect after an error; this state must survive
@@ -966,8 +966,16 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             }
         }
 
+        guard let ownerUUID = UUID(uuidString: ownerId) else {
+            reply(false, "Invalid route owner")
+            return
+        }
+        // Scoped per user: owner IDs come from the caller, so without the uid one user's
+        // sync could diff against, and delete, routes another user's app installed.
+        let trackingKey = "\(clientUser.uid):\(ownerUUID.uuidString)"
+
         let route = URL(fileURLWithPath: "/sbin/route")
-        let previous = RouteTrackingStore.shared.previous(for: ownerId)
+        let previous = RouteTrackingStore.shared.previous(for: trackingKey)
         let removed = previous.filter { !decoded.contains($0) }
         let added = decoded.filter { !previous.contains($0) }
 
@@ -989,7 +997,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             }
         }
 
-        RouteTrackingStore.shared.set(decoded, for: ownerId)
+        RouteTrackingStore.shared.set(decoded, for: trackingKey)
         reply(true, nil)
     }
 
