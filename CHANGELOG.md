@@ -2,6 +2,13 @@
 
 This file tracks work in progress toward the next release and keeps the shipped ones as technical/QA reference. It's more detailed than the public release notes in `appcast.xml` — distill the "Public release notes (draft)" section of the unreleased version into `appcast.xml` once a build is actually signed and tagged.
 
+## Unreleased
+
+### Security
+- **Peer preshared keys are no longer sent to the app** (#40, @tobikris). The helper hid the interface private key in `wg show` output, but `wg show all dump` also prints each peer's preshared key, and those reached the app unredacted. Any user of the app could read the preshared keys of every active tunnel, including shared tunnels whose configs are root-only. With raw output enabled they were also written to the user's log. They're now replaced with `(hidden)`; `(none)` stays so a missing PSK is still visible. The app never reads this field.
+
+---
+
 ## 1.0.8 — released 2026-10-26
 
 Integrates the community pull requests #29, #30, #32, #35, #36, #37 and #38 (thanks @tobikris and @007hacky007) and closes issue #34. #31 is superseded by #35 (the app no longer compares tool signatures: the helper installs and verifies the tools itself).

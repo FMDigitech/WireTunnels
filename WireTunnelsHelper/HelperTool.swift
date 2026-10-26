@@ -663,12 +663,15 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    /// `wg show all dump` prints each interface's private key in its second column;
-    /// the app only needs the public key, so never send the private one over XPC.
+    /// `wg show all dump` prints each interface's private key in the second column of its
+    /// 5-field interface line, and each peer's preshared key in the third column of its
+    /// 9-field peer line. The app needs neither, and shared tunnels' keys must stay
+    /// root-only, so never send them over XPC.
     private static func redactingPrivateKeys(in dump: String) -> String {
         dump.components(separatedBy: "\n").map { line in
             var fields = line.components(separatedBy: "\t")
             if fields.count == 5 { fields[1] = "(hidden)" }
+            if fields.count == 9, fields[2] != "(none)" { fields[2] = "(hidden)" }
             return fields.joined(separator: "\t")
         }.joined(separator: "\n")
     }
