@@ -1,0 +1,160 @@
+--- wg-quick
++++ wg-quick
+@@ -151,6 +151,8 @@
+ 			cmd route -q -n delete -inet "$destination" >/dev/null || true
+ 		fi
+ 	done
++	# Only after the routes are gone, so teardown cannot loop either.
++	del_loop_guard
+ }
+ 
+ del_if() {
+@@ -216,6 +218,46 @@
+ 	done < <(wg show "$REAL_INTERFACE" endpoints)
+ }
+ 
++has_static_host_route() {
++	local family=inet destination flags
++	[[ $1 == *:* ]] && family=inet6
++	while read -r destination _ flags _; do
++		[[ $destination == "$1" && $flags == *H* && $flags == *S* ]] && return 0
++	done < <(netstat -nr -f $family)
++	return 1
++}
++
++# If a route ever sends wireguard-go's own UDP packets back into the tunnel, each
++# pass encapsulates them again and the loop saturates the CPU. Only wireguard-go
++# can send from its listen port, so drop those packets on the tunnel interface.
++# The port is fixed for the session, so this holds even when the endpoint roams.
++# Anchors under com.apple/* run in name order, ahead of wiretunnels.killswitch.
++set_loop_guard() {
++	local port="" i
++	# wireguard-go picks a port only once the interface is up.
++	for ((i = 0; i < 40; ++i)); do
++		port="$(wg show "$REAL_INTERFACE" listen-port 2>/dev/null)" || port=""
++		[[ $port =~ ^[0-9]+$ && $port -gt 0 ]] && break
++		port=""
++		sleep 0.05
++	done
++	if [[ -z $port ]]; then
++		echo "[!] Listen port unknown; routing loop guard not installed" >&2
++		return 0
++	fi
++	if ! echo "block drop out quick on $REAL_INTERFACE proto udp from any port $port" | cmd pfctl -q -a "com.apple/wiretunnels.guard.$REAL_INTERFACE" -f -; then
++		echo "[!] Unable to load routing loop guard" >&2
++		return 0
++	fi
++	# Never disabled again: PF is shared, same as the kill switch.
++	cmd pfctl -q -e >/dev/null 2>&1 || true
++}
++
++del_loop_guard() {
++	[[ -n $REAL_INTERFACE ]] || return 0
++	cmd pfctl -q -a "com.apple/wiretunnels.guard.$REAL_INTERFACE" -F all >/dev/null 2>&1 || true
++}
++
+ SERVICE_NAMES=( )
+ SERVICE_DNS=( )
+ SERVICE_DNS_SEARCH=( )
+@@ -349,7 +391,7 @@
+ }
+ 
+ set_endpoint_direct_route() {
+-	local old_endpoints endpoint old_gateway4 old_gateway6 remove_all_old=0 added=( )
++	local old_endpoints endpoint old_gateway4 old_gateway6 remove_all_old=0 added=( ) action
+ 	old_endpoints=( "${ENDPOINTS[@]}" )
+ 	old_gateway4="$GATEWAY4"
+ 	old_gateway6="$GATEWAY6"
+@@ -358,14 +400,8 @@
+ 
+ 	[[ $old_gateway4 != "$GATEWAY4" || $old_gateway6 != "$GATEWAY6" ]] && remove_all_old=1
+ 
+-	if [[ $remove_all_old -eq 1 ]]; then
+-		for endpoint in "${ENDPOINTS[@]}"; do
+-			[[ " ${old_endpoints[*]} " == *" $endpoint "* ]] || old_endpoints+=( "$endpoint" )
+-		done
+-	fi
+-
+ 	for endpoint in "${old_endpoints[@]}"; do
+-		[[ $remove_all_old -eq 0 && " ${ENDPOINTS[*]} " == *" $endpoint "* ]] && continue
++		[[ " ${ENDPOINTS[*]} " == *" $endpoint "* ]] && continue
+ 		if [[ $endpoint == *:* && $AUTO_ROUTE6 -eq 1 ]]; then
+ 			cmd route -q -n delete -inet6 "$endpoint" >/dev/null 2>&1 || true
+ 		elif [[ $AUTO_ROUTE4 -eq 1 ]]; then
+@@ -378,23 +414,35 @@
+ 			added+=( "$endpoint" )
+ 			continue
+ 		fi
+-		if [[ $endpoint == *:* && $AUTO_ROUTE6 -eq 1 ]]; then
++		[[ $endpoint == *:* && $AUTO_ROUTE6 -eq 1 ]] || [[ $endpoint != *:* && $AUTO_ROUTE4 -eq 1 ]] || continue
++		# Deleting first would leave the endpoint on the catch-all tunnel
++		# routes until the add, so switch a static route in place.
++		action=add
++		if has_static_host_route "$endpoint"; then
++			action=change
++		elif [[ $remove_all_old -eq 1 ]]; then
++			if [[ $endpoint == *:* ]]; then
++				cmd route -q -n delete -inet6 "$endpoint" >/dev/null 2>&1 || true
++			else
++				cmd route -q -n delete -inet "$endpoint" >/dev/null 2>&1 || true
++			fi
++		fi
++		if [[ $endpoint == *:* ]]; then
+ 			if [[ -n $GATEWAY6 ]]; then
+-				cmd route -q -n add -inet6 "$endpoint" -gateway "$GATEWAY6" >/dev/null || true
++				cmd route -q -n $action -inet6 "$endpoint" -gateway "$GATEWAY6" >/dev/null || true
+ 			else
+ 				# Prevent routing loop
+-				cmd route -q -n add -inet6 "$endpoint" ::1 -blackhole >/dev/null || true
++				cmd route -q -n $action -inet6 "$endpoint" ::1 -blackhole >/dev/null || true
+ 			fi
+-			added+=( "$endpoint" )
+-		elif [[ $AUTO_ROUTE4 -eq 1 ]]; then
++		else
+ 			if [[ -n $GATEWAY4 ]]; then
+-				cmd route -q -n add -inet "$endpoint" -gateway "$GATEWAY4" >/dev/null || true
++				cmd route -q -n $action -inet "$endpoint" -gateway "$GATEWAY4" >/dev/null || true
+ 			else
+ 				# Prevent routing loop
+-				cmd route -q -n add -inet "$endpoint" 127.0.0.1 -blackhole >/dev/null || true
++				cmd route -q -n $action -inet "$endpoint" 127.0.0.1 -blackhole >/dev/null || true
+ 			fi
+-			added+=( "$endpoint" )
+ 		fi
++		added+=( "$endpoint" )
+ 	done
+ 	ENDPOINTS=( "${added[@]}" )
+ }
+@@ -584,7 +632,7 @@
+ }
+ 
+ cmd_up() {
+-	local i
++	local i routes
+ 	get_real_interface && die "\`$INTERFACE' already exists as \`$REAL_INTERFACE'"
+ 	trap 'status=$?; echo "[+] Restoring DNS after failed startup" >&2; del_dns || echo "[!] Failed to restore DNS during startup cleanup" >&2; del_if; del_routes; exit "$status"' INT TERM EXIT
+ 	add_if
+@@ -595,10 +643,21 @@
+ 	done
+ 	set_mtu
+ 	up_if
+-	for i in $(while read -r _ i; do for i in $i; do [[ $i =~ ^[0-9a-z:.]+/[0-9]+$ ]] && echo "$i"; done; done < <(wg show "$REAL_INTERFACE" allowed-ips) | sort -nr -k 2 -t /); do
+-		add_route "$i"
++	[[ $TABLE == off ]] || set_loop_guard
++	routes=( )
++	while read -r i; do
++		routes+=( "$i" )
++	done < <(while read -r _ i; do for i in $i; do [[ $i =~ ^[0-9a-z:.]+/[0-9]+$ ]] && echo "$i"; done; done < <(wg show "$REAL_INTERFACE" allowed-ips) | sort -nr -k 2 -t /)
++	# Pin the endpoint to the physical gateway before the catch-all routes exist,
++	# so wireguard-go's own packets never have a window to enter the tunnel.
++	for i in "${routes[@]}"; do
++		[[ $i == */0 && ( -z $TABLE || $TABLE == auto ) ]] || continue
++		if [[ $i == *:* ]]; then AUTO_ROUTE6=1; else AUTO_ROUTE4=1; fi
+ 	done
+ 	[[ $AUTO_ROUTE4 -eq 1 || $AUTO_ROUTE6 -eq 1 ]] && set_endpoint_direct_route
++	for i in "${routes[@]}"; do
++		add_route "$i"
++	done
+ 	[[ ${#DNS[@]} -gt 0 ]] && set_dns
+ 	monitor_daemon
+ 	execute_hooks "${POST_UP[@]}"

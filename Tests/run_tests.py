@@ -67,6 +67,7 @@ def main():
         subprocess.run(['python3', str(ROOT / 'Tests/test_wg_quick_cleanup.py')], check=True)
         subprocess.run(['python3', str(ROOT / 'Tests/test_wg_quick_dns.py')], check=True)
         subprocess.run(['python3', str(ROOT / 'Tests/test_wg_quick_dns_recovery.py')], check=True)
+        subprocess.run(['python3', str(ROOT / 'Tests/test_wg_quick_loop_guard.py')], check=True)
         run_suite(directory, 'status', [status_model,
                   'WireTunnels/Services/StatusMonitorService.swift', 'Tests/StatusMonitorTests.swift'])
         run_suite(directory, 'duplication', [

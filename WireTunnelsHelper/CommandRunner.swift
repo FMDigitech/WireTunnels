@@ -125,7 +125,9 @@ struct CommandRunner {
 /// configuration contents can contain addresses, keys, or user-specific names.
 enum CommandProgress {
     static func stage(for line: String) -> String? {
-        guard line.hasPrefix("[#]") || line.hasPrefix("[+]") else { return nil }
+        guard line.hasPrefix("[#]") || line.hasPrefix("[+]") || line.hasPrefix("[!]") else { return nil }
+        if line.contains("routing loop guard") { return "routing loop guard unavailable" }
+        if line.contains("pfctl") { return "installing routing loop guard" }
         if line.contains("wireguard-go") { return "creating userspace interface" }
         if line.contains("active network service(s) for DNS") { return "selecting active network services for DNS" }
         if line.contains("Active DNS service lookup unavailable") { return "active DNS selection unavailable; using configured services" }
