@@ -276,7 +276,8 @@ write_manifest() {
         local path="${OUTPUT_DIR}/${name}"
         local sha size architectures
         sha=$(shasum -a 256 "$path" | awk '{print $1}')
-        size=$(stat -f '%z' "$path")
+        # GNU stat (Homebrew coreutils) reads -f as --file-system.
+        size=$(/usr/bin/stat -f '%z' "$path")
         if file "$path" | grep -q 'Mach-O'; then
             architectures='["arm64","x86_64"]'
         else
