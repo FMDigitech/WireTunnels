@@ -36,6 +36,7 @@ WG_QUICK_EXTRA_PATCHES=(
     "${SRCROOT}/Scripts/wg-quick-cleanup.patch"
     "${SRCROOT}/Scripts/wg-quick-active-dns.patch"
     "${SRCROOT}/Scripts/wg-quick-dns-recovery.patch"
+    "${SRCROOT}/Scripts/wg-quick-loop-guard.patch"
 )
 VERSIONS_FILE="${SRCROOT}/Scripts/wireguard-versions.env"
 

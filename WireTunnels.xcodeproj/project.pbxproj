@@ -235,6 +235,7 @@
 				"$(SRCROOT)/Scripts/wg-quick-cleanup.patch",
 				"$(SRCROOT)/Scripts/wg-quick-active-dns.patch",
 				"$(SRCROOT)/Scripts/wg-quick-dns-recovery.patch",
+				"$(SRCROOT)/Scripts/wg-quick-loop-guard.patch",
 				"$(SRCROOT)/WireTunnelsHelper/com.fmdigitech.WireTunnels.helper.plist",
 				"$(BUILT_PRODUCTS_DIR)/ToolAnchors/wg-quick.sha256",
 			);

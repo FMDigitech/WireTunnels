@@ -45,7 +45,11 @@ struct CommandRunnerTests {
               CommandProgress.stage(for: "PrivateKey = synthetic-secret") == nil,
               CommandProgress.stage(for: "[#] wg addconf utun7 secret-file") == "applying peer configuration and resolving endpoint",
               CommandProgress.stage(for: "[+] Selecting 1 active network service(s) for DNS") == "selecting active network services for DNS",
-              CommandProgress.stage(for: "[+] Restoring DNS after failed startup") == "restoring DNS after failed startup" else { fatalError("Progress diagnostics leaked arguments or lost the stalled stage") }
+              CommandProgress.stage(for: "[+] Restoring DNS after failed startup") == "restoring DNS after failed startup",
+              CommandProgress.stage(for: "[!] Failed to restore DNS during startup cleanup") == "DNS restoration failed",
+              CommandProgress.stage(for: "[#] pfctl -q -a com.apple/wiretunnels.guard.utun7 -f -") == "installing routing loop guard",
+              CommandProgress.stage(for: "[!] Listen port unknown; routing loop guard not installed") == "routing loop guard unavailable",
+              CommandProgress.stage(for: "[!] Unable to load routing loop guard") == "routing loop guard unavailable" else { fatalError("Progress diagnostics leaked arguments or lost the stalled stage") }
         print("PASS: command capture ignores inherited background descriptors and bounds hung setup")
     }
 }
