@@ -6,6 +6,12 @@ This file tracks work in progress toward the next release and keeps the shipped 
 
 ### Security
 - **Peer preshared keys are no longer sent to the app** (#40, @tobikris). The helper hid the interface private key in `wg show` output, but `wg show all dump` also prints each peer's preshared key, and those reached the app unredacted. Any user of the app could read the preshared keys of every active tunnel, including shared tunnels whose configs are root-only. With raw output enabled they were also written to the user's log. They're now replaced with `(hidden)`; `(none)` stays so a missing PSK is still visible. The app never reads this field.
+- **The helper no longer allows unsigned libraries** (#41, @tobikris). It was signed with `com.apple.security.cs.disable-library-validation`, which lets a root process load libraries not signed by the app's team. The helper only uses system frameworks, so the exception is removed.
+- **Users can no longer remove each other's split-tunnel and multi-hop routes** (#41, @tobikris). `syncRoutes` tracked installed routes by the owner ID the app sent, in one store shared by all users, so one user's sync could remove routes another user's app had installed. Routes are now tracked by the caller's uid plus the owner ID, which must be a UUID. The routes themselves still apply to the whole Mac.
+
+### Known limitations / follow-ups
+- If one user disconnects a shared tunnel another user connected, the first user's exclusion routes stay until their app clears them. They point at the default gateway, where that traffic goes anyway once the tunnel is down.
+- Routes are system-wide: one user's exclusion routes also apply to other users' traffic, including around their full tunnels, and a route two users installed is removed for both when either removes it.
 
 ---
 
