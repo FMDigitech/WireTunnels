@@ -22,7 +22,7 @@
 <p align="center">
   <a href="#download">Download</a> ·
   <a href="#features">Features</a> ·
-  <a href="#whats-new-in-108">What's new</a> ·
+  <a href="#whats-new-in-109">What's new</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#security--privacy">Security & Privacy</a> ·
   <a href="#installation">Installation</a> ·
@@ -138,15 +138,14 @@ WireTunnels is distributed as a signed and notarized macOS `.dmg` disk image, an
 
 ---
 
-## What's new in 1.0.8
+## What's new in 1.0.9
 
-* **Helper installs the tools itself** — approving the helper is enough: it copies `wg`, `wireguard-go` and `wg-quick` from the signed app, checks them before every run and replaces any that were modified. No more *Install Tools* step.
-* **Stronger helper security** — the helper verifies every XPC client by audit token instead of PID, and enforces shared-tunnel permissions and tunnel ownership itself.
-* **Ethernet rules by subnet** — On-Demand Ethernet rules can be limited to IPv4/IPv6 subnets (connect at the office dock, stay off at home).
-* **Steadier network changes** — network and address changes are handled by one scheduler; tunnels the rules forbid are not restarted after wake, and tunnel toggles are disabled while connecting.
-* **Quit after helper removal** — Quit works even if the helper was removed while the app was running.
+* **IPv6/IPv4 leak warning** — a full tunnel that lets one IP family out over the physical network is now flagged in the menu bar and dashboard, with a *Disable IPv6* shortcut.
+* **Routing-loop guard** — a firewall rule and a safer route order stop the tunnel's own packets from looping back into it.
+* **Stronger helper security** — peer preshared keys are no longer sent to the app, the helper no longer allows unsigned libraries, and users can no longer remove each other's routes.
+* **Fixed** the WireGuard tools list in Settings for builds made from Terminal with Homebrew coreutils.
 
-Earlier highlights (1.0.x): working kill switch, inventory AllowedIPs, Search Domains, duplicate tunnel, split DNS, long tunnel names, shared tunnel access control, start in background, multi-hop chains, Shortcuts/Siri support, split-tunnel exclusions, throughput speed test, DHCP/sleep/DDNS auto-recovery, editable shared tunnels, notarized DMG distribution and in-app updates.
+Earlier highlights (1.0.x): helper-installed tools, Ethernet rules by subnet, working kill switch, inventory AllowedIPs, Search Domains, duplicate tunnel, split DNS, long tunnel names, shared tunnel access control, start in background, multi-hop chains, Shortcuts/Siri support, split-tunnel exclusions, throughput speed test, DHCP/sleep/DDNS auto-recovery, editable shared tunnels, notarized DMG distribution and in-app updates.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full technical detail.
 

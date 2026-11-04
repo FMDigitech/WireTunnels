@@ -3,7 +3,7 @@ import Darwin.membership
 import Foundation
 import Security
 
-private let helperVersionNumber = "1.0.8"
+private let helperVersionNumber = "1.0.9"
 private let helperProtocolRevisionValue = "ethernet-subnets-v1-helper-tools"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"

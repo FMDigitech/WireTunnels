@@ -8,6 +8,34 @@
         <description>WireTunnels update feed</description>
         <language>en</language>
         <item>
+            <title>Version 1.0.9</title>
+            <pubDate>Wed, 04 Nov 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>New: a warning when a full tunnel lets IPv4 or IPv6 traffic out over the physical network, with a "Disable IPv6" button in the menu bar</li>
+                    <li>Fix: a routing loop could send the tunnel's own packets back into it right after connecting; the endpoint route is now set first and a firewall rule drops looped packets</li>
+                    <li>Security: peer preshared keys are no longer sent to the app by the privileged helper</li>
+                    <li>Security: the privileged helper no longer allows unsigned libraries</li>
+                    <li>Security: users can no longer remove each other's split-tunnel and multi-hop routes</li>
+                    <li>Fix: the WireGuard tools list in Settings for builds made with Homebrew coreutils</li>
+                </ul>
+                <p><strong>Notes</strong></p>
+                <ul>
+                    <li>Existing installs will be prompted to update the privileged helper on first launch after upgrading</li>
+                    <li>The firewall (pf) is now enabled for every tunnel that manages routes, not only with the kill switch</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.0.9/WireTunnels-1.0.9.dmg"
+                sparkle:edSignature="/ZofKuVBmNJE/x8ep0AciL3gHegngWjrv1SP/RJs+ycFq1Sj/Y3voDVxwDNvfjrvTqBqyG+Ac7Gqe/FYJ0JwBg=="
+                length="17109013"
+                type="application/octet-stream"
+            />
+        </item>
+        <item>
             <title>Version 1.0.8</title>
             <pubDate>Mon, 26 Oct 2026 00:00:00 +0000</pubDate>
             <sparkle:version>9</sparkle:version>

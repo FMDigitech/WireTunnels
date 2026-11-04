@@ -2,12 +2,21 @@
 
 This file tracks work in progress toward the next release and keeps the shipped ones as technical/QA reference. It's more detailed than the public release notes in `appcast.xml` — distill the "Public release notes (draft)" section of the unreleased version into `appcast.xml` once a build is actually signed and tagged.
 
-## Unreleased
+## 1.0.9 — released 2026-11-04
+
+Integrates the community pull requests #39, #40, #41, #42 and #43 (thanks @tobikris and @007hacky007).
 
 ### Security
 - **Peer preshared keys are no longer sent to the app** (#40, @tobikris). The helper hid the interface private key in `wg show` output, but `wg show all dump` also prints each peer's preshared key, and those reached the app unredacted. Any user of the app could read the preshared keys of every active tunnel, including shared tunnels whose configs are root-only. With raw output enabled they were also written to the user's log. They're now replaced with `(hidden)`; `(none)` stays so a missing PSK is still visible. The app never reads this field.
 - **The helper no longer allows unsigned libraries** (#41, @tobikris). It was signed with `com.apple.security.cs.disable-library-validation`, which lets a root process load libraries not signed by the app's team. The helper only uses system frameworks, so the exception is removed.
 - **Users can no longer remove each other's split-tunnel and multi-hop routes** (#41, @tobikris). `syncRoutes` tracked installed routes by the owner ID the app sent, in one store shared by all users, so one user's sync could remove routes another user's app had installed. Routes are now tracked by the caller's uid plus the owner ID, which must be a UUID. The routes themselves still apply to the whole Mac.
+
+### New features
+- **Warning when a full tunnel leaks the other IP family** (#39, @007hacky007). A tunnel with `AllowedIPs = 0.0.0.0/0, ::/0` but only an IPv4 `Address` never gets an inet6 address, so wg-quick's `route add -inet6 ::/1` fails (macOS `route` exits 0) and IPv6 keeps going out over the physical network while the menu says "All traffic (IPv4+IPv6)". The app now warns when a connected route-all tunnel lets one IP family out: `::/0` or `0.0.0.0/0` without an address of that family, only one family routed on a network that has the other, or `route -n get` still resolving outside the tunnel. Traffic through another connected tunnel, multi-hop chains and an armed kill switch are not reported. The menu bar notice has a "Disable IPv6" button (placeholder address, default route, reconnect); a per-tunnel switch silences the warning. Import warns about `::/0` without an IPv6 address. The config parser now adds up repeated `Address`, `DNS` and `AllowedIPs` lines like wg-quick, and inline `#` comments no longer hide an address.
+
+### Fixes
+- **Routing-loop guard for wg-quick** (#42, @007hacky007). wg-quick on darwin added `0/1`, `128/1`, `::/1` and `8000::/1` before the endpoint host route (and deleted/re-added it on a gateway change), so for about 250 ms wireguard-go's own UDP packets could be routed back into the tunnel, producing multi-GB loops with almost no download. The endpoint route is now set first and switched with `route change` on a gateway change, and a `pf` rule in `com.apple/wiretunnels.guard.<utun>` drops UDP leaving the utun from the WireGuard listen port. Behaviour change: `pf` is enabled (never disabled, like the kill switch) for every tunnel that manages routes. The helper progress log names the step and `CommandProgress` accepts `[!]` lines. The exact trigger that kept the loop going was not reproduced. New patch: `Scripts/wg-quick-loop-guard.patch`.
+- **Tool manifest sizes** (#43, @007hacky007). With Homebrew coreutils first on `PATH`, `stat -f '%z'` is GNU stat and `manifest.json` got invalid JSON, so Settings could not show the tools. The build script now calls `/usr/bin/stat`. Installs were never affected.
 
 ### Known limitations / follow-ups
 - If one user disconnects a shared tunnel another user connected, the first user's exclusion routes stay until their app clears them. They point at the default gateway, where that traffic goes anyway once the tunnel is down.
