@@ -42,6 +42,74 @@ nonisolated enum WireGuardDNS {
     }
 }
 
+nonisolated enum IPFamily: String, CaseIterable, Hashable {
+    case ipv4, ipv6
+
+    var displayName: String { self == .ipv4 ? "IPv4" : "IPv6" }
+    var defaultRoute: String { self == .ipv4 ? "0.0.0.0/0" : "::/0" }
+}
+
+/// AllowedIPs and Address entries are compared by their parsed bytes, so `0::/0` matches `::/0`.
+nonisolated enum IPFamilyRouting {
+    private struct Entry {
+        let family: IPFamily
+        let bytes: [UInt8]
+        let prefix: Int?
+    }
+
+    private static func parse(_ entry: String) -> Entry? {
+        // wg-quick drops everything from "#"; the config parser keeps it in the value.
+        let parts = String(entry.prefix { $0 != "#" }).trimmingCharacters(in: .whitespaces)
+            .split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        let host = String(parts[0].split(separator: "%", maxSplits: 1).first ?? "")
+        let prefix = parts.count == 2 ? Int(parts[1]) : nil
+        if parts.count == 2 && prefix == nil { return nil }
+        var v4 = in_addr()
+        if inet_pton(AF_INET, host, &v4) == 1 {
+            return Entry(family: .ipv4, bytes: withUnsafeBytes(of: &v4) { Array($0) }, prefix: prefix)
+        }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, host, &v6) == 1 {
+            return Entry(family: .ipv6, bytes: withUnsafeBytes(of: &v6) { Array($0) }, prefix: prefix)
+        }
+        return nil
+    }
+
+    static func family(of entry: String) -> IPFamily? { parse(entry)?.family }
+
+    /// The family's default route, or both of its /1 halves as wg-quick installs them.
+    static func routesAll(_ family: IPFamily, allowedIPs: [String]) -> Bool {
+        var halves = Set<UInt8>()
+        for entry in allowedIPs.compactMap(parse) where entry.family == family {
+            if entry.prefix == 0 { return true }
+            if entry.prefix == 1 { halves.insert(entry.bytes[0] & 0x80) }
+        }
+        return halves.count == 2
+    }
+
+    static func routedAllFamilies(allowedIPs: [String]) -> Set<IPFamily> {
+        Set(IPFamily.allCases.filter { routesAll($0, allowedIPs: allowedIPs) })
+    }
+
+    static func hasAddress(_ family: IPFamily, in addresses: [String]) -> Bool {
+        addresses.contains { parse($0)?.family == family }
+    }
+
+    /// Families the physical network can reach the internet with: global unicast IPv6
+    /// (2000::/3) and any IPv4 address outside link-local 169.254.0.0/16.
+    static func internetFamilies(ofPhysicalAddresses addresses: [String]) -> Set<IPFamily> {
+        var families = Set<IPFamily>()
+        for entry in addresses.compactMap(parse) {
+            switch entry.family {
+            case .ipv4 where !(entry.bytes[0] == 169 && entry.bytes[1] == 254): families.insert(.ipv4)
+            case .ipv6 where entry.bytes[0] & 0xE0 == 0x20: families.insert(.ipv6)
+            default: break
+            }
+        }
+        return families
+    }
+}
+
 enum WireGuardKey {
     /// Derives the base64 WireGuard public key from a base64 private key (X25519).
     static func publicKey(fromPrivateKey privateKey: String) -> String? {
@@ -153,6 +221,8 @@ enum ConfigWarning: String {
     case missingEndpoint = "Endpoint not specified"
     case fullTunnel = "AllowedIPs includes 0.0.0.0/0 — full tunnel mode"
     case multiplePeers = "Multiple peers found — only first peer used in MVP"
+    case ipv4RoutedWithoutAddress = "AllowedIPs routes all IPv4 traffic but there is no IPv4 Address, so IPv4 will leak"
+    case ipv6RoutedWithoutAddress = "AllowedIPs routes all IPv6 traffic but there is no IPv6 Address, so IPv6 will leak"
 }
 
 final class WireGuardConfigParser {
@@ -203,9 +273,9 @@ final class WireGuardConfigParser {
                 switch normalizedKey {
                 case "privatekey": config.privateKey = nonEmpty(value)
                 case "address":
-                    config.address = nonEmptyList(value)
+                    config.address += nonEmptyList(value)
                 case "dns":
-                    config.dns = nonEmptyList(value)
+                    config.dns += nonEmptyList(value)
                 case "listenport": config.listenPort = Int(value)
                 default: break
                 }
@@ -215,7 +285,7 @@ final class WireGuardConfigParser {
                 case "presharedkey": config.presharedKey = nonEmpty(value)
                 case "endpoint": config.endpoint = nonEmpty(value)
                 case "allowedips":
-                    config.allowedIPs = nonEmptyList(value)
+                    config.allowedIPs += nonEmptyList(value)
                 case "persistentkeepalive": config.persistentKeepalive = Int(value)
                 default: break
                 }
@@ -230,6 +300,10 @@ final class WireGuardConfigParser {
         if config.dns.isEmpty { config.warnings.append(.missingDNS) }
         if config.endpoint == nil { config.warnings.append(.missingEndpoint) }
         if config.allowedIPs.contains("0.0.0.0/0") { config.warnings.append(.fullTunnel) }
+        for family in IPFamily.allCases where IPFamilyRouting.routesAll(family, allowedIPs: config.allowedIPs)
+            && !IPFamilyRouting.hasAddress(family, in: config.address) {
+            config.warnings.append(family == .ipv4 ? .ipv4RoutedWithoutAddress : .ipv6RoutedWithoutAddress)
+        }
         if peerCount > 1 { config.warnings.append(.multiplePeers) }
 
         return config

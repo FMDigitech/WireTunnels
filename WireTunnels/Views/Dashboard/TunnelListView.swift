@@ -23,6 +23,7 @@ struct TunnelListView: View {
                 case .overlappingAllowedIPs(let a, let b): return [a, b]
                 case .conflictingDNS(let names):        return names
                 case .killSwitchBlocking(let name):     return [name]
+                case .ipFamilyLeak(let name, _):        return [name]
                 }
             }
             let warnedSet = Set(warnedNames)

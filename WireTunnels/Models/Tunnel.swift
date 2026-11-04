@@ -67,6 +67,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
     var autostart: Bool
     var autoConnectRule: AutoConnectRule
     var killSwitchEnabled: Bool
+    var ipFamilyLeakWarningAcknowledged: Bool  // user accepted single-family routing; no leak warning
     var address: [String]?      // [Interface] Address — tunnel's own IPs
     var allowedIPs: [String]
     var excludedRoutes: [String]  // CIDR ranges to bypass this tunnel at runtime, routed via the pre-VPN gateway
@@ -99,6 +100,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         case autostart
         case autoConnectRule
         case killSwitchEnabled
+        case ipFamilyLeakWarningAcknowledged
         case address
         case allowedIPs
         case excludedRoutes
@@ -130,6 +132,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         self.autostart = false
         self.autoConnectRule = AutoConnectRule()
         self.killSwitchEnabled = false
+        self.ipFamilyLeakWarningAcknowledged = false
         self.allowedIPs = []
         self.excludedRoutes = []
         self.dns = []
@@ -162,6 +165,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         autoConnectRule = try container.decodeIfPresent(AutoConnectRule.self, forKey: .autoConnectRule)
             ?? AutoConnectRule()
         killSwitchEnabled = try container.decodeIfPresent(Bool.self, forKey: .killSwitchEnabled) ?? false
+        ipFamilyLeakWarningAcknowledged = try container.decodeIfPresent(Bool.self, forKey: .ipFamilyLeakWarningAcknowledged) ?? false
         address = try container.decodeIfPresent([String].self, forKey: .address)
         allowedIPs = try container.decode([String].self, forKey: .allowedIPs)
         excludedRoutes = try container.decodeIfPresent([String].self, forKey: .excludedRoutes) ?? []

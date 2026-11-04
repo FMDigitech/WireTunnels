@@ -6,6 +6,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = [
+    "Shared/InventoryRouting.swift",
     "WireTunnels/Models/AutoConnectRule.swift",
     "WireTunnels/Models/Tunnel.swift",
     "WireTunnels/Models/HopChain.swift",

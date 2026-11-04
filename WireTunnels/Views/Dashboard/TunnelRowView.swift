@@ -18,6 +18,7 @@ struct TunnelRowView: View {
             case .overlappingAllowedIPs(let a, let b):  return a == tunnel.name || b == tunnel.name
             case .conflictingDNS(let names):            return names.contains(tunnel.name)
             case .killSwitchBlocking(let name):         return name == tunnel.name
+            case .ipFamilyLeak(let name, _):            return name == tunnel.name
             }
         }
     }

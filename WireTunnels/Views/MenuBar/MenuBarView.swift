@@ -114,11 +114,13 @@ struct MenuBarView: View {
 
                 let showCharts = activeTunnels.count <= 2
                 ForEach(activeTunnels) { tunnel in
+                    let leaks = tunnelManager.ipFamilyLeaks[tunnel.id] ?? []
                     if showCharts {
                         TunnelMenuRowWithChart(
                             tunnel: tunnel,
                             samples: tunnelManager.trafficHistory[tunnel.id] ?? [],
                             isBusy: isBusy(tunnel),
+                            leaks: leaks,
                             detailAction: { openDashboard(tunnelID: tunnel.id) }
                         ) {
                             Task { await tunnelManager.disconnectTunnel(tunnel) }
@@ -128,10 +130,19 @@ struct MenuBarView: View {
                             tunnel: tunnel,
                             isActive: true,
                             isBusy: isBusy(tunnel),
+                            leaks: leaks,
                             detailAction: { openDashboard(tunnelID: tunnel.id) }
                         ) {
                             Task { await tunnelManager.disconnectTunnel(tunnel) }
                         }
+                    }
+                    ForEach(tunnelManager.ipFamilyLeakWarnings[tunnel.id] ?? [], id: \.self) { leak in
+                        IPFamilyLeakNotice(
+                            leak: leak,
+                            unavailableReason: tunnelManager.ipFamilyLeakFixUnavailableReason(for: tunnel, leak: leak),
+                            fixAction: { Task { await tunnelManager.fixIPFamilyLeak(for: tunnel, leak: leak) } },
+                            editAction: { openDashboard(tunnelID: tunnel.id) }
+                        )
                     }
                 }
 
@@ -270,22 +281,19 @@ struct MenuBarView: View {
 
 // MARK: - Helpers
 
-private func networksLabel(for tunnel: Tunnel) -> String {
+private func networksLabel(for tunnel: Tunnel, leaks: [IPFamilyLeak]) -> String {
     let ips = tunnel.allowedIPs
     guard !ips.isEmpty else { return "" }
-    let full = ips.contains("0.0.0.0/0")
-    let full6 = ips.contains("::/0")
-    if full && full6 { return "All traffic (IPv4+IPv6)" }
-    if full { return "All traffic" }
+    if let label = IPFamilyLeakDetector.routeLabel(allowedIPs: ips, leaks: leaks) { return label }
     if ips.count == 1 { return ips[0] }
     if ips.count == 2 { return ips.joined(separator: ", ") }
     return "\(ips[0]) +\(ips.count - 1) more"
 }
 
-private func tunnelInfoLine(for tunnel: Tunnel) -> String {
+private func tunnelInfoLine(for tunnel: Tunnel, leaks: [IPFamilyLeak]) -> String {
     var parts: [String] = []
     if let firstAddr = tunnel.address?.first { parts.append(firstAddr) }
-    let nets = networksLabel(for: tunnel)
+    let nets = networksLabel(for: tunnel, leaks: leaks)
     if !nets.isEmpty { parts.append(nets) }
     if let connectedAt = tunnel.connectedAt {
         parts.append("⏱ \(formatDuration(since: connectedAt))")
@@ -294,6 +302,43 @@ private func tunnelInfoLine(for tunnel: Tunnel) -> String {
 }
 
 // MARK: - Supporting Views
+
+private struct IPFamilyLeakNotice: View {
+    let leak: IPFamilyLeak
+    let unavailableReason: IPFamilyLeakFix.UnavailableReason?
+    let fixAction: () -> Void
+    let editAction: () -> Void
+
+    private var message: String {
+        if unavailableReason == nil, let fix = leak.fixDescription { return "\(leak.problem) \(fix)" }
+        if unavailableReason == .dnsUsesFamily {
+            return "\(leak.problem) \(IPFamilyLeakFix.dnsUnavailableMessage(for: leak.family))"
+        }
+        return leak.problem
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(leak.title, systemImage: "exclamationmark.triangle.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.yellow)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                if unavailableReason == nil {
+                    Button("Disable \(leak.family.displayName)", action: fixAction)
+                        .buttonStyle(.borderedProminent)
+                }
+                Button("Edit Tunnel…", action: editAction)
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
 
 private struct SectionHeader: View {
     let title: String
@@ -313,6 +358,7 @@ private struct TunnelMenuRow: View {
     let isActive: Bool
     var canConnect = true
     let isBusy: Bool
+    var leaks: [IPFamilyLeak] = []
     let detailAction: () -> Void
     let action: () -> Void
 
@@ -356,7 +402,7 @@ private struct TunnelMenuRow: View {
             }
 
             if isActive {
-                let info = tunnelInfoLine(for: tunnel)
+                let info = tunnelInfoLine(for: tunnel, leaks: leaks)
                 if !info.isEmpty {
                     Text(info)
                         .font(.system(.caption2, design: .monospaced))
@@ -377,6 +423,7 @@ private struct TunnelMenuRowWithChart: View {
     let tunnel: Tunnel
     let samples: [TrafficSample]
     let isBusy: Bool
+    var leaks: [IPFamilyLeak] = []
     let detailAction: () -> Void
     let action: () -> Void
 
@@ -417,7 +464,7 @@ private struct TunnelMenuRowWithChart: View {
             }
 
             // Info: own IP · networks · duration
-            let info = tunnelInfoLine(for: tunnel)
+            let info = tunnelInfoLine(for: tunnel, leaks: leaks)
             if !info.isEmpty {
                 Text(info)
                     .font(.system(.caption2, design: .monospaced))

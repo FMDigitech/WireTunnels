@@ -24,6 +24,14 @@ def main():
         status_model = 'WireTunnels/Models/TunnelStatus.swift'
         run_suite(directory, 'dns-recovery', ['WireTunnelsHelper/DNSRecoveryService.swift', 'Tests/DNSRecoveryTests.swift'])
         run_suite(directory, 'wireguard-dns', ['WireTunnels/Services/WireGuardConfigParser.swift', 'Tests/WireGuardDNSTests.swift'])
+        run_suite(directory, 'ip-family-routing', ['WireTunnels/Services/WireGuardConfigParser.swift', 'Tests/IPFamilyRoutingTests.swift'])
+        run_suite(directory, 'ip-family-leak', ['WireTunnels/Services/WireGuardConfigParser.swift',
+                  'WireTunnels/Models/IPFamilyLeak.swift', 'Tests/IPFamilyLeakDetectorTests.swift'])
+        run_suite(directory, 'ip-family-leak-fix', ['WireTunnels/Services/WireGuardConfigParser.swift',
+                  'WireTunnels/Models/IPFamilyLeak.swift', 'WireTunnels/Services/IPFamilyLeakFix.swift',
+                  'Tests/IPFamilyLeakFixTests.swift'])
+        run_suite(directory, 'route-lookup', ['WireTunnels/Services/WireGuardConfigParser.swift',
+                  'WireTunnels/Services/RouteLookupService.swift', 'Tests/RouteLookupTests.swift'])
         run_suite(directory, 'kill-switch-rules', ['Shared/KillSwitchEntry.swift', 'Tests/KillSwitchRulesTests.swift'])
         subprocess.run(['bash', str(ROOT / 'Tests/test_inventory_routing.sh')], check=True)
         subprocess.run(['python3', '-m', 'unittest', 'discover', '-s', 'Tests', '-p', 'test_server_ips.py'],

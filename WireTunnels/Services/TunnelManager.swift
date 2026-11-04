@@ -20,6 +20,9 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     @Published var helperRequiresApproval: Bool = false
     @Published var bundledRuntimeStatus: WireGuardRuntimeStatus?
     @Published var activeWarnings: [TunnelWarning] = []
+    /// Leaks of every connected tunnel, for honest route labels; `ipFamilyLeakWarnings` leaves out acknowledged tunnels.
+    @Published private(set) var ipFamilyLeaks: [UUID: [IPFamilyLeak]] = [:]
+    @Published private(set) var ipFamilyLeakWarnings: [UUID: [IPFamilyLeak]] = [:]
     @Published var isDashboardOpen: Bool = false
     @Published var isInitialized: Bool = false
     @Published private(set) var isShuttingDown = false
@@ -50,7 +53,10 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     private var pollingTask: Task<Void, Never>?
     private var networkCancellable: AnyCancellable?
     private lazy var networkChangeScheduler = NetworkChangeScheduler(
-        evaluateRules: { [weak self] in await self?.evaluateNetworkRulesWhenIdle() },
+        evaluateRules: { [weak self] in
+            await self?.evaluateNetworkRulesWhenIdle()
+            await self?.checkIPFamilyRoutes()
+        },
         reconnect: { [weak self] in await self?.handleLocalAddressChange() }
     )
     /// Guards against overlapping restart passes — a DHCP renewal detected right
@@ -84,6 +90,10 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     /// the next time any other tunnel's kill switch state changes.
     private var killSwitchLastKnownEntry: [UUID: KillSwitchEntry] = [:]
     private var lastSyncedSplitDNS: [SplitDNSEntry]?
+    /// Routing each active tunnel was started with. A saved edit only takes effect on reconnect,
+    /// so leak checks read this instead of the tunnel's current config.
+    private var runningRouting: [UUID: TunnelRouting] = [:]
+    private var routeBypassedFamilies: Set<IPFamily> = []
 
     // MARK: - Initialization
 
@@ -103,6 +113,9 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             .sink { [weak self] in self?.objectWillChange.send() }
         self.networkMonitor.onNetworkChange = { [weak self] in
             self?.networkChangeScheduler.schedule()
+        }
+        self.networkMonitor.onPhysicalAddressesChange = { [weak self] in
+            await self?.checkIPFamilyRoutes()
         }
         self.networkMonitor.onSystemWake = { [weak self] in
             await self?.handleSystemWake()
@@ -582,6 +595,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             try await log.timed("Connect \(liveTunnel.name): starting WireGuard") {
                 try await self.commandService.startTunnel(configPath: stagedRuntimePath)
             }
+            runningRouting[liveTunnel.id] = TunnelRouting(liveTunnel)
             if liveTunnel.scope == .managed {
                 do {
                     try await commandService.markManagedTunnelConnected(id: liveTunnel.id)
@@ -608,6 +622,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             if let current = tunnels.first(where: { $0.id == liveTunnel.id }), !current.excludedRoutes.isEmpty {
                 await syncExcludedRoutes(for: current)
             }
+            await checkIPFamilyRoutes()
             await syncSplitDNSState()
             if liveTunnel.inventoryCommand != nil {
                 try await applyCachedInventory(liveTunnel)
@@ -658,6 +673,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             }
             try await commandService.stopTunnel(configPath: configPath)
             try await finalizeStoppedTunnel(liveTunnel)
+            await checkIPFamilyRoutes()
             log.info("Tunnel \(liveTunnel.name) disconnected in \(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - disconnectStarted))s")
             if !isAutoDisconnect && !isShuttingDown {
                 try? await notificationService.postDisconnected(tunnelName: liveTunnel.name)
@@ -1318,6 +1334,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         for chain in hopChains where chain.isEnabled {
             await reconnectHopChainAfterWake(chain)
         }
+        await checkIPFamilyRoutes()
         // Retry any rule action deferred while this restart was busy.
         await handleNetworkChange()
     }
@@ -1526,6 +1543,55 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         log.info("Kill switch updated for \(tunnels[index].name): enabled=\(enabled)")
         let liveTunnel = tunnels[index]
         Task { await applyKillSwitchToggle(for: liveTunnel, enabled: enabled) }
+    }
+
+    func updateIPFamilyLeakAcknowledgement(for tunnel: Tunnel, acknowledged: Bool) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }), tunnels[index].scope == .personal else { return }
+        tunnels[index].ipFamilyLeakWarningAcknowledged = acknowledged
+        tunnels[index].updatedAt = Date()
+        savePersonalTunnelsOnly()
+        updateWarnings()
+    }
+
+    func ipFamilyLeakFixUnavailableReason(for tunnel: Tunnel, leak: IPFamilyLeak) -> IPFamilyLeakFix.UnavailableReason? {
+        let chainBusy = chain(containing: tunnel.id).map { connectingChains.contains($0.id) } ?? false
+        return IPFamilyLeakFix.unavailableReason(
+            for: leak, dns: runningRouting[tunnel.id]?.dns ?? tunnel.dns, isManaged: tunnel.scope == .managed,
+            hasInventory: tunnel.inventoryCommand != nil, isBusy: isTunnelBusy(tunnel.id) || chainBusy)
+    }
+
+    /// Adds a placeholder address so the leaking family goes into the tunnel and stops there,
+    /// then reconnects so the change takes effect. Disconnect and connect report their own failures;
+    /// both run as automatic so On-Demand state and notifications stay as they were.
+    func fixIPFamilyLeak(for tunnel: Tunnel, leak: IPFamilyLeak) async {
+        guard let live = tunnels.first(where: { $0.id == tunnel.id }),
+              ipFamilyLeakFixUnavailableReason(for: live, leak: leak) == nil else { return }
+        let family = leak.family
+        do {
+            let contents = try configStorage.readConfig(at: URL(fileURLWithPath: live.configPath))
+            var generator = SystemRandomNumberGenerator()
+            let placeholder = IPFamilyLeakFix.placeholderAddress(for: family, using: &generator)
+            let fixed = IPFamilyLeakFix.apply(to: contents, family: family, placeholder: placeholder)
+            // The saved file already has the address; a reconnect alone applies it.
+            if fixed != contents {
+                try await updateTunnel(live, name: live.name, configContent: fixed)
+                log.info("Added placeholder \(family.displayName) address to \(live.name)")
+            }
+        } catch {
+            let message = "Could not disable \(family.displayName) for \(live.name): \(error.localizedDescription)"
+            log.error(message)
+            errorMessage = message
+            return
+        }
+        guard live.isActive else { return }
+        if let chain = activeOrBusyChain(containing: live.id) {
+            guard await disconnectHopChain(chain) else { return }
+            await connectHopChain(chain)
+        } else if let updated = tunnels.first(where: { $0.id == live.id }) {
+            guard await disconnectTunnel(updated, isAutoDisconnect: true),
+                  let current = tunnels.first(where: { $0.id == live.id }) else { return }
+            await connectTunnel(current, isAutoConnect: true)
+        }
     }
 
     /// Admin-only: pushes the kill switch flag to the shared store so it applies to every user of this managed tunnel.
@@ -2029,9 +2095,65 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             warnings.append(.killSwitchBlocking(tunnel.name))
         }
 
+        let (leaks, leakWarnings) = currentIPFamilyLeaks(active: active)
+        if ipFamilyLeaks != leaks {
+            ipFamilyLeaks = leaks
+        }
+        if ipFamilyLeakWarnings != leakWarnings {
+            ipFamilyLeakWarnings = leakWarnings
+        }
+        for tunnel in active {
+            for leak in leakWarnings[tunnel.id] ?? [] {
+                warnings.append(.ipFamilyLeak(tunnel.name, leak))
+            }
+        }
+
         if activeWarnings != warnings {
             activeWarnings = warnings
         }
+    }
+
+    private func currentIPFamilyLeaks(active: [Tunnel]) -> (leaks: [UUID: [IPFamilyLeak]], warnings: [UUID: [IPFamilyLeak]]) {
+        let activeIDs = Set(active.map(\.id))
+        runningRouting = runningRouting.filter { activeIDs.contains($0.key) }
+        // A tunnel adopted at launch was started from its saved config.
+        for tunnel in active where runningRouting[tunnel.id] == nil {
+            runningRouting[tunnel.id] = TunnelRouting(tunnel)
+        }
+        let inputs = active.map { tunnel in
+            IPFamilyLeakInput(id: tunnel.id, routing: runningRouting[tunnel.id] ?? TunnelRouting(tunnel),
+                              acknowledged: tunnel.scope == .personal && tunnel.ipFamilyLeakWarningAcknowledged)
+        }
+        let leaks = IPFamilyLeakDetector.leaks(
+            connected: inputs,
+            physicalFamilies: IPFamilyRouting.internetFamilies(ofPhysicalAddresses: networkMonitor.physicalAddresses),
+            routeBypassedFamilies: routeBypassedFamilies,
+            killSwitchArmed: active.contains { killSwitchArmedTunnelIDs.contains($0.id) })
+        return (leaks, IPFamilyLeakDetector.warnings(from: leaks, connected: inputs))
+    }
+
+    /// Asks the routing table where public traffic of each fully routed family goes, then refreshes warnings.
+    func checkIPFamilyRoutes() async {
+        let active = tunnels.filter(\.isActive)
+        let families = Set(IPFamily.allCases.filter { family in
+            active.contains { tunnel in
+                let routing = runningRouting[tunnel.id] ?? TunnelRouting(tunnel)
+                return IPFamilyRouting.routesAll(family, allowedIPs: routing.allowedIPs)
+                    && IPFamilyRouting.hasAddress(family, in: routing.address)
+            }
+        })
+        let interfaces = active.compactMap(\.interfaceName)
+        // interfaceName holds the config name until a status refresh maps it to its utun.
+        if families.isEmpty || interfaces.count < active.count || !interfaces.allSatisfy({ $0.hasPrefix("utun") }) {
+            routeBypassedFamilies = []
+        } else {
+            let tunnelInterfaces = Set(interfaces)
+            routeBypassedFamilies = await Task.detached {
+                RouteLookupService.bypassedFamilies(families, tunnelInterfaces: tunnelInterfaces,
+                                                    lookup: RouteLookupService.interface(for:family:))
+            }.value
+        }
+        updateWarnings()
     }
 
     // MARK: - Helpers
@@ -2338,6 +2460,10 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             try resetService.reset()
             tunnels = managed
             activeWarnings = []
+            ipFamilyLeaks = [:]
+            ipFamilyLeakWarnings = [:]
+            runningRouting = [:]
+            routeBypassedFamilies = []
             trafficHistory = [:]
             trafficSnapshots = [:]
             log.clearLog()
@@ -2398,5 +2524,11 @@ enum ConfigManagementError: LocalizedError {
         case .environmentNotReady:
             return "Install and verify the bundled WireGuard tools before generating keys."
         }
+    }
+}
+
+private extension TunnelRouting {
+    init(_ tunnel: Tunnel) {
+        self.init(address: tunnel.address ?? [], allowedIPs: tunnel.allowedIPs, dns: tunnel.dns)
     }
 }

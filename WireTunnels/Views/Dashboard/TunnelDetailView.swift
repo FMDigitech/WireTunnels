@@ -694,6 +694,21 @@ struct TunnelDetailView: View {
             Text("Blocks all other network traffic until this tunnel reconnects. Disconnecting it yourself does not trigger a block.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if !isManaged {
+                Toggle(isOn: Binding(
+                    get: { live.ipFamilyLeakWarningAcknowledged },
+                    set: { tunnelManager.updateIPFamilyLeakAcknowledgement(for: live, acknowledged: $0) }
+                )) {
+                    Label("Don't warn about IPv4 / IPv6 leaks for this tunnel", systemImage: "bell.slash")
+                        .font(.subheadline.weight(.medium))
+                }
+                .toggleStyle(.switch)
+
+                Text("Use this if routing only one IP family is intentional.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
