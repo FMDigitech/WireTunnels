@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5ECCBD99-471D-44E5-930D-931D2BE7E7A4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Cli", "src\WireTunnels.Cli\WireTunnels.Cli.csproj", "{64D6CF8C-AD12-43F6-97DD-214ADA70747C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Contracts", "src\WireTunnels.Contracts\WireTunnels.Contracts.csproj", "{3BAE6834-1215-49DF-918D-DD1B73C18F99}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Core", "src\WireTunnels.Core\WireTunnels.Core.csproj", "{3933C573-7650-4147-8B47-00A20CCCC87D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Service", "src\WireTunnels.Service\WireTunnels.Service.csproj", "{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A3C836C8-D780-426A-858C-AD8DCF12A20E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Core.Tests", "tests\WireTunnels.Core.Tests\WireTunnels.Core.Tests.csproj", "{0C1B2845-E140-40C4-ABD3-A8F5729BBB32}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireTunnels.Service.Tests", "tests\WireTunnels.Service.Tests\WireTunnels.Service.Tests.csproj", "{83B6BA3B-5603-4D66-99D3-D68B62521B70}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{64D6CF8C-AD12-43F6-97DD-214ADA70747C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{64D6CF8C-AD12-43F6-97DD-214ADA70747C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{64D6CF8C-AD12-43F6-97DD-214ADA70747C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{64D6CF8C-AD12-43F6-97DD-214ADA70747C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BAE6834-1215-49DF-918D-DD1B73C18F99}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BAE6834-1215-49DF-918D-DD1B73C18F99}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BAE6834-1215-49DF-918D-DD1B73C18F99}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BAE6834-1215-49DF-918D-DD1B73C18F99}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3933C573-7650-4147-8B47-00A20CCCC87D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3933C573-7650-4147-8B47-00A20CCCC87D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3933C573-7650-4147-8B47-00A20CCCC87D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3933C573-7650-4147-8B47-00A20CCCC87D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C1B2845-E140-40C4-ABD3-A8F5729BBB32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C1B2845-E140-40C4-ABD3-A8F5729BBB32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C1B2845-E140-40C4-ABD3-A8F5729BBB32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C1B2845-E140-40C4-ABD3-A8F5729BBB32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{83B6BA3B-5603-4D66-99D3-D68B62521B70}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{83B6BA3B-5603-4D66-99D3-D68B62521B70}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{83B6BA3B-5603-4D66-99D3-D68B62521B70}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{83B6BA3B-5603-4D66-99D3-D68B62521B70}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{64D6CF8C-AD12-43F6-97DD-214ADA70747C} = {5ECCBD99-471D-44E5-930D-931D2BE7E7A4}
+		{3BAE6834-1215-49DF-918D-DD1B73C18F99} = {5ECCBD99-471D-44E5-930D-931D2BE7E7A4}
+		{3933C573-7650-4147-8B47-00A20CCCC87D} = {5ECCBD99-471D-44E5-930D-931D2BE7E7A4}
+		{7ACFFE20-FDC4-4157-8C9E-3D14097FD2BD} = {5ECCBD99-471D-44E5-930D-931D2BE7E7A4}
+		{0C1B2845-E140-40C4-ABD3-A8F5729BBB32} = {A3C836C8-D780-426A-858C-AD8DCF12A20E}
+		{83B6BA3B-5603-4D66-99D3-D68B62521B70} = {A3C836C8-D780-426A-858C-AD8DCF12A20E}
+	EndGlobalSection
+EndGlobal
