@@ -31,7 +31,17 @@ public sealed class ServiceClient : IAsyncDisposable
             throw new ServiceException("The WireTunnels service is not running");
         }
         var client = new ServiceClient(pipe);
-        var revision = await client.CallAsync<string>(Ops.ProtocolRevision, null, ct);
+        string? revision;
+        try
+        {
+            revision = await client.CallAsync<string>(Ops.ProtocolRevision, null, ct);
+        }
+        catch (Exception e) when (e is IOException or ServiceException)
+        {
+            // The service drops clients it does not trust before answering anything.
+            await client.DisposeAsync();
+            throw new ServiceException("The WireTunnels service refused the connection. Run WireTunnels from its install folder.");
+        }
         if (revision != Protocol.Revision)
         {
             await client.DisposeAsync();

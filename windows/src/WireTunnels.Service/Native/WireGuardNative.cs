@@ -6,12 +6,33 @@ using Microsoft.Win32.SafeHandles;
 namespace WireTunnels.Service.Native;
 
 /// wireguard-nt (wireguard.dll, https://git.zx2c4.com/wireguard-nt/tree/api/wireguard.h).
-/// Loaded only from the service's own directory, which only administrators can write.
-/// shortcut: relies on the Program Files ACL; add a WinVerifyTrust check of wireguard.dll before release.
+/// Loaded only from the service's own directory, which only administrators can write, and only
+/// after its Authenticode signature has been verified as WireGuard LLC's.
 [SupportedOSPlatform("windows")]
 internal static partial class WireGuardNative
 {
     private const string Dll = "wireguard.dll";
+    public const string Publisher = "WireGuard LLC";
+
+    private static readonly object LoadLock = new();
+    private static IntPtr _library;
+
+    static WireGuardNative() => NativeLibrary.SetDllImportResolver(typeof(WireGuardNative).Assembly, Resolve);
+
+    /// Loads exactly the file that was verified (full path, no search order). A failed check is not
+    /// cached, so replacing a bad DLL takes effect on the next connect without restarting the service.
+    private static IntPtr Resolve(string name, System.Reflection.Assembly assembly, DllImportSearchPath? paths)
+    {
+        if (!string.Equals(name, Dll, StringComparison.OrdinalIgnoreCase)) return IntPtr.Zero; // default resolution
+        lock (LoadLock)
+        {
+            if (_library != IntPtr.Zero) return _library;
+            var path = Path.Combine(AppContext.BaseDirectory, Dll);
+            if (!File.Exists(path)) throw new DllNotFoundException($"{Dll} is missing from {AppContext.BaseDirectory}");
+            if (WinTrust.Verify(path, Publisher) is { } problem) throw new InvalidOperationException($"Refusing to load {Dll}: {problem}");
+            return _library = NativeLibrary.Load(path);
+        }
+    }
 
     public enum AdapterState { Down = 0, Up = 1 }
 

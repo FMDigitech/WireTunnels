@@ -51,7 +51,8 @@ internal sealed class TunnelRunner(ILogger<TunnelRunner> log) : ITunnelBackend, 
             IpHelper.ConfigureInterface(luid, ipv4: true, mtu);
             IpHelper.ConfigureInterface(luid, ipv4: false, mtu);
             // wireguard-nt excludes its own adapter when routing its encrypted packets, so a
-            // default route here does not loop (the macOS loop guard is not needed). Verify in the spike.
+            // default route here does not loop (the macOS loop guard is not needed). Verified on
+            // Windows 11 with wireguard-nt 1.1 and AllowedIPs = 0.0.0.0/0.
             foreach (var route in config.Peers.SelectMany(p => p.AllowedIPs).Select(IPPrefix.Parse).Distinct())
                 IpHelper.AddRoute(luid, route);
 

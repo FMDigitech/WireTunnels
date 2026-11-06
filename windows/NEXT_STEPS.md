@@ -21,6 +21,22 @@ Nothing in `src/WireTunnels.Service/Native` has run on Windows yet. On a Windows
    - Release build rejects a CLI copied outside `C:\Program Files\WireTunnels`.
 3. Add a `WinVerifyTrust` check of `wireguard.dll` (shortcut noted in `WireGuardNative.cs`).
 
+**Done on 2026-11-06** (Windows 11 IoT Enterprise 26200 x64, wireguard-nt 1.1, .NET SDK 8.0.427). All checks pass:
+handshake and rx/tx, address, AllowedIPs routes with metric 0, interface metric 0 and MTU 1420, DNS (comma list,
+IPv6 server, search domain), full tunnel without loop, per-user isolation (standard user and non-elevated admin are
+denied; elevated admin allowed), no orphaned adapter/routes/DNS after killing the service, CLI outside the install
+folder rejected. Fixes made along the way:
+- `PipeServer.Identify` crashed on every connection: with an Identification-level token the thread cannot open files,
+  so `WindowsIdentity` failed to load `System.Security.Claims`. It now only opens the thread token while impersonating.
+  The client stays at `Identification`.
+- `PipeServer.ServeAsync` logs unexpected exceptions (they were lost in the fire-and-forget task).
+- `ServiceClient` reports "refused the connection" instead of "Pipe is broken" when the service rejects the client.
+- `wireguard.dll` is loaded by full path only after `WinTrust.Verify` (valid chain + signer `WireGuard LLC`).
+Notes for later phases: wireguard-nt 1.1 added `WIREGUARD_ALLOWED_IP.Flags` at offset 20 (size unchanged, zero = add);
+the service has no recovery actions after a crash (set them in the MSI, phase 7, `sc failure`); service events go to
+the Application log under the source `WireTunnels.Service`; a non-present PnP node `SWD\WIREGUARD\{guid}` per alias
+stays after disconnect (reused by the stable GUID, as with wireguard-windows).
+
 ## 3. App MVP (WinUI 3) — `src/WireTunnels.App`
 
 Needs Windows + Visual Studio with the Windows App SDK workload.

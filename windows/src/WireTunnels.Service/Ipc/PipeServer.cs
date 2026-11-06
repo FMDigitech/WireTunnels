@@ -54,6 +54,11 @@ internal sealed partial class PipeServer(RequestDispatcher dispatcher, ILogger<P
             log.LogDebug(e, "Pipe client dropped");
         }
         catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            // ServeAsync is fire-and-forget: anything not logged here would vanish unobserved.
+            log.LogError(e, "Pipe client failed");
+        }
     }
 
     private static NamedPipeServerStream Create(bool first)
@@ -72,16 +77,42 @@ internal sealed partial class PipeServer(RequestDispatcher dispatcher, ILogger<P
 
     private static ClientIdentity Identify(NamedPipeServerStream pipe)
     {
-        ClientIdentity? identity = null;
+        // While impersonating an Identification-level token the thread cannot open files, so the
+        // runtime cannot load assemblies (WindowsIdentity pulls in System.Security.Claims): only
+        // take the token handle here and build the identity after reverting.
+        var raw = IntPtr.Zero;
+        var error = 0;
         pipe.RunAsClient(() =>
         {
-            using var token = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
-            // Under UAC a non-elevated admin token has Administrators as deny-only, so IsInRole is false.
-            identity = new ClientIdentity(token.User!.Value, token.Name,
-                new WindowsPrincipal(token).IsInRole(WindowsBuiltInRole.Administrator));
+            // openAsSelf: the access check on the thread token uses the service's own token.
+            if (!OpenThreadToken(GetCurrentThread(), TokenQuery, openAsSelf: true, out raw)) error = Marshal.GetLastWin32Error();
         });
-        return identity!;
+        if (raw == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(error, "Unable to read the pipe client token");
+        try
+        {
+            using var token = new WindowsIdentity(raw);
+            // Under UAC a non-elevated admin token has Administrators as deny-only, so IsInRole is false.
+            return new ClientIdentity(token.User!.Value, token.Name,
+                new WindowsPrincipal(token).IsInRole(WindowsBuiltInRole.Administrator));
+        }
+        finally
+        {
+            CloseHandle(raw);
+        }
     }
+
+    private const uint TokenQuery = 0x0008;
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetCurrentThread();
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool OpenThreadToken(IntPtr thread, uint access, [MarshalAs(UnmanagedType.Bool)] bool openAsSelf, out IntPtr token);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseHandle(IntPtr handle);
 
     /// Defense in depth: the client executable must live in the service's own directory,
     /// which only administrators can write. Authorization itself is per user (see RequestDispatcher).

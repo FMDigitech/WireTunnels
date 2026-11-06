@@ -40,6 +40,36 @@ public class NativeLayoutTests
     }
 }
 
+public class WinTrustTests
+{
+    // The test host is Microsoft-signed with an embedded signature; a copied text file is not signed.
+    private static string SignedByMicrosoft => Environment.ProcessPath!;
+
+    [Fact]
+    public void AcceptsOnlyTheExpectedPublisher()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Assert.Null(WinTrust.Verify(SignedByMicrosoft, "Microsoft Corporation"));
+        Assert.Contains("not WireGuard LLC", WinTrust.Verify(SignedByMicrosoft, WireGuardNative.Publisher));
+    }
+
+    [Fact]
+    public void RejectsUnsignedFiles()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var path = Path.Combine(Path.GetTempPath(), $"wt-unsigned-{Guid.NewGuid():N}.dll");
+        File.WriteAllText(path, "not a signed binary");
+        try
+        {
+            Assert.Contains("no valid Authenticode signature", WinTrust.Verify(path, WireGuardNative.Publisher));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+}
+
 public class ConfigBlobTests
 {
     private static readonly (string Priv, string Pub) Local = WireGuardKey.Generate();
