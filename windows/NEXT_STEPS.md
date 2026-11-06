@@ -39,7 +39,25 @@ stays after disconnect (reused by the stable GUID, as with wireguard-windows).
 
 ## 3. App MVP (WinUI 3) — `src/WireTunnels.App`
 
-Needs Windows + Visual Studio with the Windows App SDK workload.
+**Done on 2026-11-06.** Built with the .NET CLI only (no Visual Studio): Windows App SDK 2.6.5 self-contained,
+unpackaged, H.NotifyIcon.WinUI 2.3.2 (2.4 needs .NET 10). App logic lives in `src/WireTunnels.Client` (net8.0, 41
+tests on any OS); the WinUI project holds only views. Verified on this PC by driving the real UI with UI Automation:
+import of a `.conf` through the file picker, connect/disconnect from the list, the detail pane and the tray flyout,
+single instance (a second launch brings the dashboard forward), `--background` start, close = hide to tray, Quit =
+disconnect all then exit, setup wizard when the service is unreachable, settings. Decisions and findings:
+- The exe is `WireTunnels.App.exe`: `WireTunnels.exe` would collide with `wiretunnels.exe` (the CLI) on NTFS.
+- `EnableMsixTooling` is required, otherwise `dotnet publish` drops the app's `.pri` and the compiled XAML.
+- `TaskbarIcon` disposes the previous `System.Drawing.Icon` when the icon changes: create a new one every time
+  (a cached icon crashed the process in native code).
+- x:Bind functions bound to `Visibility` must return `Visibility` (the XAML compiler breaks the bool cast).
+- A tunnel that was active when the app closed and is gone at startup (reboot, service restart) is reconciled
+  silently instead of being reported as "Connection lost".
+- Not ported yet: QR code import (needs a decoder, e.g. ZXing.Net), the Shared and Multi-Hop pages (phases 4–5;
+  they show an explanatory empty state), on-demand / kill switch / split DNS / excluded routes sections of the detail
+  pane (phases 4 and 6), "Make Shared", Reset App Data, UI smoke tests with FlaUI.
+- .NET 8 support ends on 2026-11-10: plan the move of the whole solution to .NET 10 LTS (then H.NotifyIcon 2.4).
+
+Original plan:
 
 1. `dotnet new winui` (or VS template "Blank App, Packaged/Unpackaged (WinUI 3)"), unpackaged, net8.0-windows10.0.19041; reference Core + Contracts; add to the sln.
 2. Single instance via `AppInstance.FindOrRegisterForKey`; tray with `H.NotifyIcon.WinUI` (flyout = macOS `MenuBarView`, context menu: Dashboard, Connect favorites, Disconnect all, Quit).

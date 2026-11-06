@@ -1,0 +1,87 @@
+<ContentDialog
+    x:Class="WireTunnels.App.Views.TunnelEditorDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WireTunnels.App.Views"
+    Style="{StaticResource DefaultContentDialogStyle}"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonClick="OnPrimary"
+    SecondaryButtonClick="OnSecondary">
+
+    <ContentDialog.Resources>
+        <x:Double x:Key="ContentDialogMaxWidth">720</x:Double>
+        <x:Double x:Key="ContentDialogMaxHeight">820</x:Double>
+    </ContentDialog.Resources>
+
+    <Grid Width="600" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="440" />
+        </Grid.RowDefinitions>
+
+        <TextBox x:Name="NameBox" Header="Tunnel Name" PlaceholderText="My VPN" MaxLength="50" TextChanged="OnChanged" />
+
+        <SelectorBar x:Name="Tabs" Grid.Row="1" SelectionChanged="OnTabChanged">
+            <SelectorBarItem x:Name="BasicTab" Text="Basic Form" IsSelected="True" />
+            <SelectorBarItem x:Name="AdvancedTab" Text="Advanced Editor" />
+        </SelectorBar>
+
+        <InfoBar x:Name="Error" Grid.Row="2" Severity="Error" IsClosable="True" IsOpen="False" />
+
+        <ScrollViewer x:Name="BasicPanel" Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Interface" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <PasswordBox x:Name="PrivateKeyBox" Header="Private Key" PlaceholderText="Base64 encoded key" PasswordChanged="OnPrivateKeyChanged"
+                                 PasswordRevealMode="Peek" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" />
+                    <Button Grid.Column="1" VerticalAlignment="Bottom" Click="OnGenerateKey" ToolTipService.ToolTip="Generate a WireGuard private/public key pair"
+                            AutomationProperties.Name="Generate key pair">
+                        <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE8D7;" FontSize="14" /><TextBlock Text="Generate" /></StackPanel>
+                    </Button>
+                </Grid>
+                <Grid x:Name="PublicKeyRow" ColumnSpacing="8" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Your Public Key" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="PublicKeyText" Grid.Column="1" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                               IsTextSelectionEnabled="True" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="2" Content="Copy" Click="OnCopyPublicKey" />
+                </Grid>
+                <TextBox x:Name="AddressBox" Header="Address" PlaceholderText="10.0.0.2/24" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="DnsBox" Header="DNS" PlaceholderText="1.1.1.1" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="SearchBox" Header="Search Domains" PlaceholderText="office.lan, corp.lan" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBlock x:Name="SearchError" Foreground="{StaticResource ErrorBrush}" Style="{StaticResource CaptionTextBlockStyle}" Visibility="Collapsed" />
+
+                <TextBlock Text="Peer" Margin="0,8,0,0" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBox x:Name="PeerKeyBox" Header="Public Key" PlaceholderText="Server public key" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="PskBox" Header="Preshared Key" PlaceholderText="Optional" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="EndpointBox" Header="Endpoint" PlaceholderText="vpn.example.com:51820" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="AllowedBox" Header="Allowed IPs" PlaceholderText="0.0.0.0/0" FontFamily="{StaticResource MonoFont}" HeaderTemplate="{StaticResource PlainHeader}" TextChanged="OnChanged" />
+                <TextBox x:Name="KeepaliveBox" Header="Persistent Keepalive" PlaceholderText="25" Width="160" HorizontalAlignment="Left" TextChanged="OnChanged" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid x:Name="AdvancedPanel" Grid.Row="3" Visibility="Collapsed" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DropDownButton x:Name="TemplateButton" Content="Insert Template" HorizontalAlignment="Right">
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="TemplateMenu" Placement="BottomEdgeAlignedRight" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+            <local:ConfigTextEditor x:Name="Editor" Grid.Row="1" />
+        </Grid>
+    </Grid>
+</ContentDialog>

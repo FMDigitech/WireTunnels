@@ -1,0 +1,177 @@
+<Window
+    x:Class="WireTunnels.App.Views.FlyoutWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WireTunnels.App.Views"
+    xmlns:vm="using:WireTunnels.App.ViewModels"
+    Title="WireTunnels">
+
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root" KeyDown="OnKeyDown">
+        <StackPanel x:Name="Panel" Padding="0,6,0,8" VerticalAlignment="Top">
+            <Grid Padding="14,4,14,6">
+                <TextBlock Text="WireTunnels" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4"
+                            Visibility="{x:Bind ViewModel.HasWarnings, Mode=OneWay}"
+                            ToolTipService.ToolTip="Warnings">
+                    <FontIcon Glyph="&#xE7BA;" FontSize="13" Foreground="{StaticResource WarningBrush}" />
+                    <TextBlock Text="{x:Bind ViewModel.WarningCount, Mode=OneWay}" Foreground="{StaticResource WarningBrush}"
+                               Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
+                </StackPanel>
+            </Grid>
+
+            <InfoBar Margin="10,0,10,6" Severity="Error" Title="WireTunnels Error"
+                     IsOpen="{x:Bind local:Bind.IsSet(ViewModel.Manager.ErrorMessage), Mode=OneWay}"
+                     Message="{x:Bind local:Bind.Text(ViewModel.Manager.ErrorMessage), Mode=OneWay}"
+                     CloseButtonClick="OnErrorClosed" />
+
+            <StackPanel Padding="14,6" Spacing="6" Visibility="{x:Bind ViewModel.HasSetupNotice, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE7BA;" FontSize="14" Foreground="{StaticResource WarningBrush}" />
+                    <TextBlock Text="Setup Required" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                </StackPanel>
+                <TextBlock Text="{x:Bind local:Bind.Text(ViewModel.SetupNotice), Mode=OneWay}" TextWrapping="Wrap"
+                           Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button Content="Open Setup" Click="OnOpenDashboard" />
+            </StackPanel>
+
+            <ScrollViewer x:Name="List" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.FeedbackItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TunnelItem">
+                                <Grid Padding="14,4" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Glyph="{x:Bind FeedbackGlyph, Mode=OneWay}" FontSize="14" Foreground="{x:Bind FeedbackBrush, Mode=OneWay}" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind local:Bind.Text(FeedbackText), Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <HyperlinkButton Grid.Column="2" Content="Retry" Padding="6,2" Click="OnRetry"
+                                                     Visibility="{x:Bind IsConnectionLost, Mode=OneWay}"
+                                                     AutomationProperties.Name="Retry connection" />
+                                    <HyperlinkButton Grid.Column="3" Content="Details" Padding="6,2" Click="OnDetails" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Connected" Margin="14,6,14,2" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind ViewModel.HasActive, Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.ActiveItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TunnelItem">
+                                <StackPanel Padding="14,4" Spacing="3">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Width="8" Height="8" Fill="{x:Bind StatusBrush, Mode=OneWay}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Style="{StaticResource SubtleButtonStyle}" Padding="6" Click="OnDetails"
+                                                ToolTipService.ToolTip="Open details" AutomationProperties.Name="Open details">
+                                            <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                        </Button>
+                                        <ToggleSwitch Grid.Column="3" MinWidth="0" OnContent="" OffContent="" Margin="0,0,-12,0"
+                                                      IsOn="{x:Bind IsActive, Mode=OneWay}" IsEnabled="{x:Bind CanToggle, Mode=OneWay}"
+                                                      Toggled="OnToggled" ToolTipService.ToolTip="{x:Bind ToggleHint, Mode=OneWay}"
+                                                      AutomationProperties.Name="{x:Bind ToggleHint, Mode=OneWay}" />
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind InfoLine, Mode=OneWay}" Margin="16,0,0,0" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                               Visibility="{x:Bind HasInfoLine, Mode=OneWay}" />
+                                    <Grid Margin="16,2,0,0" ColumnSpacing="8" RowSpacing="2" Visibility="{x:Bind HasTraffic, Mode=OneWay}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="18" />
+                                            <RowDefinition Height="18" />
+                                        </Grid.RowDefinitions>
+                                        <local:Sparkline Values="{x:Bind RxSamples, Mode=OneWay}" Stroke="{StaticResource RxBrush}" />
+                                        <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource RxBrush}" FontFamily="{StaticResource MonoFont}">
+                                            <Run Text="↓" /> <Run Text="{x:Bind RxRate, Mode=OneWay}" /><Run Text="  " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run Text="{x:Bind Received, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </TextBlock>
+                                        <local:Sparkline Grid.Row="1" Values="{x:Bind TxSamples, Mode=OneWay}" Stroke="{StaticResource TxBrush}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TxBrush}" FontFamily="{StaticResource MonoFont}">
+                                            <Run Text="↑" /> <Run Text="{x:Bind TxRate, Mode=OneWay}" /><Run Text="  " Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><Run Text="{x:Bind Sent, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </TextBlock>
+                                    </Grid>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Disconnected" Margin="14,8,14,2" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Visibility="{x:Bind ViewModel.HasInactive, Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.InactiveItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TunnelItem">
+                                <Grid Padding="14,2" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Width="8" Height="8" Fill="{x:Bind StatusBrush, Mode=OneWay}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                    <Button Grid.Column="2" Style="{StaticResource SubtleButtonStyle}" Padding="6" Click="OnDetails"
+                                            ToolTipService.ToolTip="Open details" AutomationProperties.Name="Open details">
+                                        <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                    </Button>
+                                    <ToggleSwitch Grid.Column="3" MinWidth="0" OnContent="" OffContent="" Margin="0,0,-12,0"
+                                                  IsOn="{x:Bind IsActive, Mode=OneWay}" IsEnabled="{x:Bind CanToggle, Mode=OneWay}"
+                                                  Toggled="OnToggled" ToolTipService.ToolTip="{x:Bind ToggleHint, Mode=OneWay}"
+                                                  AutomationProperties.Name="{x:Bind ToggleHint, Mode=OneWay}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="No tunnels configured" Margin="14,6" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="{x:Bind ViewModel.HasNoTunnels, Mode=OneWay}" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <Rectangle Height="1" Margin="0,6" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            <Button Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,0"
+                    Click="OnStartFavorites" AutomationProperties.Name="Start Favorites" Visibility="{x:Bind ViewModel.HasInactiveFavorites, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.Manager.CanConnectTunnels, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE735;" FontSize="14" /><TextBlock Text="Start Favorites" /></StackPanel>
+            </Button>
+            <Button Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,0"
+                    Click="OnStopAll" AutomationProperties.Name="Stop All" Visibility="{x:Bind ViewModel.HasActive, Mode=OneWay}" IsEnabled="{x:Bind local:Bind.Not(ViewModel.AnyBusy), Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE71A;" FontSize="14" Foreground="{StaticResource ErrorBrush}" /><TextBlock Text="Stop All" /></StackPanel>
+            </Button>
+            <Button Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,0" Click="OnOpenDashboard" AutomationProperties.Name="Open Dashboard">
+                <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE80F;" FontSize="14" /><TextBlock Text="Open Dashboard" /></StackPanel>
+            </Button>
+            <Button Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,0" Click="OnOpenSettings" AutomationProperties.Name="Settings">
+                <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE713;" FontSize="14" /><TextBlock Text="Settings" /></StackPanel>
+            </Button>
+            <Rectangle Height="1" Margin="0,6" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            <Button Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,0" Click="OnQuit" AutomationProperties.Name="Quit">
+                <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE7E8;" FontSize="14" /><TextBlock Text="Quit" /></StackPanel>
+            </Button>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="14,6,14,0" Visibility="{x:Bind ViewModel.Manager.IsLoading, Mode=OneWay}">
+                <ProgressRing Width="14" Height="14" IsActive="True" />
+                <TextBlock Text="Updating…" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,42 @@
+<Application
+    x:Class="WireTunnels.App.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
+            <!-- Monospaced text boxes keep a regular-font header. -->
+            <DataTemplate x:Key="PlainHeader">
+                <TextBlock Text="{Binding}" FontFamily="{ThemeResource ContentControlThemeFontFamily}" />
+            </DataTemplate>
+            <SolidColorBrush x:Key="ConnectedBrush" Color="#16A34A" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#D97706" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#DC2626" />
+            <SolidColorBrush x:Key="RxBrush" Color="#16A34A" />
+            <SolidColorBrush x:Key="TxBrush" Color="#2563EB" />
+
+            <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="0,0,0,8" />
+            </Style>
+            <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Width" Value="140" />
+            </Style>
+            <Style x:Key="FieldValue" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

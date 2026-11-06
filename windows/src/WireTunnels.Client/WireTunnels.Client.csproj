@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- App logic without any UI dependency (the macOS TunnelManager and its services), so it is unit-tested on any OS.
+       Windows-only pieces (DPAPI, service control) are marked [SupportedOSPlatform] and kept behind interfaces. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WireTunnels.Core\WireTunnels.Core.csproj" />
+    <ProjectReference Include="..\WireTunnels.Contracts\WireTunnels.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WireTunnels.Client.Tests" />
+  </ItemGroup>
+</Project>

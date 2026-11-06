@@ -1,0 +1,135 @@
+<UserControl
+    x:Class="WireTunnels.App.Views.TunnelDetailView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WireTunnels.App.Views">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="24,16,24,24" Spacing="16" MaxWidth="820" HorizontalAlignment="Stretch">
+
+            <!-- Header -->
+            <Grid ColumnSpacing="14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Width="52" Height="52">
+                    <Ellipse Fill="{x:Bind Item.StatusBrush, Mode=OneWay}" Opacity="0.15" />
+                    <FontIcon Glyph="{x:Bind Item.StatusGlyph, Mode=OneWay}" FontSize="22" Foreground="{x:Bind Item.StatusBrush, Mode=OneWay}" />
+                </Grid>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{x:Bind Item.Name, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse Width="8" Height="8" Fill="{x:Bind Item.StatusBrush, Mode=OneWay}" VerticalAlignment="Center" />
+                        <TextBlock Text="{x:Bind Item.StatusText, Mode=OneWay}" Foreground="{x:Bind Item.StatusBrush, Mode=OneWay}" />
+                        <FontIcon Glyph="&#xE735;" FontSize="12" Foreground="{StaticResource WarningBrush}" Visibility="{x:Bind Item.IsFavorite, Mode=OneWay}" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <ProgressRing Width="18" Height="18" IsActive="{x:Bind Item.IsBusy, Mode=OneWay}" />
+                    <ToggleSwitch x:Name="Toggle" MinWidth="0" OnContent="" OffContent="" Margin="0,0,-12,0"
+                                  IsOn="{x:Bind Item.IsActive, Mode=OneWay}" IsEnabled="{x:Bind Item.CanToggle, Mode=OneWay}" Toggled="OnToggled"
+                                  ToolTipService.ToolTip="{x:Bind Item.ToggleHint, Mode=OneWay}" AutomationProperties.Name="{x:Bind Item.ToggleHint, Mode=OneWay}" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Interface -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Interface" Style="{StaticResource SectionTitle}" />
+                    <local:FieldRow Label="Adapter" Value="{x:Bind Item.InterfaceName, Mode=OneWay}" Visibility="{x:Bind Item.HasInterface, Mode=OneWay}" />
+                    <local:FieldRow Label="Address" Value="{x:Bind Item.Address, Mode=OneWay}" Mono="True" />
+                    <local:FieldRow Label="Endpoint" Value="{x:Bind Item.Endpoint, Mode=OneWay}" Visibility="{x:Bind Item.HasEndpoint, Mode=OneWay}" />
+                    <local:FieldRow Label="Allowed IPs" Value="{x:Bind Item.AllowedIPsList, Mode=OneWay}" Mono="True" Visibility="{x:Bind Item.HasAllowedIPs, Mode=OneWay}" />
+                    <local:FieldRow Label="DNS" Value="{x:Bind Item.DnsServers, Mode=OneWay}" Visibility="{x:Bind Item.HasDnsServers, Mode=OneWay}" />
+                    <local:FieldRow Label="Search Domains" Value="{x:Bind Item.SearchDomains, Mode=OneWay}" Visibility="{x:Bind Item.HasSearchDomains, Mode=OneWay}" />
+                    <local:FieldRow Label="Peer Public Key" Value="{x:Bind Item.PublicKey, Mode=OneWay}" Mono="True" Visibility="{x:Bind Item.HasPublicKey, Mode=OneWay}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Status -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Status" Style="{StaticResource SectionTitle}" />
+                    <local:FieldRow Label="Connected for" Value="{x:Bind Item.ConnectedFor, Mode=OneWay}" Visibility="{x:Bind Item.HasConnectedFor, Mode=OneWay}" />
+                    <local:FieldRow Label="Last Handshake" Value="{x:Bind Item.Handshake, Mode=OneWay}" />
+                    <local:FieldRow Label="Received" Value="{x:Bind Item.Received, Mode=OneWay}" />
+                    <local:FieldRow Label="Sent" Value="{x:Bind Item.Sent, Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
+                        <Button x:Name="TestButton" Click="OnTestConnection" AutomationProperties.Name="Test Connection" IsEnabled="{x:Bind Item.IsActive, Mode=OneWay}"
+                                ToolTipService.ToolTip="Pings this tunnel's own VPN server to check latency.">
+                            <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE9D9;" FontSize="14" /><TextBlock Text="Test Connection" /></StackPanel>
+                        </Button>
+                        <ProgressRing x:Name="TestBusy" Width="18" Height="18" IsActive="False" />
+                        <TextBlock x:Name="TestResult" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4" Visibility="{x:Bind Item.IsPersonal, Mode=OneWay}">
+                        <TextBox x:Name="SpeedTestUrl" PlaceholderText="Speed test URL (optional)" LostFocus="OnSpeedTestUrlCommitted" KeyDown="OnSpeedTestUrlKey"
+                                 AutomationProperties.Name="Speed test URL" IsSpellCheckEnabled="False" />
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Text="Set your own HTTPS URL to measure throughput alongside latency when testing this tunnel. Left empty, no throughput probe runs." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Traffic -->
+            <Border Style="{StaticResource Card}" Visibility="{x:Bind Item.HasTraffic, Mode=OneWay}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Traffic (last 60s)" Style="{StaticResource SectionTitle}" />
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE74B;" FontSize="14" Foreground="{StaticResource RxBrush}" />
+                            <TextBlock Text="{x:Bind Item.RxRate, Mode=OneWay}" Foreground="{StaticResource RxBrush}" FontFamily="{StaticResource MonoFont}" />
+                        </StackPanel>
+                        <TextBlock HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                            <Run Text="Total received:" /> <Run Text="{x:Bind Item.Received, Mode=OneWay}" />
+                        </TextBlock>
+                    </Grid>
+                    <local:Sparkline Height="64" Values="{x:Bind Item.RxSamples, Mode=OneWay}" Stroke="{StaticResource RxBrush}" />
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE74A;" FontSize="14" Foreground="{StaticResource TxBrush}" />
+                            <TextBlock Text="{x:Bind Item.TxRate, Mode=OneWay}" Foreground="{StaticResource TxBrush}" FontFamily="{StaticResource MonoFont}" />
+                        </StackPanel>
+                        <TextBlock HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                            <Run Text="Total sent:" /> <Run Text="{x:Bind Item.Sent, Mode=OneWay}" />
+                        </TextBlock>
+                    </Grid>
+                    <local:Sparkline Height="64" Values="{x:Bind Item.TxSamples, Mode=OneWay}" Stroke="{StaticResource TxBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Configuration -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Configuration" Style="{StaticResource SectionTitle}" />
+                    <local:FieldRow Label="Config File" Value="{x:Bind Item.ConfigPath, Mode=OneWay}" Mono="True" />
+                    <local:FieldRow Label="Storage" Value="Encrypted for your Windows account (DPAPI)" />
+                    <local:FieldRow Label="Created" Value="{x:Bind Item.Created, Mode=OneWay}" />
+                    <local:FieldRow Label="Updated" Value="{x:Bind Item.Updated, Mode=OneWay}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Actions -->
+            <Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Item.IsPersonal, Mode=OneWay}">
+                    <Button Click="OnFavorite" AutomationProperties.Name="{x:Bind Item.FavoriteLabel, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="{x:Bind Item.FavoriteGlyph, Mode=OneWay}" FontSize="14" /><TextBlock Text="{x:Bind Item.FavoriteLabel, Mode=OneWay}" /></StackPanel>
+                    </Button>
+                    <Button Click="OnEdit" AutomationProperties.Name="Edit Config">
+                        <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE70F;" FontSize="14" /><TextBlock Text="Edit Config" /></StackPanel>
+                    </Button>
+                    <Button Click="OnDuplicate" AutomationProperties.Name="Duplicate" ToolTipService.ToolTip="Create a disconnected copy of this tunnel">
+                        <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8C8;" FontSize="14" /><TextBlock Text="Duplicate" /></StackPanel>
+                    </Button>
+                </StackPanel>
+                <Button HorizontalAlignment="Right" Click="OnDelete" AutomationProperties.Name="Delete Tunnel" IsEnabled="{x:Bind Item.CanDelete, Mode=OneWay}"
+                        Visibility="{x:Bind Item.IsPersonal, Mode=OneWay}"
+                        ToolTipService.ToolTip="Disconnect the tunnel before deleting it.">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="{StaticResource ErrorBrush}" /><TextBlock Text="Delete Tunnel" /></StackPanel>
+                </Button>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

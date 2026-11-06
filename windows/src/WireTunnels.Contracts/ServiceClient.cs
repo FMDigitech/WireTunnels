@@ -5,7 +5,10 @@ using System.Text.Json.Nodes;
 
 namespace WireTunnels.Contracts;
 
-public sealed class ServiceException(string message) : Exception(message);
+public class ServiceException(string message) : Exception(message);
+
+/// The service is reachable but speaks another protocol revision (app and service from different versions).
+public sealed class ServiceProtocolException(string message) : ServiceException(message);
 
 /// Client side of the service pipe, shared by the CLI and the app (the macOS WireGuardCommandService).
 public sealed class ServiceClient : IAsyncDisposable
@@ -45,7 +48,7 @@ public sealed class ServiceClient : IAsyncDisposable
         if (revision != Protocol.Revision)
         {
             await client.DisposeAsync();
-            throw new ServiceException($"The WireTunnels service speaks protocol {revision}, this app needs {Protocol.Revision}. Reinstall WireTunnels.");
+            throw new ServiceProtocolException($"The WireTunnels service speaks protocol {revision}, this app needs {Protocol.Revision}. Reinstall WireTunnels.");
         }
         return client;
     }
