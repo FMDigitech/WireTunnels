@@ -199,13 +199,7 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Multi-Hop arrives with network parity (phase 4). -->
-                <StackPanel x:Name="MultiHopPage" Grid.Row="1" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" MaxWidth="420">
-                    <FontIcon Glyph="&#xE8AB;" FontSize="40" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                    <TextBlock Text="Multi-Hop" Style="{StaticResource BodyStrongTextBlockStyle}" HorizontalAlignment="Center" />
-                    <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               Text="Routing one tunnel through another is not available in this version of WireTunnels for Windows yet." />
-                </StackPanel>
+                <local:MultiHopView x:Name="MultiHopPage" Grid.Row="1" Visibility="Collapsed" />
 
                 <local:LogView x:Name="LogPage" Grid.Row="1" Visibility="Collapsed" />
                 <local:SettingsView x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" />

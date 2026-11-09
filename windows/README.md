@@ -9,14 +9,14 @@ Next phases, step by step: [`NEXT_STEPS.md`](NEXT_STEPS.md).
 |---|---|
 | `src/WireTunnels.Core` | Platform-neutral logic: models (same JSON as macOS `tunnels.json`), `.conf` parser and validation, DNS, IP prefixes, on-demand matching, warnings, recoverable JSON store, X25519 keys |
 | `src/WireTunnels.Contracts` | Named-pipe protocol (framing, operations, DTOs) and `ServiceClient` |
-| `src/WireTunnels.Service` | Windows Service (LocalSystem): pipe server with per-user authorization, wireguard-nt adapters, addresses, routes, metric/MTU, DNS |
+| `src/WireTunnels.Service` | Windows Service (LocalSystem): pipe server with per-user authorization, wireguard-nt adapters, addresses, routes, metric/MTU, DNS; kill switch and DNS leak guard (WFP), split DNS (NRPT), excluded and multi-hop routes |
 | `src/WireTunnels.Cli` | `wiretunnels.exe connect / disconnect / status / genkey` |
-| `src/WireTunnels.Client` | App logic without UI (port of `TunnelManager.swift`): tunnels, connect/disconnect, status polling, DPAPI-encrypted config store, log, quit |
+| `src/WireTunnels.Client` | App logic without UI (port of `TunnelManager.swift`): tunnels, connect/disconnect, status polling, kill switch, split DNS, exclusions, multi-hop, IPv4/IPv6 leaks, DPAPI-encrypted config store, log, quit |
 | `src/WireTunnels.App` | `WireTunnels.App.exe`, WinUI 3: notification-area icon + flyout, dashboard, import / new / edit, setup wizard, settings, log |
 | `tests/*` | xUnit; Core, Service and Client tests run on any OS |
 
-Not yet implemented (see the plan in the architecture doc): kill switch (WFP), split DNS (NRPT),
-excluded routes, multi-hop, managed shared tunnels, on-demand rules, session/logoff handling, installer, updater, QR import.
+Not yet implemented (see the plan in the architecture doc): managed shared tunnels, on-demand rules,
+session/logoff handling, installer, updater.
 
 ## Build and test
 
@@ -28,6 +28,14 @@ dotnet publish src/WireTunnels.Service -c Release -r win-x64 --self-contained -o
 dotnet publish src/WireTunnels.Cli     -c Release -r win-x64 --self-contained -o out
 dotnet publish src/WireTunnels.App     -c Release -r win-x64 --self-contained -o out
 ```
+
+`LiveNetworkTests` exercise the real WFP, routing table, NRPT and registry with harmless values (TEST-NET
+addresses, a dynamic WFP session that blocks this PC's traffic for about a second). They are opt-in, from an
+elevated prompt: `$env:WIRETUNNELS_LIVE_TESTS = '1'; dotnet test tests\WireTunnels.Service.Tests`.
+
+`tests/WireTunnels.App.UITests` drive the installed app with UI Automation (FlaUI) on a temporary data folder
+(`WIRETUNNELS_DATA_DIR`), so your own tunnels are not touched. Opt-in, after installing the build under test:
+`$env:WIRETUNNELS_UI_TESTS = '1'; dotnet test tests\WireTunnels.App.UITests` (`WIRETUNNELS_APP` overrides the exe).
 
 The app needs no Visual Studio: the Windows App SDK is a NuGet package and ships self-contained next to the exe.
 It is named `WireTunnels.App.exe` because NTFS is case-insensitive and the CLI is `wiretunnels.exe` in the same folder.

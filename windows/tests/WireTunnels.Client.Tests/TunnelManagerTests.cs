@@ -69,7 +69,7 @@ public class TunnelManagerTests : IDisposable
         await M.ConnectAsync(tunnel.Id);
 
         var alias = ConfigName.FileBaseName("Office VPN");
-        Assert.Equal([$"start {alias}"], _h.Service.Calls);
+        Assert.Equal([$"start {alias}"], _h.Service.Calls.Where(c => c.StartsWith("start")));
         Assert.True(tunnel.IsActive);
         Assert.Equal(alias, tunnel.InterfaceName);
         Assert.Equal((5000, 1000), (tunnel.RxBytes, tunnel.TxBytes));

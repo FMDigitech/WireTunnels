@@ -285,7 +285,7 @@ comportamento "il tunnel è caduto, il kill switch blocca" (`TunnelWarning.killS
   come WireTunnels e rimossa allo stop o al ripristino.
 - Recovery: DNS, indirizzi e route del tunnel appartengono all'adapter wireguard-nt, che
   sparisce quando il servizio chiude l'handle o termina (anche per crash): per questi non
-  serve un journal. Il journal in `%ProgramData%\WireTunnels\state` serve solo per lo stato
+  serve un journal. Il journal (chiave di registro **volatile** `HKLM\SOFTWARE\WireTunnels\Runtime`, che Windows cancella all'avvio) serve solo per lo stato
   che vive fuori dall'adapter (regole NRPT, filtri WFP persistenti) e arriva con la fase 4.
 
 ### 5.5 Multi-hop, route escluse, recovery
@@ -320,7 +320,7 @@ comportamento "il tunnel è caduto, il kill switch blocca" (`TunnelWarning.killS
 | Metadati personali | `%LOCALAPPDATA%\WireTunnels\metadata\tunnels.json`, `hopchains.json` | Stesso schema JSON di macOS (campi di `Tunnel`, `AutoConnectRule`, ...) con `RecoverableJsonStore` |
 | Log app | `%LOCALAPPDATA%\WireTunnels\logs\WireTunnels.log` | Con rotazione |
 | Managed | `%ProgramData%\WireTunnels\managed\{configs,metadata}` | ACL: SYSTEM + Administrators; config cifrate con DPAPI `LocalMachine` |
-| Journal di rete | `%ProgramData%\WireTunnels\state\` | ACL: SYSTEM |
+| Journal di rete | `HKLM\SOFTWARE\WireTunnels\Runtime` (chiave volatile) | Scrivibile solo da amministratori/SYSTEM; sparisce al riavvio, così il kill switch sopravvive a un crash ma non a un reboot |
 | Binari | `%ProgramFiles%\WireTunnels\` (incluso `wireguard.dll`) | Scrivibili solo da admin; Authenticode verificato |
 
 Lo stesso schema JSON permette in futuro un **import da macOS**: un `.zip` con `.conf` +

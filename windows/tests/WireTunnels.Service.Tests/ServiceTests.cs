@@ -23,6 +23,11 @@ public class NativeLayoutTests
         Assert.Equal(104, Unsafe.SizeOf<IpHelper.MibIpForwardRow2>());
         Assert.Equal(168, Unsafe.SizeOf<IpHelper.MibIpInterfaceRow>());
         Assert.Equal(64, Unsafe.SizeOf<IpHelper.DnsInterfaceSettings>());
+        Assert.Equal(72, Unsafe.SizeOf<Wfp.Session>());
+        Assert.Equal(64, Unsafe.SizeOf<Wfp.Provider>());
+        Assert.Equal(72, Unsafe.SizeOf<Wfp.SubLayer>());
+        Assert.Equal(40, Unsafe.SizeOf<Wfp.Condition>());
+        Assert.Equal(200, Unsafe.SizeOf<Wfp.Filter>());
     }
 
     [Fact]
@@ -156,21 +161,13 @@ public class ConfigBlobTests
 
 public class RequestDispatcherTests
 {
-    private sealed class FakeBackend : ITunnelBackend
-    {
-        public readonly HashSet<string> Running = [];
-        public Task StartAsync(string alias, WireGuardConfig config, CancellationToken ct) { Running.Add(alias); return Task.CompletedTask; }
-        public void Stop(string alias) => Running.Remove(alias);
-        public bool IsRunning(string alias) => Running.Contains(alias);
-        public TunnelRuntimeStatus Status(string alias) => new() { Name = alias };
-    }
-
     private static readonly ClientIdentity Alice = new("S-1-5-21-1-1001", "alice", false);
     private static readonly ClientIdentity Bob = new("S-1-5-21-1-1002", "bob", false);
     private static readonly ClientIdentity Admin = new("S-1-5-21-1-500", "admin", true);
 
     private readonly FakeBackend _backend = new();
-    private RequestDispatcher Dispatcher() => new(_backend, NullLogger<RequestDispatcher>.Instance);
+    private readonly NetworkFakes _net = new();
+    private RequestDispatcher Dispatcher() => _net.Dispatcher(_backend);
 
     private static string ValidConfig(string extra = "") => $"""
         [Interface]

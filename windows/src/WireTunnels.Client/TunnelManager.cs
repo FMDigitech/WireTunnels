@@ -14,8 +14,9 @@ public sealed record TrafficSample(DateTimeOffset Time, double RxRate, double Tx
 public sealed class ConfigValidationException(IEnumerable<string> errors)
     : Exception("Invalid WireGuard configuration: " + string.Join("; ", errors));
 
-/// Port of TunnelManager.swift for the app MVP (phase 3): owns the tunnel list, talks to the
-/// service, polls runtime status, and runs connect / disconnect / quit with the same rules as macOS.
+/// Port of TunnelManager.swift: owns the tunnel list, talks to the service, polls runtime status,
+/// and runs connect / disconnect / quit with the same rules as macOS. Network parity (kill switch,
+/// split DNS, exclusions, multi-hop, leaks) lives in TunnelManager.Network.cs.
 /// Not thread-safe by design: call it from the UI thread only (awaits resume there).
 public sealed partial class TunnelManager : ObservableObject, IShutdownClient
 {
@@ -30,6 +31,9 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     private readonly INotifier _notifier;
     private readonly Func<bool> _notificationsEnabled;
     private readonly TimeProvider _time;
+    private readonly INetworkInfo _network;
+    private readonly IInventoryRunner _inventory;
+    private readonly RecoverableJsonStore<List<HopChain>>? _hopChainStore;
     private readonly ConnectionFeedback _feedback = new();
     private readonly ShutdownCoordinator _shutdown = new();
     private readonly HashSet<Guid> _connecting = [];
@@ -46,8 +50,12 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     private bool _silentReconcile;
 
     public TunnelManager(ITunnelService service, IServiceProbe probe, ConfigStore configs, RecoverableJsonStore<List<Tunnel>> store,
-        LogService log, INotifier notifier, Func<bool> notificationsEnabled, TimeProvider? time = null)
+        LogService log, INotifier notifier, Func<bool> notificationsEnabled, TimeProvider? time = null,
+        INetworkInfo? network = null, RecoverableJsonStore<List<HopChain>>? hopChains = null, IInventoryRunner? inventory = null)
     {
+        _inventory = inventory ?? new InventoryCommandRunner();
+        _network = network ?? new SystemNetworkInfo();
+        _hopChainStore = hopChains;
         _service = service;
         _probe = probe;
         _configs = configs;
@@ -116,12 +124,14 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
                 _tunnels = [];
             }
             _log.Info($"Loaded {_tunnels.Count} tunnel(s)");
+            LoadHopChains();
             await RefreshServiceStateAsync();
             // Reconcile silently: a tunnel saved as active that is gone after a reboot or a service
             // restart while the app was closed is simply disconnected, not a "connection lost".
             _silentReconcile = true;
             try { if (SetupState == SetupState.Ready) await RefreshStatusAsync(reportError: false); }
             finally { _silentReconcile = false; }
+            if (SetupState == SetupState.Ready) await RestoreNetworkStateAsync();
         }
         finally
         {
@@ -172,9 +182,16 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
 
     // MARK: - Connect / disconnect
 
-    public async Task ConnectAsync(Guid id, bool automatic = false)
+    /// `suppressDns` keeps the tunnel's DNS off the adapter (a multi-hop hop leg).
+    public async Task ConnectAsync(Guid id, bool automatic = false, bool suppressDns = false)
     {
         if (Find(id) is not { } tunnel) return;
+        if (ChainConflict(id) is { } chainConflict)
+        {
+            _log.Warning(chainConflict);
+            ReportFailure(tunnel, chainConflict, automatic);
+            return;
+        }
         if (!CanConnectTunnels)
         {
             if (IsShuttingDown) return;
@@ -206,7 +223,12 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             var contents = _configs.Read(tunnel.ConfigPath);
             var parsed = WireGuardConfig.Parse(contents);
             if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
-            await _log.TimedAsync($"Connect {tunnel.Name}: starting WireGuard", () => _service.StartAsync(alias, contents));
+            // Inventory destinations are blocked before the tunnel comes up; AfterConnectAsync opens them through it.
+            if (tunnel.InventoryCommand is not null) await ProtectInventoryAsync(tunnel);
+            // Split DNS replaces the adapter's DNS with NRPT rules for its domains, set after the connect.
+            var withoutDns = suppressDns || tunnel.EffectiveSplitDNSDomains.Count > 0;
+            await _log.TimedAsync($"Connect {tunnel.Name}: starting WireGuard", () => _service.StartAsync(alias, contents, withoutDns));
+            _runningRouting[id] = new([.. parsed.Address], [.. parsed.PrimaryPeer?.AllowedIPs ?? []], [.. parsed.Dns]);
 
             if (Find(id) is not { } live) throw new InvalidOperationException("The tunnel was removed while connecting.");
             live.IsActive = true;
@@ -217,6 +239,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             UpdateWarnings();
 
             var confirmed = await RefreshStatusAsync(reportError: !automatic);
+            await AfterConnectAsync(id);
             var active = Find(id)?.IsActive == true;
             _feedback.CompleteConnection(id, confirmed && active);
             if (confirmed && active)
@@ -241,7 +264,14 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
 
     public async Task<bool> DisconnectAsync(Guid id, bool automatic = false)
     {
-        if (Find(id) is not { } tunnel || IsBusy(id)) return false;
+        if (Find(id) is not { } tunnel) return false;
+        if (ChainConflict(id) is { } chainConflict)
+        {
+            _log.Warning(chainConflict);
+            ReportFailure(tunnel, chainConflict, automatic);
+            return false;
+        }
+        if (IsBusy(id)) return false;
         if (tunnel.Scope == TunnelScope.Managed && tunnel.ManagedPolicy?.UsersCanDisconnect == false)
         {
             ReportFailure(tunnel, "Users are not allowed to disconnect this managed tunnel", automatic);
@@ -255,8 +285,10 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         {
             var alias = tunnel.InterfaceName ?? _configs.AliasOf(tunnel.ConfigPath)
                 ?? throw new InvalidDataException("The tunnel's interface is unknown.");
+            if (tunnel.InventoryCommand is not null) await ProtectInventoryAsync(tunnel);
             await _service.StopAsync(alias);
             FinalizeStopped(tunnel);
+            await AfterDisconnectAsync(tunnel);
             _log.Info($"Tunnel {tunnel.Name} disconnected in {Seconds(watch)}s");
             if (!automatic && !IsShuttingDown && _notificationsEnabled()) _notifier.Disconnected(tunnel.Name);
             return true;
@@ -277,6 +309,9 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     public async Task<bool> StopAllActiveAsync()
     {
         var succeeded = true;
+        // Chains as a unit first: their legs refuse to stop one by one.
+        foreach (var chain in _hopChains.Where(IsChainActive).ToList())
+            if (!await DisconnectHopChainAsync(chain.Id)) succeeded = false;
         foreach (var tunnel in _tunnels.Where(t => t.IsActive).ToList())
             if (!await DisconnectAsync(tunnel.Id)) succeeded = false;
         return succeeded;
@@ -349,6 +384,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         var byName = statuses.ToDictionary(s => s.Name, StringComparer.Ordinal);
         var matched = new HashSet<string>(StringComparer.Ordinal);
         var reconciled = false;
+        var lost = false;
         foreach (var tunnel in _tunnels)
         {
             var alias = tunnel.InterfaceName ?? _configs.AliasOf(tunnel.ConfigPath);
@@ -375,6 +411,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
                 if (!_connecting.Contains(tunnel.Id) && !_disconnecting.Contains(tunnel.Id) && !_silentReconcile) _feedback.Lost(tunnel.Id);
                 _log.Info($"Status {tunnel.Name}: adapter no longer present in the service snapshot");
                 ClearRuntime(tunnel);
+                lost = true;
                 if (_silentReconcile) reconciled = true;
             }
         }
@@ -382,6 +419,8 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         if (reconciled) SavePersonalTunnels();
         UpdateWarnings();
         Notify();
+        // A lost tunnel's split DNS rules go; an armed kill switch stays and blocks (KillSwitchBlocking).
+        if (lost) await SyncSplitDnsStateAsync();
         return true;
     }
 
@@ -441,7 +480,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         _trafficSnapshots[id] = (rx, tx, now);
     }
 
-    private void UpdateWarnings() => Warnings = TunnelWarnings.Compute(_tunnels, new HashSet<Guid>());
+    private void UpdateWarnings() => Warnings = TunnelWarnings.Compute(_tunnels, _killSwitchArmed, CurrentLeakWarnings());
 
     // MARK: - Config management
 
@@ -489,6 +528,8 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     {
         if (IsBusy(id)) throw new InvalidOperationException("Wait for the current operation on this tunnel to finish.");
         if (Find(id) is not { } tunnel) return;
+        if (tunnel.InventoryCommand is not null)
+            throw new InvalidOperationException("Disable inventory protection before editing this tunnel's configuration.");
         var parsed = WireGuardConfig.Parse(contents);
         if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
 
@@ -572,6 +613,11 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             ErrorMessage = $"Disconnect {tunnel.Name} before deleting it.";
             return;
         }
+        if (tunnel.InventoryCommand is not null)
+        {
+            ErrorMessage = "Disable inventory protection before deleting this tunnel.";
+            return;
+        }
         var list = _tunnels.Where(t => t.Id != id).ToList();
         try { PersistPersonalTunnels(list); }
         catch (IOException e)
@@ -581,6 +627,8 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         }
         _tunnels = list;
         _configs.Delete(tunnel.ConfigPath);
+        if (_hopChains.Any(c => c.HopTunnelID == id || c.ExitTunnelID == id))
+            SaveHopChains(_hopChains.Where(c => c.HopTunnelID != id && c.ExitTunnelID != id).ToList());
         RetainFeedback();
         UpdateWarnings();
         _log.Info($"Deleted tunnel: {tunnel.Name}");
@@ -636,6 +684,47 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     }
 
     private void RetainFeedback() => _feedback.Retain(_tunnels.Select(t => t.Id).ToHashSet());
+
+    /// Port of resetUserData: stops every tunnel, removes inventory protection (it would otherwise outlive the
+    /// tunnels it belongs to), then deletes configs, metadata and the log. Settings are the caller's.
+    public async Task<bool> ResetUserDataAsync(AppPaths paths)
+    {
+        var stopped = await StopAllActiveAsync();
+        var stopFailures = _tunnels.Where(t => t.IsActive).Select(t => t.Name).ToList();
+        try
+        {
+            if (_tunnels.Any(t => t.InventoryCommand is not null))
+            {
+                if (!stopped) throw new InventoryException("Disconnect all inventory tunnels before resetting app data");
+                foreach (var tunnel in _tunnels.Where(t => t.InventoryCommand is not null).ToList()) await UpdateInventoryCommandAsync(tunnel.Id, null);
+            }
+            foreach (var directory in new[] { paths.Configs, paths.Metadata })
+                if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InventoryException || IsServiceFailure(e))
+        {
+            ErrorMessage = $"Reset app data failed: {e.Message}";
+            _log.Error(ErrorMessage);
+            return false;
+        }
+        _tunnels = _tunnels.Where(t => t.Scope == TunnelScope.Managed).ToList();
+        _hopChains = [];
+        _traffic.Clear();
+        _trafficSnapshots.Clear();
+        _runningRouting.Clear();
+        _killSwitchArmed.Clear();
+        _killSwitchEntries.Clear();
+        _inventoryErrors.Clear();
+        _lastSplitDns = null;
+        RetainFeedback();
+        _log.Clear();
+        ErrorMessage = stopFailures.Count > 0
+            ? $"App data was reset, but these tunnels could not be stopped: {string.Join(", ", stopFailures)}."
+            : null;
+        UpdateWarnings();
+        Notify();
+        return true;
+    }
 
     // MARK: - Persistence
 
@@ -721,10 +810,5 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
 
     Task<bool> IShutdownClient.DisconnectForShutdownAsync() => StopAllActiveAsync();
 
-    /// Phase 4 adds the kill switch (WFP), split DNS (NRPT) and excluded routes to restore here.
-    Task<bool> IShutdownClient.RestoreNetworkSettingsForShutdownAsync()
-    {
-        _log.Info("Quit: all tunnels stopped");
-        return Task.FromResult(true);
-    }
+    Task<bool> IShutdownClient.RestoreNetworkSettingsForShutdownAsync() => RestoreNetworkForShutdownAsync();
 }

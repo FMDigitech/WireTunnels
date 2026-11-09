@@ -101,11 +101,20 @@ public sealed class LogView : UserControl
 public sealed class SettingsView : UserControl
 {
     private App _app = null!;
-    private readonly TextBlock _serviceState = new() { TextWrapping = TextWrapping.Wrap };
+    private TextBlock _serviceState = new();
 
     public void Initialize(App app)
     {
         _app = app;
+        _app.Manager.PropertyChanged += OnManagerChanged;
+        Build();
+    }
+
+    /// Also after Reset App Data, so the toggles show the defaults again.
+    private void Build()
+    {
+        // A fresh element each time: one still in the previous page cannot get a second parent.
+        _serviceState = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var paths = AppPaths.ForCurrentUser();
         var panel = new StackPanel { Spacing = 16, Padding = new Thickness(24, 16, 24, 24), MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Left };
         panel.Children.Add(new TextBlock { Text = "Settings", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
@@ -142,13 +151,34 @@ public sealed class SettingsView : UserControl
             _app.Settings.ShowNotifications, on => { _app.Settings.ShowNotifications = on; _app.SaveSettings(); });
         panel.Children.Add(Section("Behavior", "", launch, background, notifications));
 
+        var reset = new Button { Content = "Reset…" };
+        AutomationProperties.SetName(reset, "Reset App Data");
+        reset.Click += async (_, _) =>
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Reset All App Data?",
+                Content = "All tunnels and preferences will be permanently deleted. Connected tunnels are disconnected first.",
+                PrimaryButtonText = "Reset",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            reset.IsEnabled = false;
+            if (await _app.ResetAppDataAsync()) Build();
+            else reset.IsEnabled = true;
+        };
+        var resetTitle = new TextBlock { Text = "Reset App Data", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Foreground = (Brush)Application.Current.Resources["ErrorBrush"] };
+        panel.Children.Add(Section("Advanced", "\uE7BA", resetTitle,
+            Caption("Removes all tunnels, preferences, and cached data, including inventory protection. This cannot be undone."), reset));
+
         var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "";
         panel.Children.Add(Section("About", "",
             new TextBlock { Text = $"WireTunnels {version} for Windows", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] },
             Caption("Created by FMDigitech. WireGuard is a registered trademark of Jason A. Donenfeld.")));
 
         Content = new ScrollViewer { Content = panel };
-        _app.Manager.PropertyChanged += OnManagerChanged;
         UpdateService();
     }
 

@@ -3,17 +3,18 @@ using WireTunnels.Core.Net;
 
 namespace WireTunnels.Core.Models;
 
-public enum TunnelWarningKind { MultipleFullTunnels, OverlappingAllowedIPs, ConflictingDns, KillSwitchBlocking }
+public enum TunnelWarningKind { MultipleFullTunnels, OverlappingAllowedIPs, ConflictingDns, KillSwitchBlocking, IpFamilyLeak }
 
-public sealed record TunnelWarning(TunnelWarningKind Kind, IReadOnlyList<string> TunnelNames)
+public sealed record TunnelWarning(TunnelWarningKind Kind, IReadOnlyList<string> TunnelNames, IPFamilyLeak? Leak = null)
 {
-    public string Id => $"{Kind}-{string.Join("-", TunnelNames)}";
+    public string Id => $"{Kind}-{string.Join("-", TunnelNames)}{(Leak is null ? "" : "-" + Leak.Family)}";
 
     public string Title => Kind switch
     {
         TunnelWarningKind.MultipleFullTunnels => "Multiple Full Tunnels",
         TunnelWarningKind.OverlappingAllowedIPs => "Overlapping Routes",
         TunnelWarningKind.ConflictingDns => "DNS Conflict",
+        TunnelWarningKind.IpFamilyLeak => $"{Leak!.Family.DisplayName()} Leak",
         _ => "Kill Switch Active",
     };
 
@@ -25,14 +26,17 @@ public sealed record TunnelWarning(TunnelWarningKind Kind, IReadOnlyList<string>
             $"Tunnels \"{TunnelNames[0]}\" and \"{TunnelNames[1]}\" have overlapping AllowedIPs. Traffic may be routed incorrectly.",
         TunnelWarningKind.ConflictingDns =>
             $"Active tunnels {string.Join(", ", TunnelNames)} define different DNS servers. Resolution may be unpredictable.",
+        TunnelWarningKind.IpFamilyLeak =>
+            $"\"{TunnelNames[0]}\": {Leak!.Problem}" + (Leak.FixDescription is null ? "" : " Open the tunnel's details to fix it."),
         _ => $"\"{TunnelNames[0]}\" dropped unexpectedly. All non-tunnel traffic is blocked until it reconnects or you disable its kill switch.",
     };
 }
 
-/// Port of TunnelManager.updateWarnings (IP-family leak warnings follow in the network-parity phase).
+/// Port of TunnelManager.updateWarnings.
 public static class TunnelWarnings
 {
-    public static IReadOnlyList<TunnelWarning> Compute(IReadOnlyList<Tunnel> tunnels, IReadOnlySet<Guid> killSwitchArmedIds)
+    public static IReadOnlyList<TunnelWarning> Compute(IReadOnlyList<Tunnel> tunnels, IReadOnlySet<Guid> killSwitchArmedIds,
+        IReadOnlyDictionary<Guid, IReadOnlyList<IPFamilyLeak>>? leakWarnings = null)
     {
         var warnings = new List<TunnelWarning>();
         var active = tunnels.Where(t => t.IsActive).ToList();
@@ -56,6 +60,10 @@ public static class TunnelWarnings
 
         foreach (var t in tunnels.Where(t => killSwitchArmedIds.Contains(t.Id) && !t.IsActive))
             warnings.Add(new(TunnelWarningKind.KillSwitchBlocking, [t.Name]));
+
+        foreach (var t in active)
+            foreach (var leak in leakWarnings?.GetValueOrDefault(t.Id) ?? [])
+                warnings.Add(new(TunnelWarningKind.IpFamilyLeak, [t.Name], leak));
 
         return warnings;
     }

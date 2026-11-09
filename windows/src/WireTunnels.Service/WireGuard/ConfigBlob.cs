@@ -64,6 +64,29 @@ internal static class ConfigBlob
         return buffer;
     }
 
+    /// Replaces one existing peer's AllowedIPs and nothing else: no interface flags, so keys, port, endpoint
+    /// and the other peers stay as they are.
+    public static byte[] PeerAllowedIPs(string peerPublicKey, IReadOnlyList<Core.Net.IPPrefix> allowed)
+    {
+        var buffer = new byte[InterfaceSize + PeerSize + allowed.Count * AllowedIPSize];
+        var span = buffer.AsSpan();
+        BinaryPrimitives.WriteUInt32LittleEndian(span[72..], 1);
+        var p = span.Slice(InterfaceSize, PeerSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(p[0..], PeerHasPublicKey | PeerReplaceAllowedIPs);
+        Key(peerPublicKey).CopyTo(p[8..]);
+        BinaryPrimitives.WriteUInt32LittleEndian(p[128..], (uint)allowed.Count);
+        var offset = InterfaceSize + PeerSize;
+        foreach (var prefix in allowed)
+        {
+            var a = span.Slice(offset, AllowedIPSize);
+            prefix.Bytes.CopyTo(a);
+            BinaryPrimitives.WriteUInt16LittleEndian(a[16..], prefix.IsIPv4 ? SockAddr.AfInet : SockAddr.AfInet6);
+            a[18] = (byte)prefix.Length;
+            offset += AllowedIPSize;
+        }
+        return buffer;
+    }
+
     /// Runtime status without any key material except public keys.
     public static TunnelRuntimeStatus Read(string name, ReadOnlySpan<byte> buffer)
     {

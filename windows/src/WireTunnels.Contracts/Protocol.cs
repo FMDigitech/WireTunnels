@@ -10,8 +10,9 @@ public static class Protocol
 {
     public const string PipeName = "WireTunnels.Service";
     /// Bump on any incompatible change; client and service refuse to talk across revisions.
-    public const string Revision = "1";
-    public const int MaxMessageBytes = 1024 * 1024;
+    public const string Revision = "3";
+    /// Room for an inventory of 100,000 prefixes (the macOS helper accepts 8 MiB of inventory too).
+    public const int MaxMessageBytes = 16 * 1024 * 1024;
 
     public static readonly JsonSerializerOptions Json = new()
     {
@@ -64,6 +65,10 @@ public static class Ops
     public const string StartTunnel = "startTunnel";
     public const string StopTunnel = "stopTunnel";
     public const string RuntimeStatusSnapshot = "runtimeStatusSnapshot";
+    public const string SyncKillSwitch = "syncKillSwitch";
+    public const string SyncSplitDns = "syncSplitDNS";
+    public const string SyncRoutes = "syncRoutes";
+    public const string UpdateInventoryRouting = "updateInventoryRouting";
 }
 
 public sealed class Request
@@ -87,6 +92,8 @@ public sealed class StartTunnelArgs
     /// Tunnel alias (ConfigName.FileBaseName); also the adapter name.
     public string Name { get; set; } = "";
     public string Contents { get; set; } = "";
+    /// Leave the adapter's DNS alone: split DNS (NRPT) or a multi-hop hop leg.
+    public bool SuppressDns { get; set; }
 }
 
 public sealed class TunnelNameArgs
@@ -111,4 +118,75 @@ public sealed class PeerRuntimeStatus
     public long RxBytes { get; set; }
     public long TxBytes { get; set; }
     public List<string> AllowedIPs { get; set; } = [];
+}
+
+/// Network policy ops are declarative: each call sends the caller's complete desired state,
+/// and the service replaces what that user had before (other users' state is never touched).
+public sealed class KillSwitchEntry
+{
+    /// Tunnel alias; the tunnel may be down (that is when the kill switch blocks).
+    public string Name { get; set; } = "";
+    /// Numeric peer endpoint, so the handshake can get out while everything else is blocked.
+    public string EndpointHost { get; set; } = "";
+    public int EndpointPort { get; set; }
+}
+
+public sealed class SyncKillSwitchArgs
+{
+    public List<KillSwitchEntry> Entries { get; set; } = [];
+}
+
+public sealed class SplitDnsEntry
+{
+    public string OwnerId { get; set; } = "";
+    public List<string> Domains { get; set; } = [];
+    public List<string> Servers { get; set; } = [];
+}
+
+public sealed class SyncSplitDnsArgs
+{
+    public List<SplitDnsEntry> Entries { get; set; } = [];
+}
+
+/// A route the service adds for the caller: through the physical default gateway (Tunnel = null,
+/// split-tunnel exclusions and a multi-hop hop endpoint) or on-link through one of the caller's tunnels.
+public sealed record RouteEntry
+{
+    public string Cidr { get; init; } = "";
+    public string? Tunnel { get; init; }
+}
+
+public sealed class SyncRoutesArgs
+{
+    /// A tunnel id (exclusions) or a hop-chain id (its host routes).
+    public Guid OwnerId { get; set; }
+    public List<RouteEntry> Entries { get; set; } = [];
+}
+
+public enum InventoryAction { Protect, Apply, Remove }
+
+/// Port of InventoryRoutingRequest. Protect blocks the tunnel's destinations everywhere; apply (tunnel
+/// connected) lets them through its adapter only and adds the discovered ones to its AllowedIPs and routes;
+/// remove drops the policy. The app runs the inventory command; the service never does.
+public sealed class InventoryRoutingRequest
+{
+    public InventoryAction Action { get; set; }
+    public Guid OwnerId { get; set; }
+    /// Changes on every connect and protect: an apply from an older connection is rejected.
+    public Guid Generation { get; set; }
+    /// Tunnel alias.
+    public string Name { get; set; } = "";
+    public string LocalPublicKey { get; set; } = "";
+    public string PeerPublicKey { get; set; } = "";
+    /// The config's AllowedIPs.
+    public List<string> StaticPrefixes { get; set; } = [];
+    /// The inventory command's last output.
+    public List<string> DiscoveredPrefixes { get; set; } = [];
+    /// Reuse what the service has (it outlives app restarts) instead of DiscoveredPrefixes.
+    public bool UseCachedInventory { get; set; }
+    /// The peer endpoint, numeric: reachable over UDP while the destinations are blocked, so the tunnel can connect.
+    public string? EndpointHost { get; set; }
+    public int EndpointPort { get; set; }
+
+    public static InventoryRoutingRequest Removal(Guid ownerId) => new() { Action = InventoryAction.Remove, OwnerId = ownerId };
 }

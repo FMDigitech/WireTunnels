@@ -32,6 +32,7 @@ public sealed partial class TunnelDetailView : UserControl
         _app = app;
         _vm = vm;
         _select = select;
+        NetworkSettings.Initialize(vm.Manager);
     }
 
     private void OnItemChanged()
@@ -40,6 +41,7 @@ public sealed partial class TunnelDetailView : UserControl
         TestResult.Text = "";
         TestBusy.IsActive = false;
         SpeedTestUrl.Text = Item?.SpeedTestUrl ?? "";
+        NetworkSettings.Show(Item?.Id);
         Bindings.Update();
     }
 

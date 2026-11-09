@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
         };
         Detail.Initialize(app, viewModel, OnDuplicated);
         LogPage.Initialize(app.Log);
+        MultiHopPage.Initialize(viewModel.Manager);
         SettingsPage.Initialize(app);
         ViewModel.Manager.PropertyChanged += OnManagerChanged;
         UpdateSetup();

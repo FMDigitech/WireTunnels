@@ -1,6 +1,7 @@
 # WireTunnels for Windows — next steps (phase 3 onward)
 
-State on 2026-11-05, branch `windows-port`: phases 1–2 done (Core, Contracts, Service MVP, CLI; 97 tests).
+State on 2026-11-09, branch `windows-port`: phases 1–4 done (phase 3 except what needs phases 5–6); 223 unit tests,
+7 opt-in live network tests, 5 opt-in UI tests.
 Architecture and rationale: [`../docs/WINDOWS_PORT_ARCHITECTURE.md`](../docs/WINDOWS_PORT_ARCHITECTURE.md).
 Every phase: port the macOS behaviour (the Swift code and `Tests/`, `Scripts/test_*.sh` are the spec),
 add xUnit tests for the new logic, keep `dotnet test` green, run `graphify update .` after code changes.
@@ -52,9 +53,13 @@ disconnect all then exit, setup wizard when the service is unreachable, settings
 - x:Bind functions bound to `Visibility` must return `Visibility` (the XAML compiler breaks the bool cast).
 - A tunnel that was active when the app closed and is gone at startup (reboot, service restart) is reconciled
   silently instead of being reported as "Connection lost".
-- Not ported yet: QR code import (needs a decoder, e.g. ZXing.Net), the Shared and Multi-Hop pages (phases 4–5;
-  they show an explanatory empty state), on-demand / kill switch / split DNS / excluded routes sections of the detail
-  pane (phases 4 and 6), "Make Shared", Reset App Data, UI smoke tests with FlaUI.
+- Not ported yet: the Shared page and "Make Shared" (phase 5), the On-Demand section of the detail pane (phase 6).
+- **Completed on 2026-11-09:** QR code import (image file, drag & drop, clipboard; ZXing.Net 0.16.9 in
+  `Client/QrCode.cs`, pixels decoded by `Windows.Graphics.Imaging` in `ImportDialog`), Reset App Data (Settings >
+  Advanced: stops tunnels, removes inventory protection, deletes configs, metadata, log, preferences and Launch at
+  Login), UI smoke tests with FlaUI (`tests/WireTunnels.App.UITests`, opt-in; they run the installed app on a
+  throw-away data folder through `WIRETUNNELS_DATA_DIR`, which also gives that app its own single-instance key).
+  The UI tests found a crash: rebuilding the Settings page re-parented a TextBlock (stowed exception 0xc000027b).
 - .NET 8 support ends on 2026-11-10: plan the move of the whole solution to .NET 10 LTS (then H.NotifyIcon 2.4).
 
 Original plan:
@@ -69,6 +74,51 @@ Original plan:
 8. Setup wizard: service missing, stopped or wrong `ProtocolRevision` → clear message.
 
 ## 4. Network parity — service
+
+**Done on 2026-11-09** (point 7 completed the same day, see below). Protocol revision 2 adds `syncKillSwitch`, `syncSplitDNS`,
+`syncRoutes` and `StartTunnelArgs.SuppressDns`. Service: `Network/FirewallRules` (pure rule sets, tested on any OS),
+`Native/Wfp` + `Network/Firewall`, `Network/SplitDns` (NRPT), `Network/NetworkPolicy` (per-SID state, diff, journal,
+recovery). Client: `TunnelManager.Network.cs` (kill switch, split DNS, exclusions, hop chains, leaks), `NetworkInfo`.
+App: kill switch / leak / exclusions / split DNS sections in the detail pane, Multi-Hop page. Verified on this PC
+(Windows 11 Pro 26100) with `LiveNetworkTests` (opt-in, see README) and an end-to-end run through the installed service:
+NRPT rule active and no adapter DNS with split DNS, exclusion via the physical gateway, kill switch blocks the internet
+and passes loopback, still blocks after the service is killed and restarted by recovery, released when turned off,
+multi-hop host routes on the hop adapter and the physical gateway, clean stop and quit leave nothing behind.
+Decisions and findings:
+- Kill switch filters are persistent; the journal is a **volatile** registry key (`HKLM\SOFTWARE\WireTunnels\Runtime`),
+  which Windows drops at boot. Service start without a journal = fresh boot: leftover filters are removed, so a reboot
+  never stays blocked (macOS pf rules do not survive a reboot either). With a journal = crash: the block is re-applied
+  and our gateway routes are removed. A clean service stop clears everything (uninstall is safe).
+- DNS leak guard (dynamic WFP filters, live with the adapter): a full tunnel with DNS on its adapter blocks port 53
+  except to its servers and loopback. Split DNS and hop legs skip it (no adapter DNS).
+- Multi-hop needs a second route on Windows: wireguard-nt only skips its own adapter when routing its UDP, so the
+  hop's endpoint gets a host route via the physical gateway, or the hop's packets would follow the exit's default route.
+- A blocked UDP `sendto` is dropped silently by WFP; tests check the verdict with TCP `connect` (AccessDenied).
+- NRPT: one local rule per domain (`DnsPolicyConfig\WireTunnels-<domain>`, marker in `Comment`, per SID). When Group
+  Policy defines NRPT rules Windows ignores local ones: split DNS then fails with a clear message.
+- Excluded routes and kill switch endpoints use the pre-VPN gateway the service finds itself (lowest route + interface
+  metric outside our adapters); the client only sends CIDRs.
+- Reconnecting exclusions/chains after a gateway change is phase 6.
+
+**Point 7, inventory AllowedIPs (protocol revision 3, `updateInventoryRouting`).** Service: `Network/Inventory.cs`
+(port of `InventoryRoutingService`), `ConfigBlob.PeerAllowedIPs` (replaces one peer's AllowedIPs in place),
+WFP prefix masks and "interface not equal" conditions, a separate inventory provider key. Client:
+`InventoryCommandRunner` (no shell, 60 s, 8 MiB, process tree killed on timeout), `TunnelManager.Inventory.cs`.
+App: Inventory AllowedIPs section of the detail pane. Verified on this PC end to end: static prefixes blocked before
+connecting, discovered prefix routed through the tunnel and in its AllowedIPs, both allowed only through it, blocked
+again after disconnect and after a service restart, lifted only by removing the command. Decisions:
+- Guard filters are persistent and survive reboots and clean stops; policies live in
+  `%ProgramData%\WireTunnels\inventory.json` (folder owned by Administrators, ACL SYSTEM + Administrators, no
+  inheritance; a folder pre-created by someone else is refused). At service start every policy is re-installed as
+  blocked. **Phase 7: uninstall must remove the policies** (or the destinations stay blocked).
+- The block is "remote prefix AND local interface != tunnel LUID" in both directions, weight above the kill switch's
+  adapter permit (no other tunnel can carry the destinations); the right adapter falls through to the kill switch.
+  The peer endpoint stays reachable over UDP (any process: WFP has no cheap "root only" like pf's `user root`).
+- WFP reauthorizes existing flows when filters change, so the pf state purge (`pfctl -k`) has no equivalent.
+- A failed apply fails closed (destinations blocked until the tunnel reconnects) instead of macOS's partial rollback.
+- Interface monitoring is not needed: the service owns the adapters and closes the exception when it stops one.
+- Prefix filters are chunked (256 per filter); not measured with 100k-entry inventories yet. The pipe message limit
+  is now 16 MiB.
 
 Add ops to `Contracts/Protocol.cs` (bump `Protocol.Revision`) and handlers in `RequestDispatcher`, each idempotent and declarative (the client sends the full desired state):
 

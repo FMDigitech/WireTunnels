@@ -100,6 +100,9 @@
                 </StackPanel>
             </Border>
 
+            <!-- Leaks, kill switch, exclusions, split DNS -->
+            <local:NetworkSettingsView x:Name="NetworkSettings" />
+
             <!-- Configuration -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">

@@ -9,10 +9,16 @@ public interface ITunnelService
 {
     /// The service version, after checking that it speaks our protocol revision.
     Task<string> HandshakeAsync(CancellationToken ct = default);
-    Task StartAsync(string alias, string contents, CancellationToken ct = default);
+    /// `suppressDns` leaves the adapter's DNS alone (split DNS, multi-hop hop leg).
+    Task StartAsync(string alias, string contents, bool suppressDns = false, CancellationToken ct = default);
     Task StopAsync(string alias, CancellationToken ct = default);
     /// The caller's own tunnels (the service filters by user).
     Task<IReadOnlyList<TunnelRuntimeStatus>> StatusAsync(CancellationToken ct = default);
+    /// Network policy: each call replaces this user's whole state of that kind.
+    Task SyncKillSwitchAsync(IReadOnlyList<KillSwitchEntry> entries, CancellationToken ct = default);
+    Task SyncSplitDnsAsync(IReadOnlyList<SplitDnsEntry> entries, CancellationToken ct = default);
+    Task SyncRoutesAsync(Guid ownerId, IReadOnlyList<RouteEntry> entries, CancellationToken ct = default);
+    Task UpdateInventoryAsync(InventoryRoutingRequest request, CancellationToken ct = default);
 }
 
 /// One pipe connection shared by the whole app. Calls are serialized (a pipe carries one
@@ -26,11 +32,25 @@ public sealed class PipeTunnelService : ITunnelService, IAsyncDisposable
     public Task<string> HandshakeAsync(CancellationToken ct = default) =>
         CallAsync(async c => await c.CallAsync<string>(Ops.ServiceVersion, null, ct) ?? "0", ct);
 
-    public Task StartAsync(string alias, string contents, CancellationToken ct = default) =>
-        CallAsync(async c => { await c.CallAsync(Ops.StartTunnel, new StartTunnelArgs { Name = alias, Contents = contents }, ct); return true; }, ct);
+    public Task StartAsync(string alias, string contents, bool suppressDns = false, CancellationToken ct = default) =>
+        Send(Ops.StartTunnel, new StartTunnelArgs { Name = alias, Contents = contents, SuppressDns = suppressDns }, ct);
 
-    public Task StopAsync(string alias, CancellationToken ct = default) =>
-        CallAsync(async c => { await c.CallAsync(Ops.StopTunnel, new TunnelNameArgs { Name = alias }, ct); return true; }, ct);
+    public Task SyncKillSwitchAsync(IReadOnlyList<KillSwitchEntry> entries, CancellationToken ct = default) =>
+        Send(Ops.SyncKillSwitch, new SyncKillSwitchArgs { Entries = [.. entries] }, ct);
+
+    public Task SyncSplitDnsAsync(IReadOnlyList<SplitDnsEntry> entries, CancellationToken ct = default) =>
+        Send(Ops.SyncSplitDns, new SyncSplitDnsArgs { Entries = [.. entries] }, ct);
+
+    public Task SyncRoutesAsync(Guid ownerId, IReadOnlyList<RouteEntry> entries, CancellationToken ct = default) =>
+        Send(Ops.SyncRoutes, new SyncRoutesArgs { OwnerId = ownerId, Entries = [.. entries] }, ct);
+
+    public Task UpdateInventoryAsync(InventoryRoutingRequest request, CancellationToken ct = default) =>
+        Send(Ops.UpdateInventoryRouting, request, ct);
+
+    private Task Send(string op, object args, CancellationToken ct) =>
+        CallAsync(async c => { await c.CallAsync(op, args, ct); return true; }, ct);
+
+    public Task StopAsync(string alias, CancellationToken ct = default) => Send(Ops.StopTunnel, new TunnelNameArgs { Name = alias }, ct);
 
     public async Task<IReadOnlyList<TunnelRuntimeStatus>> StatusAsync(CancellationToken ct = default) =>
         await CallAsync(async c => await c.CallAsync<List<TunnelRuntimeStatus>>(Ops.RuntimeStatusSnapshot, null, ct) ?? [], ct);

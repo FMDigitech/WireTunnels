@@ -16,7 +16,11 @@ public static partial class Program
     private static int Main(string[] args)
     {
         WinRT.ComWrappersSupport.InitializeComWrappers();
-        var instance = AppInstance.FindOrRegisterForKey("WireTunnels.App");
+        // One instance per data folder: a UI test's app never hands over to the user's own.
+        var key = Environment.GetEnvironmentVariable(Client.AppPaths.DataDirectoryVariable) is { Length: > 0 } data
+            ? "WireTunnels.App:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(data).ToLowerInvariant())))[..16]
+            : "WireTunnels.App";
+        var instance = AppInstance.FindOrRegisterForKey(key);
         if (!instance.IsCurrent)
         {
             // Let the running instance take the foreground, then forward this activation to it.

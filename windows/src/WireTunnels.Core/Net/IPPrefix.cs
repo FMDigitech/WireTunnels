@@ -126,6 +126,43 @@ public readonly record struct IPPrefix : IComparable<IPPrefix>
         return list.Select(Parse).Distinct().Order().Select(p => p.ToString()).ToList();
     }
 
+    private static readonly IPPrefix[] InventoryForbidden =
+        [.. new[] { "0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "::/96", "::ffff:0:0/96", "fe80::/10", "ff00::/8" }.Select(Parse)];
+
+    /// Commas and every Unicode white space (Swift splits on Character.isWhitespace); all of them are below U+3001.
+    private static readonly char[] OutputSeparators =
+        [.. Enumerable.Range(0, 0x3001).Select(c => (char)c).Where(c => char.IsWhiteSpace(c) || c == ',')];
+
+    public const string InventoryOutputMessage =
+        "Inventory must contain IP addresses or CIDRs, with no scopes, and at most 100,000 entries (8 MiB).";
+
+    /// Prefixes an inventory command may add (port of IPPrefix.inventoryPrefixes): at least /8 (IPv4) or /32
+    /// (IPv6), and nothing unspecified, loopback, link-local, multicast or IPv4-mapped.
+    public static IReadOnlyList<string> InventoryPrefixes(IEnumerable<string> values)
+    {
+        var prefixes = Normalized(values);
+        foreach (var prefix in prefixes.Select(Parse))
+            if (prefix.Length < (prefix.IsIPv4 ? 8 : 32) || InventoryForbidden.Any(f => f.Overlaps(prefix)))
+                throw new FormatException("Inventory prefixes must be at least /8 for IPv4 or /32 for IPv6 and cannot include unspecified, loopback, link-local, or multicast addresses");
+        return prefixes;
+    }
+
+    /// An inventory command's stdout: UTF-8 IPs/CIDRs separated by whitespace or commas, nonempty, at most 8 MiB.
+    public static IReadOnlyList<string> ParseInventoryOutput(ReadOnlySpan<byte> output)
+    {
+        if (output.Length > 8 * 1024 * 1024) throw new FormatException(InventoryOutputMessage);
+        string text;
+        try { text = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true).GetString(output); }
+        catch (System.Text.DecoderFallbackException) { throw new FormatException(InventoryOutputMessage); }
+        var values = text.Split(OutputSeparators, StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length == 0) throw new FormatException(InventoryOutputMessage);
+        try { return InventoryPrefixes(values); }
+        catch (FormatException e) when (e.Message.StartsWith("Invalid IP prefix") || e.Message == "Too many prefixes")
+        {
+            throw new FormatException(InventoryOutputMessage);
+        }
+    }
+
     private static byte[] Mask(byte[] bytes, int length)
     {
         var masked = new byte[bytes.Length];
@@ -135,5 +172,41 @@ public readonly record struct IPPrefix : IComparable<IPPrefix>
             masked[i] = bits == 0 ? (byte)0 : (byte)(bytes[i] & (0xFF << (8 - bits)));
         }
         return masked;
+    }
+}
+
+/// Sorted, disjoint ranges: coverage and overlap checks in O(log n) (port of IPPrefixIndex).
+public sealed class IPPrefixIndex
+{
+    private readonly List<IPPrefix> _ranges = [];
+
+    public IPPrefixIndex(IEnumerable<IPPrefix> values)
+    {
+        foreach (var prefix in values.Order())
+            if (_ranges.Count == 0 || !_ranges[^1].Contains(prefix)) _ranges.Add(prefix);
+    }
+
+    private int InsertionPoint(IPPrefix prefix)
+    {
+        int low = 0, high = _ranges.Count;
+        while (low < high)
+        {
+            var middle = (low + high) / 2;
+            if (_ranges[middle].CompareTo(prefix) <= 0) low = middle + 1;
+            else high = middle;
+        }
+        return low;
+    }
+
+    public bool Contains(IPPrefix prefix)
+    {
+        var i = InsertionPoint(prefix);
+        return i > 0 && _ranges[i - 1].Contains(prefix);
+    }
+
+    public bool Overlaps(IPPrefix prefix)
+    {
+        var i = InsertionPoint(prefix);
+        return (i > 0 && _ranges[i - 1].Overlaps(prefix)) || (i < _ranges.Count && prefix.Contains(_ranges[i]));
     }
 }

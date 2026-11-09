@@ -69,7 +69,8 @@ public partial class App : Application
             new RecoverableJsonStore<List<Tunnel>>(_paths.TunnelsFile, () => []),
             Log,
             _notifier,
-            () => Settings.ShowNotifications);
+            () => Settings.ShowNotifications,
+            hopChains: new RecoverableJsonStore<List<HopChain>>(_paths.HopChainsFile, () => []));
         Shell = new ShellViewModel(Manager);
         _flyout = new FlyoutWindow(this, Shell);
         _tray = new TrayIcon(Shell,
@@ -87,6 +88,23 @@ public partial class App : Application
     {
         await Manager.InitializeAsync();
         Manager.StartPolling(_dashboard?.IsVisible == true ? DashboardPoll : BackgroundPoll);
+    }
+
+    /// Settings > Reset App Data (macOS SettingsView.resetAppData): tunnels, inventory protection, configs,
+    /// metadata and log through the manager, then this app's own preferences and Launch at Login.
+    public async Task<bool> ResetAppDataAsync()
+    {
+        if (!await Manager.ResetUserDataAsync(_paths)) return false;
+        try { LaunchAtLogin.Set(false); }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            Log.Warning($"Unable to turn off Launch at Login: {e.Message}");
+        }
+        Settings = new AppSettings();
+        try { File.Delete(_paths.SettingsFile); }
+        catch (IOException e) { Log.Warning($"Unable to delete the settings file: {e.Message}"); }
+        Log.Info("App data was reset");
+        return true;
     }
 
     public void SaveSettings()

@@ -13,7 +13,7 @@ namespace WireTunnels.Service.Native;
 internal static partial class IpHelper
 {
     private const string Dll = "iphlpapi.dll";
-    private const int ErrorObjectAlreadyExists = 5010;
+    private const int ErrorObjectAlreadyExists = 5010, ErrorNotFound = 1168, ErrorFileNotFound = 2;
 
     [StructLayout(LayoutKind.Explicit, Size = 80)]
     internal unsafe struct MibUnicastIpAddressRow
@@ -40,6 +40,7 @@ internal static partial class IpHelper
         [FieldOffset(0)] public ushort Family;
         [FieldOffset(8)] public ulong InterfaceLuid;
         [FieldOffset(44)] public byte UseAutomaticMetric;
+        [FieldOffset(156)] public byte Connected;
         [FieldOffset(144)] public uint SitePrefixLength;
         [FieldOffset(148)] public uint Metric;
         [FieldOffset(152)] public uint NlMtu;
@@ -64,6 +65,9 @@ internal static partial class IpHelper
     [LibraryImport(Dll)] private static partial int CreateUnicastIpAddressEntry(in MibUnicastIpAddressRow row);
     [LibraryImport(Dll)] private static partial void InitializeIpForwardEntry(ref MibIpForwardRow2 row);
     [LibraryImport(Dll)] private static partial int CreateIpForwardEntry2(in MibIpForwardRow2 row);
+    [LibraryImport(Dll)] private static partial int DeleteIpForwardEntry2(in MibIpForwardRow2 row);
+    [LibraryImport(Dll)] private static partial int GetIpForwardTable2(ushort family, out IntPtr table);
+    [LibraryImport(Dll)] private static partial void FreeMibTable(IntPtr table);
     [LibraryImport(Dll)] private static partial void InitializeIpInterfaceEntry(ref MibIpInterfaceRow row);
     [LibraryImport(Dll)] private static partial int GetIpInterfaceEntry(ref MibIpInterfaceRow row);
     [LibraryImport(Dll)] private static partial int SetIpInterfaceEntry(ref MibIpInterfaceRow row);
@@ -87,7 +91,23 @@ internal static partial class IpHelper
     }
 
     /// On-link route (no gateway) through the tunnel adapter.
-    public static unsafe void AddRoute(ulong luid, IPPrefix destination)
+    public static void AddRoute(ulong luid, IPPrefix destination) => AddRoute(luid, destination, null);
+
+    /// A route on `luid`; a null or unspecified `nextHop` means on-link. Already present is success.
+    public static void AddRoute(ulong luid, IPPrefix destination, IPAddress? nextHop)
+    {
+        var error = CreateIpForwardEntry2(Row(luid, destination, nextHop));
+        if (error != ErrorObjectAlreadyExists) Check(error, $"Unable to add route {destination}");
+    }
+
+    /// Already gone (the interface went down, someone removed it) is success.
+    public static void DeleteRoute(ulong luid, IPPrefix destination, IPAddress? nextHop)
+    {
+        var error = DeleteIpForwardEntry2(Row(luid, destination, nextHop));
+        if (error is not (ErrorNotFound or ErrorFileNotFound)) Check(error, $"Unable to remove route {destination}");
+    }
+
+    private static unsafe MibIpForwardRow2 Row(ulong luid, IPPrefix destination, IPAddress? nextHop)
     {
         var row = new MibIpForwardRow2();
         InitializeIpForwardEntry(ref row);
@@ -96,10 +116,44 @@ internal static partial class IpHelper
         row.DestinationPrefixLength = (byte)destination.Length;
         // Unspecified next hop of the same family = on-link.
         SockAddr.Write(new Span<byte>(row.NextHop, SockAddr.Size),
-            destination.IsIPv4 ? IPAddress.Any : IPAddress.IPv6Any, 0);
+            nextHop ?? (destination.IsIPv4 ? IPAddress.Any : IPAddress.IPv6Any), 0);
         row.Metric = 0;
-        var error = CreateIpForwardEntry2(row);
-        if (error != ErrorObjectAlreadyExists) Check(error, $"Unable to add route {destination}");
+        return row;
+    }
+
+    /// The default route of a family that wins outside our tunnels (lowest route + interface metric),
+    /// i.e. the pre-VPN gateway. Null when the family has no other default route.
+    public static unsafe (ulong Luid, IPAddress NextHop)? PhysicalDefaultRoute(bool ipv4, IReadOnlySet<ulong> excluded)
+    {
+        Check(GetIpForwardTable2(ipv4 ? SockAddr.AfInet : SockAddr.AfInet6, out var table), "Unable to read the routing table");
+        try
+        {
+            var count = *(uint*)table;
+            var rows = (MibIpForwardRow2*)((byte*)table + 8); // ULONG NumEntries, then 8-aligned rows
+            (ulong Luid, IPAddress NextHop, ulong Metric)? best = null;
+            for (var i = 0; i < count; i++)
+            {
+                var row = rows[i];
+                if (row.DestinationPrefixLength != 0 || excluded.Contains(row.InterfaceLuid)) continue;
+                if (SockAddr.Read(new ReadOnlySpan<byte>(row.NextHop, SockAddr.Size)) is not { } hop) continue;
+                if (InterfaceMetric(row.InterfaceLuid, ipv4) is not { } interfaceMetric) continue;
+                var metric = (ulong)row.Metric + interfaceMetric;
+                if (best is null || metric < best.Value.Metric) best = (row.InterfaceLuid, hop.Address, metric);
+            }
+            return best is { } b ? (b.Luid, b.NextHop) : null;
+        }
+        finally { FreeMibTable(table); }
+    }
+
+    /// Null when the family is not enabled on the interface or the interface is disconnected.
+    private static uint? InterfaceMetric(ulong luid, bool ipv4)
+    {
+        var row = new MibIpInterfaceRow();
+        InitializeIpInterfaceEntry(ref row);
+        row.Family = ipv4 ? SockAddr.AfInet : SockAddr.AfInet6;
+        row.InterfaceLuid = luid;
+        if (GetIpInterfaceEntry(ref row) != 0 || row.Connected == 0) return null;
+        return row.Metric;
     }
 
     /// Lowest metric wins over the physical default route; MTU as in the config (wg-quick defaults to 1420).

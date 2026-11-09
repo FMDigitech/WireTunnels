@@ -1,7 +1,9 @@
+using System.Net;
 using System.Text;
 using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
 using WireTunnels.Core.Models;
+using WireTunnels.Core.Net;
 using WireTunnels.Core.Storage;
 
 namespace WireTunnels.Client.Tests;
@@ -18,9 +20,16 @@ internal sealed class FakeTunnelService : ITunnelService
     public Task<string> HandshakeAsync(CancellationToken ct = default) =>
         FailHandshake is { } e ? Task.FromException<string>(e) : Task.FromResult("1.0.0");
 
-    public Task StartAsync(string alias, string contents, CancellationToken ct = default)
+    public readonly List<string> SuppressedDns = [];
+    public IReadOnlyList<KillSwitchEntry> KillSwitch = [];
+    public IReadOnlyList<SplitDnsEntry> SplitDns = [];
+    public readonly Dictionary<Guid, IReadOnlyList<RouteEntry>> Routes = [];
+    public Exception? FailRoutes;
+
+    public Task StartAsync(string alias, string contents, bool suppressDns = false, CancellationToken ct = default)
     {
         Calls.Add($"start {alias}");
+        if (suppressDns) SuppressedDns.Add(alias);
         if (FailStart is { } e) return Task.FromException(e);
         Running[alias] = contents;
         return Task.CompletedTask;
@@ -46,7 +55,7 @@ internal sealed class FakeTunnelService : ITunnelService
                 Peers = [new PeerRuntimeStatus
                 {
                     PublicKey = config.PrimaryPeer?.PublicKey ?? "",
-                    Endpoint = "198.51.100.1:51820",
+                    Endpoint = config.PrimaryPeer?.Endpoint ?? "198.51.100.1:51820",
                     LastHandshake = Handshake,
                     RxBytes = Rx,
                     TxBytes = Tx,
@@ -56,6 +65,64 @@ internal sealed class FakeTunnelService : ITunnelService
         }).ToList();
         return Task.FromResult(list);
     }
+
+    public readonly List<InventoryRoutingRequest> Inventory = [];
+
+    public Task UpdateInventoryAsync(InventoryRoutingRequest request, CancellationToken ct = default)
+    {
+        Calls.Add($"inventory {request.Action.ToString().ToLowerInvariant()}{(request.UseCachedInventory ? " cached" : "")}");
+        Inventory.Add(request);
+        return Task.CompletedTask;
+    }
+
+    public Task SyncKillSwitchAsync(IReadOnlyList<KillSwitchEntry> entries, CancellationToken ct = default)
+    {
+        Calls.Add($"killswitch {string.Join(",", entries.Select(e => $"{e.Name}@{e.EndpointHost}:{e.EndpointPort}"))}");
+        KillSwitch = entries;
+        return Task.CompletedTask;
+    }
+
+    public Task SyncSplitDnsAsync(IReadOnlyList<SplitDnsEntry> entries, CancellationToken ct = default)
+    {
+        Calls.Add($"splitdns {string.Join(",", entries.SelectMany(e => e.Domains))}");
+        SplitDns = entries;
+        return Task.CompletedTask;
+    }
+
+    public Task SyncRoutesAsync(Guid ownerId, IReadOnlyList<RouteEntry> entries, CancellationToken ct = default)
+    {
+        Calls.Add($"routes {string.Join(",", entries.Select(e => e.Cidr + (e.Tunnel is { } t ? "@" + t : "")))}");
+        if (FailRoutes is { } e) return Task.FromException(e);
+        if (entries.Count == 0) Routes.Remove(ownerId);
+        else Routes[ownerId] = entries;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeInventory : IInventoryRunner
+{
+    public IReadOnlyList<string> Output = ["203.0.113.7/32"];
+    public Exception? Fail;
+    public int Runs;
+
+    public Task<IReadOnlyList<string>> RunAsync(InventoryCommand command, CancellationToken ct)
+    {
+        Runs++;
+        return Fail is { } e ? Task.FromException<IReadOnlyList<string>>(e) : Task.FromResult(Output);
+    }
+}
+
+internal sealed class FakeNetwork : INetworkInfo
+{
+    public List<string> Physical = ["192.168.1.10"]; // IPv4-only LAN unless a test says otherwise
+    public HashSet<IPFamily> Bypassed = [];
+    public readonly Dictionary<string, string> Hosts = new() { ["exit.example"] = "203.0.113.20" };
+
+    public IReadOnlyList<string> PhysicalAddresses(IReadOnlySet<string> tunnelAdapters) => Physical;
+    public IReadOnlySet<IPFamily> BypassedFamilies(IReadOnlySet<IPFamily> families, IReadOnlySet<string> tunnelAdapters) =>
+        families.Where(Bypassed.Contains).ToHashSet();
+    public Task<IPAddress?> ResolveAsync(string host, CancellationToken ct = default) =>
+        Task.FromResult(IPPrefix.TryParseAddress(host, out var ip) ? ip : Hosts.TryGetValue(host, out var a) ? IPAddress.Parse(a) : null);
 }
 
 internal sealed class FakeProbe : IServiceProbe
@@ -98,6 +165,8 @@ internal sealed class Harness : IDisposable
     public readonly FakeProbe Probe = new();
     public readonly ManualTime Time = new();
     public readonly RecordingNotifier Notifier = new();
+    public readonly FakeNetwork Network = new();
+    public readonly FakeInventory Inventory = new();
     public readonly AppPaths Paths;
     public readonly ConfigStore Configs;
     public readonly LogService Log;
@@ -114,17 +183,19 @@ internal sealed class Harness : IDisposable
 
     public TunnelManager NewManager() =>
         Manager = new TunnelManager(Service, Probe, Configs, new RecoverableJsonStore<List<Tunnel>>(Paths.TunnelsFile, () => []),
-            Log, Notifier, () => NotificationsEnabled, Time);
+            Log, Notifier, () => NotificationsEnabled, Time, Network,
+            new RecoverableJsonStore<List<HopChain>>(Paths.HopChainsFile, () => []), Inventory);
 
-    public static string Config(string allowed = "10.0.0.0/24", string extra = "") => $"""
+    public static string Config(string allowed = "10.0.0.0/24", string extra = "", string endpoint = "198.51.100.1:51820",
+        string address = "10.0.0.2/32", string dns = "10.0.0.1") => $"""
         [Interface]
         PrivateKey = {WireGuardKey.Generate().PrivateKey}
-        Address = 10.0.0.2/32
-        DNS = 10.0.0.1
+        Address = {address}
+        DNS = {dns}
         {extra}
         [Peer]
         PublicKey = {WireGuardKey.Generate().PublicKey}
-        Endpoint = 198.51.100.1:51820
+        Endpoint = {endpoint}
         AllowedIPs = {allowed}
         """;
 

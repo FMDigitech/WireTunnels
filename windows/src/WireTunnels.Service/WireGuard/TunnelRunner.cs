@@ -7,33 +7,45 @@ using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
 using WireTunnels.Core.Net;
 using WireTunnels.Service.Native;
+using WireTunnels.Service.Network;
 
 namespace WireTunnels.Service.WireGuard;
 
 /// What the dispatcher needs from the tunnel engine; faked in tests.
 internal interface ITunnelBackend
 {
-    Task StartAsync(string alias, WireGuardConfig config, CancellationToken ct);
+    /// `suppressDns` leaves the adapter's DNS alone (split DNS or a multi-hop hop leg).
+    Task StartAsync(string alias, WireGuardConfig config, bool suppressDns, CancellationToken ct);
     void Stop(string alias);
     bool IsRunning(string alias);
     TunnelRuntimeStatus Status(string alias);
+    /// The running adapter's LUID, or null.
+    ulong? Luid(string alias);
+    /// Replaces the AllowedIPs of one peer of a running tunnel (inventory).
+    void SetPeerAllowedIPs(string alias, string peerPublicKey, IReadOnlyList<IPPrefix> allowed);
+    IReadOnlySet<ulong> Luids { get; }
 }
 
 /// The Windows replacement of wg-quick: one wireguard-nt adapter per tunnel, configured in memory.
 /// Closing an adapter handle removes the adapter with its addresses, routes and DNS, so a failed
 /// start rolls back completely and a crashed service leaves nothing behind.
 [SupportedOSPlatform("windows")]
-internal sealed class TunnelRunner(ILogger<TunnelRunner> log) : ITunnelBackend, IDisposable
+internal sealed class TunnelRunner(IFirewall firewall, ILogger<TunnelRunner> log) : ITunnelBackend, IDisposable
 {
     /// Marks our adapters; adapters of other WireGuard clients are never opened or touched.
     public const string TunnelType = "WireTunnels";
     private const uint DefaultMtu = 1420;
 
     private readonly Dictionary<string, WireGuardNative.AdapterHandle> _adapters = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DnsGuard> _dnsGuards = new(StringComparer.Ordinal);
 
     public bool IsRunning(string alias) => _adapters.ContainsKey(alias);
 
-    public async Task StartAsync(string alias, WireGuardConfig config, CancellationToken ct)
+    public ulong? Luid(string alias) => _adapters.TryGetValue(alias, out var adapter) ? WireGuardNative.Luid(adapter) : null;
+
+    public IReadOnlySet<ulong> Luids => _adapters.Values.Select(WireGuardNative.Luid).ToHashSet();
+
+    public async Task StartAsync(string alias, WireGuardConfig config, bool suppressDns, CancellationToken ct)
     {
         var endpoints = new List<IPEndPoint?>();
         foreach (var peer in config.Peers)
@@ -56,12 +68,20 @@ internal sealed class TunnelRunner(ILogger<TunnelRunner> log) : ITunnelBackend, 
             foreach (var route in config.Peers.SelectMany(p => p.AllowedIPs).Select(IPPrefix.Parse).Distinct())
                 IpHelper.AddRoute(luid, route);
 
-            var servers = WireGuardDns.Servers(config.Dns);
+            var servers = suppressDns ? [] : WireGuardDns.Servers(config.Dns);
             if (servers.Count > 0) IpHelper.SetDns(luid, servers, WireGuardDns.SearchDomains(config.Dns));
+            // A full tunnel with its own DNS: block port 53 elsewhere, or Windows also asks the LAN's servers.
+            var allowed = config.Peers.SelectMany(p => p.AllowedIPs).ToList();
+            if (servers.Count > 0 && (IPFamilyRouting.RoutesAll(IPFamily.IPv4, allowed) || IPFamilyRouting.RoutesAll(IPFamily.IPv6, allowed)))
+            {
+                _dnsGuards[alias] = new DnsGuard(servers.Select(s => IPPrefix.Parse(s).Address).ToList());
+                firewall.SetDnsGuards([.. _dnsGuards.Values]);
+            }
         }
         catch
         {
             adapter.Dispose();
+            if (_dnsGuards.Remove(alias)) TryUpdateDnsGuards();
             throw;
         }
         _adapters[alias] = adapter;
@@ -72,11 +92,22 @@ internal sealed class TunnelRunner(ILogger<TunnelRunner> log) : ITunnelBackend, 
     {
         if (!_adapters.Remove(alias, out var adapter)) return;
         adapter.Dispose();
+        if (_dnsGuards.Remove(alias)) TryUpdateDnsGuards();
         log.LogInformation("Tunnel {Alias} is down", alias);
     }
 
+    public void SetPeerAllowedIPs(string alias, string peerPublicKey, IReadOnlyList<IPPrefix> allowed) =>
+        WireGuardNative.SetConfiguration(_adapters[alias], ConfigBlob.PeerAllowedIPs(peerPublicKey, allowed));
+
     public TunnelRuntimeStatus Status(string alias) =>
         ConfigBlob.Read(alias, WireGuardNative.GetConfiguration(_adapters[alias]));
+
+    /// Stopping must not fail because of the guard: the adapter is already gone either way.
+    private void TryUpdateDnsGuards()
+    {
+        try { firewall.SetDnsGuards([.. _dnsGuards.Values]); }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception) { log.LogError(e, "Unable to update the DNS leak guard"); }
+    }
 
     public void Dispose()
     {
