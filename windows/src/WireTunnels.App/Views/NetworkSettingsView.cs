@@ -45,18 +45,107 @@ public sealed class NetworkSettingsView : UserControl
             t.Id, t.IsActive, t.Scope, t.IsKillSwitchEnabled, t.IpFamilyLeakWarningAcknowledged, t.ExcludedRoutes, t.EffectiveSplitDNSDomains,
             t.Dns, _manager.IsBusy(t.Id), _manager.LeaksOf(t.Id).Select(l => $"{l.Family}{l.Reason}{_manager.FixUnavailableReason(t.Id, l)}"),
             t.InventoryCommand, t.InventoryAllowedIPs.Count, t.InventoryUpdatedAt, _manager.InventoryErrorOf(t.Id), _manager.IsRefreshingInventory(t.Id),
-            t.Name, t.ManagedPolicy,
+            t.Name, t.ManagedPolicy, t.AutoConnectRule, _manager.PhysicalNetwork,
         });
         if (signature == _shown) return;
         _shown = signature;
         _root.Children.Clear();
         if (t is null) return;
         foreach (var leak in _manager.LeaksOf(t.Id)) _root.Children.Add(LeakCard(t, leak));
+        _root.Children.Add(OnDemandCard(t));
         _root.Children.Add(KillSwitchCard(t));
         if (t.Scope == TunnelScope.Personal) _root.Children.Add(ExclusionsCard(t));
         _root.Children.Add(SplitDnsCard(t));
         if (t.Scope == TunnelScope.Personal) _root.Children.Add(InventoryCard(t));
         if (_manager.CanAdminister) _root.Children.Add(t.Scope == TunnelScope.Managed ? SharedAdminCard(t) : MakeSharedCard(t));
+    }
+
+    /// Port of the macOS On-Demand section: connect on / disconnect on, each for Wi-Fi (any or listed SSIDs)
+    /// and/or Ethernet (any or listed subnets). A shared tunnel's rule is set by an administrator for every user.
+    private Border OnDemandCard(Tunnel t)
+    {
+        var editable = t.Scope == TunnelScope.Personal || IsAdminManaged(t);
+        var items = new List<UIElement>();
+        if (t.Scope == TunnelScope.Managed)
+            items.Add(Caption(editable ? "Applies to every user of this shared tunnel." : "Set by your administrator for all users."));
+        if (_manager.PhysicalNetwork.WiFiNameDenied)
+        {
+            var settings = new HyperlinkButton { Content = "Open Location Settings" };
+            settings.Click += async (_, _) => await Windows.System.Launcher.LaunchUriAsync(new Uri("ms-settings:privacy-location"));
+            items.Add(new TextBlock
+            {
+                Text = "Windows hides the Wi-Fi network name until location access is on for desktop apps, so rules for specific "
+                    + "Wi-Fi networks cannot match. Rules for any Wi-Fi network still work.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = (Brush)Application.Current.Resources["WarningBrush"],
+            });
+            items.Add(settings);
+        }
+        items.Add(RuleHalf(t, "Connect automatically", r => r.Connect, editable));
+        items.Add(RuleHalf(t, "Disconnect automatically", r => r.Disconnect, editable));
+        items.Add(Caption("When both match, disconnecting wins. After you disconnect a tunnel yourself it stays down until you leave and rejoin a matching network."));
+        return Card("On-Demand", "", [.. items]);
+    }
+
+    private StackPanel RuleHalf(Tunnel t, string title, Func<AutoConnectRule, AutoConnectNetworkMatch> half, bool editable)
+    {
+        var current = half(t.AutoConnectRule);
+        // Every edit works on a copy of the whole rule and saves it.
+        void Save(Action<AutoConnectNetworkMatch> change) => _ = RunAsync(async () =>
+        {
+            var rule = JsonSerializer.Deserialize<AutoConnectRule>(JsonSerializer.Serialize(t.AutoConnectRule, Core.Storage.CoreJson.Options), Core.Storage.CoreJson.Options)!;
+            change(half(rule));
+            await _manager.UpdateAutoConnectRuleAsync(t.Id, rule);
+        });
+
+        var panel = new StackPanel { Spacing = 6 };
+        panel.Children.Add(Toggle(title, current.Enabled, editable, on => Save(m => m.Enabled = on)));
+        if (!current.Enabled) return panel;
+
+        var kinds = new ComboBox { Header = "On", IsEnabled = editable, MinWidth = 200 };
+        foreach (var (label, value) in new[] { ("Wi-Fi", AutoConnectInterface.Wifi), ("Ethernet", AutoConnectInterface.Ethernet), ("Wi-Fi or Ethernet", AutoConnectInterface.Both) })
+            kinds.Items.Add(new ComboBoxItem { Content = label, Tag = value, IsSelected = value == current.Interface });
+        AutomationProperties.SetName(kinds, $"{title}: network type");
+        kinds.SelectionChanged += (_, _) =>
+        {
+            if (kinds.SelectedItem is ComboBoxItem { Tag: AutoConnectInterface value } && value != current.Interface) Save(m => m.Interface = value);
+        };
+        panel.Children.Add(kinds);
+
+        if (current.Interface != AutoConnectInterface.Ethernet)
+        {
+            panel.Children.Add(Caption(current.WifiSSIDs.Count == 0 ? "Any Wi-Fi network. Add names to limit it:" : "Only these Wi-Fi networks:"));
+            foreach (var ssid in current.WifiSSIDs)
+                panel.Children.Add(Row(ssid, "", editable ? $"Remove {ssid}" : null, () => { Save(m => m.WifiSSIDs.Remove(ssid)); return Task.CompletedTask; }));
+            if (editable)
+            {
+                panel.Children.Add(AddBox("Wi-Fi network name", $"{title}: add Wi-Fi network", value =>
+                {
+                    if (value.Length > 0 && !current.WifiSSIDs.Contains(value)) Save(m => m.WifiSSIDs.Add(value));
+                    return Task.CompletedTask;
+                }));
+                if (_manager.PhysicalNetwork.Ssid is { } here && !current.WifiSSIDs.Contains(here))
+                {
+                    var add = new HyperlinkButton { Content = $"Add current network ({here})" };
+                    add.Click += (_, _) => Save(m => m.WifiSSIDs.Add(here));
+                    panel.Children.Add(add);
+                }
+            }
+        }
+        if (current.Interface != AutoConnectInterface.Wifi)
+        {
+            panel.Children.Add(Caption(current.EthernetSubnets.Count == 0 ? "Any Ethernet network. Add subnets to limit it:" : "Only Ethernet networks in these subnets:"));
+            foreach (var subnet in current.EthernetSubnets)
+                panel.Children.Add(Row(subnet, "", editable ? $"Remove {subnet}" : null, () => { Save(m => m.EthernetSubnets.Remove(subnet)); return Task.CompletedTask; }));
+            if (editable)
+                panel.Children.Add(AddBox("Subnet, e.g. 192.168.1.0/24", $"{title}: add Ethernet subnet", value =>
+                {
+                    if (value.Length > 0 && !current.EthernetSubnets.Contains(value)) Save(m => m.EthernetSubnets.Add(value));
+                    return Task.CompletedTask;
+                }));
+        }
+        return panel;
     }
 
     private bool IsAdminManaged(Tunnel t) => t.Scope == TunnelScope.Managed && _manager.CanAdminister;

@@ -43,6 +43,9 @@ internal sealed class FakeTunnelService : ITunnelService
         return Task.CompletedTask;
     }
 
+    /// The endpoint the service reports (it resolves hostnames at connect); null = the config's.
+    public string? LiveEndpoint;
+
     public Task<IReadOnlyList<TunnelRuntimeStatus>> StatusAsync(CancellationToken ct = default)
     {
         if (FailStatus is { } e) return Task.FromException<IReadOnlyList<TunnelRuntimeStatus>>(e);
@@ -55,7 +58,7 @@ internal sealed class FakeTunnelService : ITunnelService
                 Peers = [new PeerRuntimeStatus
                 {
                     PublicKey = config.PrimaryPeer?.PublicKey ?? "",
-                    Endpoint = config.PrimaryPeer?.Endpoint ?? "198.51.100.1:51820",
+                    Endpoint = LiveEndpoint ?? config.PrimaryPeer?.Endpoint ?? "198.51.100.1:51820",
                     LastHandshake = Handshake,
                     RxBytes = Rx,
                     TxBytes = Tx,
@@ -181,6 +184,16 @@ internal sealed class FakeNetwork : INetworkInfo
         families.Where(Bypassed.Contains).ToHashSet();
     public Task<IPAddress?> ResolveAsync(string host, CancellationToken ct = default) =>
         Task.FromResult(IPPrefix.TryParseAddress(host, out var ip) ? ip : Hosts.TryGetValue(host, out var a) ? IPAddress.Parse(a) : null);
+}
+
+internal sealed class FakeMonitor : INetworkMonitor
+{
+    public PhysicalNetwork Current = PhysicalNetwork.None;
+#pragma warning disable CS0067 // raised by the real monitor; tests call the manager directly
+    public event Action? Changed;
+    public event Action? Woke;
+#pragma warning restore CS0067
+    public PhysicalNetwork? Read(IReadOnlySet<string> tunnelAdapters) => Current;
 }
 
 internal sealed class FakeProbe : IServiceProbe

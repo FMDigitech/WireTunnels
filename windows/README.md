@@ -10,12 +10,12 @@ Next phases, step by step: [`NEXT_STEPS.md`](NEXT_STEPS.md).
 | `src/WireTunnels.Core` | Platform-neutral logic: models (same JSON as macOS `tunnels.json`), `.conf` parser and validation, DNS, IP prefixes, on-demand matching, warnings, recoverable JSON store, X25519 keys |
 | `src/WireTunnels.Contracts` | Named-pipe protocol (framing, operations, DTOs) and `ServiceClient` |
 | `src/WireTunnels.Service` | Windows Service (LocalSystem): pipe server with per-user authorization, wireguard-nt adapters, addresses, routes, metric/MTU, DNS; kill switch and DNS leak guard (WFP), split DNS (NRPT), excluded and multi-hop routes; shared tunnels for all users; logoff cleanup |
-| `src/WireTunnels.Cli` | `wiretunnels.exe connect / disconnect / status / genkey`, plus `elevated` (the UAC helper the app uses for administrator actions) |
+| `src/WireTunnels.Cli` | `wiretunnels.exe connect / disconnect / disconnect-all / status / genkey` (saved tunnels go through the app with `wiretunnels://` links), plus `elevated` (the UAC helper the app uses for administrator actions) |
 | `src/WireTunnels.Client` | App logic without UI (port of `TunnelManager.swift`): tunnels, connect/disconnect, status polling, kill switch, split DNS, exclusions, multi-hop, IPv4/IPv6 leaks, DPAPI-encrypted config store, log, quit |
 | `src/WireTunnels.App` | `WireTunnels.App.exe`, WinUI 3: notification-area icon + flyout, dashboard, import / new / edit, setup wizard, settings, log |
 | `tests/*` | xUnit; Core, Service and Client tests run on any OS |
 
-Not yet implemented (see the plan in the architecture doc): on-demand rules, installer, updater.
+Not yet implemented (see the plan in the architecture doc): installer, updater.
 
 ## Build and test
 
@@ -56,6 +56,8 @@ It is named `WireTunnels.App.exe` because NTFS is case-insensitive and the CLI i
    & "C:\Program Files\WireTunnels\wiretunnels.exe" connect C:\path\office.conf
    & "C:\Program Files\WireTunnels\wiretunnels.exe" status
    & "C:\Program Files\WireTunnels\wiretunnels.exe" disconnect office
+   & "C:\Program Files\WireTunnels\wiretunnels.exe" connect "Office VPN"   # a tunnel saved in the app
+   Start-Process "wiretunnels://connect?name=Office%20VPN"                      # the same, as a link
    ```
    Release builds of the service only accept the app and the CLI from its own folder; a Debug app run from
    `bin\` shows the setup wizard with "refused the connection".

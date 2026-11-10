@@ -14,6 +14,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.14" />
     <PackageReference Include="ZXing.Net" Version="0.16.9" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>

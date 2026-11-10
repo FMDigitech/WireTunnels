@@ -8,6 +8,7 @@ using Microsoft.Win32;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 using WireTunnels.Client;
+using WireTunnels.Contracts;
 
 namespace WireTunnels.App.Services;
 
@@ -52,6 +53,29 @@ public sealed class ToastNotifier(LogService log) : INotifier, IDisposable
         try { AppNotificationManager.Default.Unregister(); }
         catch (COMException) { }
         _registered = false;
+    }
+}
+
+/// `wiretunnels://` links open this exe (per user, no admin rights). shortcut: re-registered at every start;
+/// the MSI (phase 7) should register it machine-wide and remove it on uninstall.
+public static class UrlProtocol
+{
+    public static void Register(LogService log)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{AppLink.Scheme}");
+            key.SetValue("", "URL:WireTunnels");
+            key.SetValue("URL Protocol", "");
+            using var icon = key.CreateSubKey("DefaultIcon");
+            icon.SetValue("", $"\"{Environment.ProcessPath}\",0");
+            using var command = key.CreateSubKey(@"shell\open\command");
+            command.SetValue("", $"\"{Environment.ProcessPath}\" {Program.BackgroundArgument} \"%1\"");
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            log.Warning($"Unable to register wiretunnels:// links: {e.Message}");
+        }
     }
 }
 

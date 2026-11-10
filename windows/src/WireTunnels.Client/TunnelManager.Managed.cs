@@ -94,7 +94,7 @@ public sealed partial class TunnelManager
         if (Find(id) is not { Scope: TunnelScope.Managed } tunnel) return;
         if (contents is not null && WireGuardConfig.Parse(contents) is { IsValid: false } parsed)
             throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
-        await SendManagedUpdateAsync(tunnel, ConfigName.DisplayName(name), contents, tunnel.ManagedPolicy ?? new());
+        await SendManagedUpdateAsync(tunnel, ConfigName.DisplayName(name), contents, tunnel.ManagedPolicy ?? new(), tunnel.AutoConnectRule);
         _log.Info($"Updated shared tunnel: {name}");
     }
 
@@ -103,7 +103,7 @@ public sealed partial class TunnelManager
     {
         if (Find(id) is not { Scope: TunnelScope.Managed } tunnel) return;
         policy.SplitDNSDomains = NormalizedUniqueDomains(policy.SplitDNSDomains);
-        await SendManagedUpdateAsync(tunnel, tunnel.Name, null, policy);
+        await SendManagedUpdateAsync(tunnel, tunnel.Name, null, policy, tunnel.AutoConnectRule);
         if (Find(id) is { } live)
         {
             if (live is { IsActive: true, IsKillSwitchEnabled: true }) await ArmKillSwitchAsync(live);
@@ -113,12 +113,12 @@ public sealed partial class TunnelManager
             + $"killSwitch={policy.KillSwitchEnabled} splitDNS={policy.SplitDNSDomains.Count}");
     }
 
-    private async Task SendManagedUpdateAsync(Tunnel tunnel, string name, string? contents, ManagedTunnelPolicy policy)
+    private async Task SendManagedUpdateAsync(Tunnel tunnel, string name, string? contents, ManagedTunnelPolicy policy, AutoConnectRule rule)
     {
         if (IsBusy(tunnel.Id)) throw new InvalidOperationException("Wait for the current operation on this tunnel to finish.");
         await _service.AdminAsync<object>(Ops.UpdateManaged, new UpdateManagedArgs
         {
-            Id = tunnel.Id, Name = name, Contents = contents, Policy = policy, AutoConnectRule = tunnel.AutoConnectRule,
+            Id = tunnel.Id, Name = name, Contents = contents, Policy = policy, AutoConnectRule = rule,
         });
         await LoadManagedTunnelsAsync();
     }

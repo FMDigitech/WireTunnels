@@ -1,7 +1,7 @@
 # WireTunnels for Windows — next steps (phase 3 onward)
 
-State on 2026-11-10, branch `windows-port`: phases 1–5 done (phase 3 except the On-Demand section, phase 6), on .NET 10;
-244 unit tests, 7 opt-in live network tests, 5 opt-in UI tests.
+State on 2026-11-10, branch `windows-port`: phases 1–6 done, on .NET 10; phase 7 (distribution) remains.
+262 unit tests, 7 opt-in live network tests, 5 opt-in UI tests.
 Architecture and rationale: [`../docs/WINDOWS_PORT_ARCHITECTURE.md`](../docs/WINDOWS_PORT_ARCHITECTURE.md).
 Every phase: port the macOS behaviour (the Swift code and `Tests/`, `Scripts/test_*.sh` are the spec),
 add xUnit tests for the new logic, keep `dotnet test` green, run `graphify update .` after code changes.
@@ -160,8 +160,8 @@ from a non-elevated app (needs a person) and the rejection of a non-elevated cal
 - Logoff (`SERVICE_CONTROL_SESSIONCHANGE`): when a user's last known session ends, their personal tunnels stop, running
   shared tunnels that users may disconnect stop, and their kill switch, split DNS and routes are dropped. A session is "known" once the app or CLI talked to the service from it.
   No `PRESHUTDOWN` handler: shutdown stops the service, and a clean stop already removes everything.
-- Not ported: importing a `.conf` straight as shared (import it, then Make Shared), the On-Demand rule of a shared tunnel
-  (phase 6; the field is stored and passed through).
+- Not ported: importing a `.conf` straight as shared (import it, then Make Shared). The On-Demand rule of a shared tunnel
+  came with phase 6.
 
 Original plan:
 
@@ -171,6 +171,32 @@ Original plan:
 4. `SERVICE_CONTROL_SESSIONCHANGE` / `PRESHUTDOWN`: stop the personal tunnels of a user who logs off.
 
 ## 6. Automation
+
+**Done on 2026-11-10.** Client: `NetworkMonitor.cs` (`SystemNetworkMonitor`: `NetworkChange` address and availability
+events, `SystemEvents.PowerModeChanged` resume; snapshot of Wi-Fi / Ethernet links, Ethernet addresses, gateways and the
+SSID through `wlanapi`), `TunnelManager.Automation.cs`. Contracts: `AppLink.cs`. CLI: `connect <saved name>`,
+`disconnect-all`, `disconnect` through the app when it runs. App: On-Demand section of the detail pane (also for shared
+tunnels, editable by administrators), `wiretunnels://` registered per user at every start. Verified on this PC: the
+real monitor reads the Ethernet link, the installed app registers the protocol, UI tests pass. Not verified live: a
+Wi-Fi SSID (this PC has no Wi-Fi), a real sleep/wake, a gateway change, a DDNS change, a link opened from a browser.
+Decisions:
+- Rules are the macOS ones (`handleNetworkChange`): disconnect wins when both halves match; a tunnel the rule connected
+  is disconnected when the network stops matching, one the user connected is not; a manual disconnect holds until the
+  network stops matching (suppression); a shared tunnel's rule respects its access policy. Events are debounced 500 ms
+  (`NetworkChangeScheduler`), on the real clock.
+- **Recovery is narrower than on macOS, on purpose.** macOS restarts every active tunnel on wake and on a DHCP renewal
+  because wg-quick's socket goes stale; wireguard-nt keeps its socket and roams with the default route, so restarting
+  would only be a connectivity blip (and a kill switch trip). The app restarts only a tunnel whose endpoint hostname now
+  resolves to another address (checked on wake and once a minute, port of `checkEndpointReResolution`; a chain restarts
+  as a unit), and re-adds the routes that use the physical gateway (split tunnel exclusions, the multi-hop hop route)
+  when the gateway changes; a chain keeps its route through the hop meanwhile. A restart keeps the kill switch armed.
+- The SSID needs location access for desktop apps on Windows 11 24H2 and later (`WlanQueryInterface` returns
+  ERROR_ACCESS_DENIED): the detail pane says so and links to `ms-settings:privacy-location`; "any Wi-Fi" rules still work.
+- Links (`connect?name=`, `disconnect?name=`, `disconnect-all`, `show`) are the macOS App Intents: saved tunnels by
+  display name, same rules as the toggle, fire and forget. A browser asks before opening one. The MSI should register the
+  protocol machine-wide (phase 7).
+
+Original plan:
 
 1. NetworkMonitor in the app: `NotifyIpInterfaceChange`, `NetworkInformation.NetworkStatusChanged`, wake via `PowerModeChanged`; debounce like `NetworkChangeScheduler.swift`.
 2. SSID via `WlanQueryInterface` (handle a denied location permission in the UI); rules with `AutoConnectNetworkMatch.Matches`.

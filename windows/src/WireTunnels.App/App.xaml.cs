@@ -6,6 +6,7 @@ using WireTunnels.App.Services;
 using WireTunnels.App.ViewModels;
 using WireTunnels.App.Views;
 using WireTunnels.Client;
+using WireTunnels.Contracts;
 using WireTunnels.Core.Models;
 using WireTunnels.Core.Storage;
 
@@ -21,6 +22,8 @@ public partial class App : Application
     private static readonly TimeSpan BackgroundPoll = TimeSpan.FromSeconds(10);
 
     private readonly bool _startInBackground;
+    private readonly AppLink? _pendingLink;
+    private SystemNetworkMonitor? _monitor;
     private readonly DispatcherQueue _dispatcher;
     private readonly AppPaths _paths = AppPaths.ForCurrentUser();
     private readonly PipeTunnelService _service = new();
@@ -30,12 +33,19 @@ public partial class App : Application
     private MainWindow? _dashboard;
     private bool _quitting;
 
-    public App(AppInstance instance, bool startInBackground)
+    public App(AppInstance instance, bool startInBackground, AppLink? link)
     {
         _startInBackground = startInBackground;
+        _pendingLink = link;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         InitializeComponent();
-        instance.Activated += (_, _) => _dispatcher.TryEnqueue(() => ShowDashboard());
+        // A second launch: a wiretunnels:// link acts without opening the dashboard (except "show").
+        instance.Activated += (_, e) =>
+        {
+            var arguments = e.Kind == ExtendedActivationKind.Launch && e.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch ? launch.Arguments : null;
+            var forwarded = arguments?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(a => AppLink.Parse(a.Trim('"'))).FirstOrDefault(l => l is not null);
+            _dispatcher.TryEnqueue(() => { if (forwarded is null) ShowDashboard(); else _ = HandleLinkAsync(forwarded); });
+        };
         UnhandledException += (_, e) =>
         {
             Log?.Error($"Unexpected error: {e.Exception}");
@@ -81,6 +91,7 @@ public partial class App : Application
             disconnectAll: Manager.StopAllActiveAsync,
             quit: () => _ = QuitAsync());
 
+        UrlProtocol.Register(Log);
         if (!_startInBackground && !Settings.StartInBackground) ShowDashboard();
         _ = StartAsync();
     }
@@ -89,6 +100,15 @@ public partial class App : Application
     {
         await Manager.InitializeAsync();
         Manager.StartPolling(_dashboard?.IsVisible == true ? DashboardPoll : BackgroundPoll);
+        _monitor = new SystemNetworkMonitor();
+        await Manager.StartAutomationAsync(_monitor);
+        if (_pendingLink is { } link) await HandleLinkAsync(link);
+    }
+
+    private async Task HandleLinkAsync(AppLink link)
+    {
+        if (link.Action == AppLinkAction.Show) ShowDashboard();
+        else await Manager.HandleLinkAsync(link);
     }
 
     /// Settings > Reset App Data (macOS SettingsView.resetAppData): tunnels, inventory protection, configs,
@@ -159,6 +179,7 @@ public partial class App : Application
         _quitting = true;
         Log.Info("Quit: exiting");
         _tray?.Dispose();
+        _monitor?.Dispose();
         _notifier?.Dispose();
         await _service.DisposeAsync();
         Exit(); // the windows only hide on Close; Exit ends the process

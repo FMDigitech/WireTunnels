@@ -219,6 +219,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             return;
         }
 
+        if (!automatic) UserConnected(id);
         _connecting.Add(id);
         _feedback.Begin(id, reconnecting: _feedback.Issues.ContainsKey(id));
         Notify();
@@ -232,6 +233,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
                 // The service starts it from its own copy and applies its split DNS; we only see the metadata.
                 await _log.TimedAsync($"Connect {tunnel.Name}: starting shared tunnel", () => _service.StartManagedAsync(tunnel.Id));
                 _runningRouting[id] = new([.. tunnel.Address ?? []], [.. tunnel.AllowedIPs], [.. tunnel.Dns]);
+                if (!tunnel.IsActive && tunnel.Endpoint is { } metadataEndpoint) _configuredEndpoints[id] = metadataEndpoint;
             }
             else
             {
@@ -244,6 +246,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
                 var withoutDns = suppressDns || tunnel.EffectiveSplitDNSDomains.Count > 0;
                 await _log.TimedAsync($"Connect {tunnel.Name}: starting WireGuard", () => _service.StartAsync(alias, contents, withoutDns));
                 _runningRouting[id] = new([.. parsed.Address], [.. parsed.PrimaryPeer?.AllowedIPs ?? []], [.. parsed.Dns]);
+                if (parsed.PrimaryPeer?.Endpoint is { } configuredEndpoint) _configuredEndpoints[id] = configuredEndpoint;
             }
 
             if (Find(id) is not { } live) throw new InvalidOperationException("The tunnel was removed while connecting.");
@@ -293,6 +296,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             ReportFailure(tunnel, "Users are not allowed to disconnect this managed tunnel", automatic);
             return false;
         }
+        if (!automatic) UserDisconnected(id);
         _disconnecting.Add(id);
         Notify();
         var watch = Stopwatch.StartNew();
@@ -474,6 +478,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
                     // Shared tunnels change under us (an administrator, another user): refresh them every 10 s, like macOS.
                     if (Now - _managedLoadedAt >= ManagedRefreshInterval) await LoadManagedTunnelsAsync();
                     await RefreshStatusAsync(reportError: false);
+                    await CheckEndpointsIfDueAsync();
                 }
             }
             catch (Exception e) when (e is not OperationCanceledException)

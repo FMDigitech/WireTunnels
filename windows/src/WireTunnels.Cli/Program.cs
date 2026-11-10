@@ -5,7 +5,9 @@ using WireTunnels.Core.Config;
 const string Usage = """
     Usage:
       wiretunnels connect <file.conf> [name]   Connect a tunnel (name defaults to the file name)
-      wiretunnels disconnect <name>            Disconnect a tunnel
+      wiretunnels connect <saved name>         Connect a tunnel saved in the app (through the app)
+      wiretunnels disconnect <name>            Disconnect a tunnel (through the app when it runs)
+      wiretunnels disconnect-all               Disconnect every tunnel in the app
       wiretunnels status                       Show your connected tunnels
       wiretunnels genkey                       Print a new private and public key
     """;
@@ -14,6 +16,13 @@ try
 {
     switch (args)
     {
+        case ["connect", var saved] when !File.Exists(saved) && !saved.EndsWith(".conf", StringComparison.OrdinalIgnoreCase):
+            return OpenLink(new AppLink(AppLinkAction.Connect, saved), $"Asked WireTunnels to connect {saved}");
+        case ["disconnect-all"]:
+            return OpenLink(new AppLink(AppLinkAction.DisconnectAll), "Asked WireTunnels to disconnect all tunnels");
+        case ["disconnect", var appName] when AppIsRunning():
+            // The app owns what it connected: going through it keeps its state (and On-Demand suppression) right.
+            return OpenLink(new AppLink(AppLinkAction.Disconnect, appName), $"Asked WireTunnels to disconnect {appName}");
         case ["connect", var path, ..]:
         {
             var name = args.Length > 2 ? args[2] : Path.GetFileNameWithoutExtension(path);
@@ -82,6 +91,23 @@ try
 catch (Exception e) when (e is ServiceException or IOException or UnauthorizedAccessException or FormatException or System.Text.Json.JsonException)
 {
     return Fail(e.Message);
+}
+
+// The app in this logon session (the link would start one otherwise, which is fine for connect).
+static bool AppIsRunning()
+{
+    var session = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+    return System.Diagnostics.Process.GetProcessesByName("WireTunnels.App").Any(p => p.SessionId == session);
+}
+
+// Hands a wiretunnels:// link to the app (started in the notification area if needed). Fire and forget, like
+// the macOS intents: the app reports the result in its own notifications.
+static int OpenLink(AppLink link, string message)
+{
+    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link.ToString()) { UseShellExecute = true }); }
+    catch (System.ComponentModel.Win32Exception e) { return Fail($"WireTunnels is not installed for this user ({e.Message}). Start the app once."); }
+    Console.WriteLine(message);
+    return 0;
 }
 
 static Task<ServiceClient> Connect() => ServiceClient.ConnectAsync(TimeSpan.FromSeconds(5));
