@@ -1,0 +1,2042 @@
+{
+  "Scripts/build_wireguard_binaries.sh": {
+    "mtime": 1794236926.474574,
+    "seen": 1794240539.3607523,
+    "ast_hash": "856bbcf4d64140fcddc22849f84a8eec",
+    "semantic_hash": ""
+  },
+  "Scripts/test_adaptive_dashboard_layout.sh": {
+    "mtime": 1794236926.4892545,
+    "seen": 1794240539.3607523,
+    "ast_hash": "38c212788293ec032d29df3ae441e640",
+    "semantic_hash": ""
+  },
+  "Scripts/test_alert_binding_safety.sh": {
+    "mtime": 1794236926.4892545,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1c1ebfbafd0ed335d379232f05621c31",
+    "semantic_hash": ""
+  },
+  "Scripts/test_app_migration.sh": {
+    "mtime": 1794236926.4902558,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d5573830699817f5c082d991db5de88f",
+    "semantic_hash": ""
+  },
+  "Scripts/test_config_storage_safety.sh": {
+    "mtime": 1794236926.4923806,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e1cdd767a6e99d912614c9e27ab554b1",
+    "semantic_hash": ""
+  },
+  "Scripts/test_config_validation.sh": {
+    "mtime": 1794236926.4923806,
+    "seen": 1794240539.3607523,
+    "ast_hash": "36f8d9303525905b3c2b01f70008a598",
+    "semantic_hash": ""
+  },
+  "Scripts/test_dock_app_behavior.sh": {
+    "mtime": 1794236926.4934344,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3a536fb76b58e040e54195f53924bad9",
+    "semantic_hash": ""
+  },
+  "Scripts/test_functional_settings.sh": {
+    "mtime": 1794236926.4934344,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c932eebdc1ac46e4f09dc0ff66c6d7b4",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_approval_flow.sh": {
+    "mtime": 1794236926.4944663,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a4e8b45151e6f135c135156c33ab9f6e",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_health_timeout.sh": {
+    "mtime": 1794236926.4944663,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8b613f5ef0b7bcae9848ad41b761b2af",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_launchd_plist.sh": {
+    "mtime": 1794236926.4944663,
+    "seen": 1794240539.3607523,
+    "ast_hash": "777c069f70e17a1c0d637209594078b2",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_registration_config.sh": {
+    "mtime": 1794236926.4944663,
+    "seen": 1794240539.3607523,
+    "ast_hash": "bb64bf4f5e827a49231e3a72a680f54b",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_replacement_safety.sh": {
+    "mtime": 1794236926.4954967,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3804e15b50c010f817e3ae08c66cf33e",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_version_alignment.sh": {
+    "mtime": 1794236926.4954967,
+    "seen": 1794240539.3607523,
+    "ast_hash": "31149557706e9c3c5160bceddeb5a0f4",
+    "semantic_hash": ""
+  },
+  "Scripts/test_key_generation.sh": {
+    "mtime": 1794236926.496528,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3c96c8e332e39c21d7a3761d31e0271f",
+    "semantic_hash": ""
+  },
+  "Scripts/test_kill_switch.sh": {
+    "mtime": 1794236926.496528,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2d6dcf4a7e04b6c52a578d471e9053b3",
+    "semantic_hash": ""
+  },
+  "Scripts/test_managed_helper_safety.sh": {
+    "mtime": 1794236926.496528,
+    "seen": 1794240539.3607523,
+    "ast_hash": "80ebf4016b7e2de0bb4c71fee2a3d232",
+    "semantic_hash": ""
+  },
+  "Scripts/test_managed_paths.sh": {
+    "mtime": 1794236926.496528,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7277c88dc83909d39dcd7088232f3675",
+    "semantic_hash": ""
+  },
+  "Scripts/test_managed_ui_guardrails.sh": {
+    "mtime": 1794236926.4980345,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3d127918b4e8e77b53df7f08cfc5b77b",
+    "semantic_hash": ""
+  },
+  "Scripts/test_managed_xpc_protocol.sh": {
+    "mtime": 1794236926.4980345,
+    "seen": 1794240539.3607523,
+    "ast_hash": "02249a2db7a75d8a2afcd3b143ec1437",
+    "semantic_hash": ""
+  },
+  "Scripts/test_menu_details_and_error_state.sh": {
+    "mtime": 1794236926.499115,
+    "seen": 1794240539.3607523,
+    "ast_hash": "945954494ff99acf8da52cfea4a032b6",
+    "semantic_hash": ""
+  },
+  "Scripts/test_mvp_gap_integration.sh": {
+    "mtime": 1794236926.499115,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7f491b67004afafafcd6ec333734679b",
+    "semantic_hash": ""
+  },
+  "Scripts/test_privileged_config_safety.sh": {
+    "mtime": 1794236926.499115,
+    "seen": 1794240539.3607523,
+    "ast_hash": "472a8d70a4ebd21ab1ff74d4645c047d",
+    "semantic_hash": ""
+  },
+  "Scripts/test_qr_code.sh": {
+    "mtime": 1794236926.499115,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cc9ffe8dcb65001116e1eb8f0b81516c",
+    "semantic_hash": ""
+  },
+  "Scripts/test_redetect_flow.sh": {
+    "mtime": 1794236926.5004768,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c6e16a38a6edefbd417b86865e3311bd",
+    "semantic_hash": ""
+  },
+  "Scripts/test_secure_runtime.sh": {
+    "mtime": 1794236926.5004768,
+    "seen": 1794240539.3607523,
+    "ast_hash": "77e522b99e6063521389f2b4f3953c85",
+    "semantic_hash": ""
+  },
+  "Scripts/test_settings_link.sh": {
+    "mtime": 1794236926.501795,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4484940bf25a866257f70d40af361939",
+    "semantic_hash": ""
+  },
+  "Scripts/test_single_dashboard_window.sh": {
+    "mtime": 1794236926.501795,
+    "seen": 1794240539.3607523,
+    "ast_hash": "44eecd8faa0b2c1d1a03cc62a5f600c3",
+    "semantic_hash": ""
+  },
+  "Scripts/test_sleep_wake_reconnect.sh": {
+    "mtime": 1794236926.501795,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5c532f62ab17361a0ca48b3a3201657c",
+    "semantic_hash": ""
+  },
+  "Scripts/test_status_refresh_failure.sh": {
+    "mtime": 1794236926.5028226,
+    "seen": 1794240539.3607523,
+    "ast_hash": "065943fb246d3432a30ce576bf0fffdb",
+    "semantic_hash": ""
+  },
+  "Scripts/test_swiftui_performance_guardrails.sh": {
+    "mtime": 1794236926.5028226,
+    "seen": 1794240539.3607523,
+    "ast_hash": "838d6460e03b6e99a16d3bb739386b68",
+    "semantic_hash": ""
+  },
+  "Scripts/test_system_symbol_compatibility.sh": {
+    "mtime": 1794236926.5038257,
+    "seen": 1794240539.3607523,
+    "ast_hash": "547a3a5e338d9d65df4cb68c93964abc",
+    "semantic_hash": ""
+  },
+  "Scripts/test_traffic_sparkline_and_latency.sh": {
+    "mtime": 1794236926.5038257,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6d4f6f5d64bb624477919e82710e3cb3",
+    "semantic_hash": ""
+  },
+  "Scripts/test_tunnel_connection_switches.sh": {
+    "mtime": 1794236926.5048287,
+    "seen": 1794240539.3607523,
+    "ast_hash": "93749b6f28f824622eb964ccd3536756",
+    "semantic_hash": ""
+  },
+  "Scripts/test_tunnel_model_compiles.sh": {
+    "mtime": 1794236926.5048287,
+    "seen": 1794240539.3607523,
+    "ast_hash": "70e28f8f31f5ee5125304708e06fe0a4",
+    "semantic_hash": ""
+  },
+  "Scripts/test_wg_quick_bash3.sh": {
+    "mtime": 1794236926.5048287,
+    "seen": 1794240539.3607523,
+    "ast_hash": "ef3d6375e234921fb51d08de83c87154",
+    "semantic_hash": ""
+  },
+  "Scripts/test_wg_quick_dns_cleanup.sh": {
+    "mtime": 1794236926.5058727,
+    "seen": 1794240539.3607523,
+    "ast_hash": "aadd2c029d86bbec30b3c21ba3908a2b",
+    "semantic_hash": ""
+  },
+  "Scripts/test_wg_quick_validator_path.sh": {
+    "mtime": 1794236926.5058727,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7532478a39da75d1a49ce11f5d0d6e38",
+    "semantic_hash": ""
+  },
+  "Scripts/test_wiretunnels_identity.sh": {
+    "mtime": 1794236926.5058727,
+    "seen": 1794240539.3607523,
+    "ast_hash": "688c48047504a9121db9ead8e9914247",
+    "semantic_hash": ""
+  },
+  "Scripts/test_xpc_operation_safety.sh": {
+    "mtime": 1794236926.5058727,
+    "seen": 1794240539.3607523,
+    "ast_hash": "0cfbad37cee31c0e74cd6c88b37b4606",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AccentColor.colorset/Contents.json": {
+    "mtime": 1794236926.5318048,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7c6c4faf72d1c130d1093b642a995160",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1794236926.5318048,
+    "seen": 1794240539.3607523,
+    "ast_hash": "198cf6b789e905bc6eb55bddb02dec0f",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/Contents.json": {
+    "mtime": 1794236926.547311,
+    "seen": 1794240539.3607523,
+    "ast_hash": "788c7c19fd10833acb82f96c0eaaaf00",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Helpers/XPC/WireguardHelperProtocol.swift": {
+    "mtime": 1794236926.549424,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c32535fbac14d08f6f34dee0b942f550",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/ConnectTunnelIntent.swift": {
+    "mtime": 1794236926.5504262,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5a0a77185eeea10f63fa99ec28789d5d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/ConnectedTunnelsStatusIntent.swift": {
+    "mtime": 1794236926.5518222,
+    "seen": 1794240539.3607523,
+    "ast_hash": "0729c423ae56700f901a5f4a713d9d32",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/DisconnectAllTunnelsIntent.swift": {
+    "mtime": 1794236926.5518222,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4d61e770732838408d14d4db7b796ec1",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/DisconnectTunnelIntent.swift": {
+    "mtime": 1794236926.5518222,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4302ca749556f053886200f5ac6adc56",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/TunnelEntity.swift": {
+    "mtime": 1794236926.552856,
+    "seen": 1794240539.3607523,
+    "ast_hash": "720c381ba702e2492bcbeec618480a95",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Intents/WireTunnelsShortcuts.swift": {
+    "mtime": 1794236926.552856,
+    "seen": 1794240539.3607523,
+    "ast_hash": "019e86a52a696accb0cbcfb9716eaf24",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/AutoConnectRule.swift": {
+    "mtime": 1794236926.5538836,
+    "seen": 1794240539.3607523,
+    "ast_hash": "bbc040f0faf80a66b2036cb517f865ba",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/HopChain.swift": {
+    "mtime": 1794236926.5538836,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4421c519889055e8a5f1b60200305e85",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/TrafficSample.swift": {
+    "mtime": 1794236926.5549324,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7072b6a65b2f1b1378a92741c085ed8d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/Tunnel.swift": {
+    "mtime": 1794236926.5559635,
+    "seen": 1794240539.3607523,
+    "ast_hash": "57cacdb54eb0a64dc122344de06c575c",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/TunnelStatus.swift": {
+    "mtime": 1794236926.5569956,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a0a0e64b85cc0b02c1a42e548b3c1f00",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/TunnelWarning.swift": {
+    "mtime": 1794236926.5569956,
+    "seen": 1794240539.3607523,
+    "ast_hash": "ab7f830ac6bdc0945f56a56510dda660",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/WireGuardEnvironment.swift": {
+    "mtime": 1794236926.5569956,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9e4385958a0e23bff865e32eddd91d01",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/WireGuardRuntimeStatus.swift": {
+    "mtime": 1794236926.557992,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a95f43d82a10c0e2102c95e87b2789d0",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AppDataResetService.swift": {
+    "mtime": 1794236926.5585198,
+    "seen": 1794240539.3607523,
+    "ast_hash": "eb629a2df73ca827eb9c4f91e2d0a3ec",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AppIntentBridge.swift": {
+    "mtime": 1794236926.5585198,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cb2974476db3c6a61d32919b5584cab0",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AppMigration.swift": {
+    "mtime": 1794236926.5585198,
+    "seen": 1794240539.3607523,
+    "ast_hash": "61a73c9f00789cb741abbcb43db6336c",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AppPaths.swift": {
+    "mtime": 1794236926.5585198,
+    "seen": 1794240539.3607523,
+    "ast_hash": "16f8e4bcaf463aaf4ec6ee8e15e18cb0",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/ConfigStorageService.swift": {
+    "mtime": 1794236926.5600257,
+    "seen": 1794240539.3607523,
+    "ast_hash": "0cfdfc49a94ca588d6a808a1182a8bee",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/DashboardNavigation.swift": {
+    "mtime": 1794236926.5600257,
+    "seen": 1794240539.3607523,
+    "ast_hash": "75e61b6f497d328dd7555706cfa97e3d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/DefaultRouteService.swift": {
+    "mtime": 1794236926.561084,
+    "seen": 1794240539.3607523,
+    "ast_hash": "b581ea707dfd9b596203632e8108280a",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/HopChainRepository.swift": {
+    "mtime": 1794236926.561084,
+    "seen": 1794240539.3607523,
+    "ast_hash": "50448c40a3f3f5718c3320e4f4a678be",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/LogService.swift": {
+    "mtime": 1794236926.5621114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "16ec5cbfa54b72c3157b760b7c8054d1",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/NetworkMonitorService.swift": {
+    "mtime": 1794236926.5632105,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6f3677a57e9fd118a983497e52656036",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/NotificationService.swift": {
+    "mtime": 1794236926.5642438,
+    "seen": 1794240539.3607523,
+    "ast_hash": "daab570c858c25ae0a1655ec9a8ee69f",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/PingService.swift": {
+    "mtime": 1794236926.5642438,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a45204be14e297ca19409783f928c0ff",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/QRCodeService.swift": {
+    "mtime": 1794236926.565247,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cea912c21be53f28fcd018430823f057",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/StatusMonitorService.swift": {
+    "mtime": 1794236926.5662873,
+    "seen": 1794240539.3607523,
+    "ast_hash": "359485ecf3c21ab47b6042f97093130a",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/ThroughputProbeService.swift": {
+    "mtime": 1794236926.5662873,
+    "seen": 1794240539.3607523,
+    "ast_hash": "80f324c0dd58bbeca8fb76a773be7fe1",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelManager.swift": {
+    "mtime": 1794236926.5696416,
+    "seen": 1794240539.3607523,
+    "ast_hash": "ce19df2b68fecf5e55fdff2d2a282cae",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelRepository.swift": {
+    "mtime": 1794236926.5696416,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8d318d7586375e24f9b8bd0a72997e0a",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/UpdaterService.swift": {
+    "mtime": 1794236926.5706747,
+    "seen": 1794240539.3607523,
+    "ast_hash": "493573ad842c6477b74dd6675f933905",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/WireGuardCommandService.swift": {
+    "mtime": 1794236926.5716918,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9d1d218fbf8e612c1fdc20e966c057e1",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/WireGuardConfigParser.swift": {
+    "mtime": 1794236926.5716918,
+    "seen": 1794240539.3607523,
+    "ast_hash": "721d32e2dd72b7c9c54664eee45d3dee",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/WireGuardManifest.swift": {
+    "mtime": 1794236926.5716918,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a2125d34cad2fa21ba534a1a5f4611b7",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/WireGuardToolLocator.swift": {
+    "mtime": 1794236926.572724,
+    "seen": 1794240539.3607523,
+    "ast_hash": "79a74d52647c8d5ef6131c75ff3b715e",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Config/ConfigEditorView.swift": {
+    "mtime": 1794236926.572724,
+    "seen": 1794240539.3607523,
+    "ast_hash": "150f0c07c0361a54df2e5bfc4e946bf8",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Config/ImportConfigView.swift": {
+    "mtime": 1794236926.5737789,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5b84caeae248586d18441b81f938bf14",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Config/NewTunnelView.swift": {
+    "mtime": 1794236926.574792,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9502ba89456add5ad3a87338d0a2fb51",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Config/TemplatePickerView.swift": {
+    "mtime": 1794236926.574792,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d5e4c5873c75366ebfdfca3c6aea8559",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/HopChainView.swift": {
+    "mtime": 1794236926.575877,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c31cae33c774825289bd60a1589fa031",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/MainDashboardView.swift": {
+    "mtime": 1794236926.5769093,
+    "seen": 1794240539.3607523,
+    "ast_hash": "815af36a3b220fab07e4696cd28fb219",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/SetupWizardView.swift": {
+    "mtime": 1794236926.5778947,
+    "seen": 1794240539.3607523,
+    "ast_hash": "620f8ef3459fbab8dccd4e63ef06242c",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/TunnelDetailView.swift": {
+    "mtime": 1794236926.5784464,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4411e018fe6e80d746df8988ba440a29",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/TunnelListView.swift": {
+    "mtime": 1794236926.5795517,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2142519e3ab1ff59fa3a6dea1777ca78",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/TunnelRowView.swift": {
+    "mtime": 1794236926.5795517,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d199c75f1d861e5e25e398bf4a4d600d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/MenuBar/MenuBarView.swift": {
+    "mtime": 1794236926.582114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1f79ad1fb7c34af259479c382985abfc",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Settings/SettingsView.swift": {
+    "mtime": 1794236926.582114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "729b8442f5b88c8f2691244614759ce2",
+    "semantic_hash": ""
+  },
+  "WireTunnels/WireTunnelsApp.swift": {
+    "mtime": 1794236926.5831516,
+    "seen": 1794240539.3607523,
+    "ast_hash": "f0d4680f1daca3f11e26164f49d5a9b5",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/HelperTool.swift": {
+    "mtime": 1794236926.5872853,
+    "seen": 1794240539.3607523,
+    "ast_hash": "88e008046f4371b0893a95f614d99dc2",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/WireguardHelperProtocol.swift": {
+    "mtime": 1794236926.590182,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c32535fbac14d08f6f34dee0b942f550",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/main.swift": {
+    "mtime": 1794236926.5912135,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8bbf065bbcbdbd30da1dcbb270821ecd",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/FMLogo.imageset/Contents.json": {
+    "mtime": 1794236926.5483088,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7098cb9f1d1c06421afea0b5c0ffebac",
+    "semantic_hash": ""
+  },
+  "CHANGELOG.md": {
+    "mtime": 1794236926.4725404,
+    "seen": 1794240539.361966,
+    "ast_hash": "102e58c1f72808567b16f148404cfa91",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1794236926.4725404,
+    "seen": 1794240539.361966,
+    "ast_hash": "adf515d24af93bd884505bd92b88dbd4",
+    "semantic_hash": ""
+  },
+  "Scripts/README.md": {
+    "mtime": 1794236926.473544,
+    "seen": 1794240539.361966,
+    "ast_hash": "7db9f7317bd938806d13d8cb0d7eda6c",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-1024x1024@1x.png": {
+    "mtime": 1794236926.539483,
+    "seen": 1794240539.361966,
+    "ast_hash": "30d00ea78cc4878cd72b32db42736a72",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-128x128@1x.png": {
+    "mtime": 1794236926.5410128,
+    "seen": 1794240539.361966,
+    "ast_hash": "d13bf0facb103f671d476c993c950e5a",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-16x16@1x.png": {
+    "mtime": 1794236926.5410128,
+    "seen": 1794240539.361966,
+    "ast_hash": "8a74876ff18c8e7669100b2a137c19dc",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-256x256@1x 1.png": {
+    "mtime": 1794236926.5410128,
+    "seen": 1794240539.361966,
+    "ast_hash": "271a9b256bb5352eb01d612e5a85c716",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-256x256@1x.png": {
+    "mtime": 1794236926.5420916,
+    "seen": 1794240539.361966,
+    "ast_hash": "271a9b256bb5352eb01d612e5a85c716",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-32x32@1x 1.png": {
+    "mtime": 1794236926.5420916,
+    "seen": 1794240539.361966,
+    "ast_hash": "ca65ec7182922968266bb26f9e7b5272",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-32x32@1x.png": {
+    "mtime": 1794236926.543139,
+    "seen": 1794240539.361966,
+    "ast_hash": "ca65ec7182922968266bb26f9e7b5272",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-32x32@2x.png": {
+    "mtime": 1794236926.543139,
+    "seen": 1794240539.361966,
+    "ast_hash": "7de62cb2cd41810516730b4873958d90",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-512x512@1x 1.png": {
+    "mtime": 1794236926.5452044,
+    "seen": 1794240539.361966,
+    "ast_hash": "c20e12dc5a53b176b1f67e2334c1d36d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/AppIcon.appiconset/WireTunnels_icon-iOS-Dark-512x512@1x.png": {
+    "mtime": 1794236926.5462384,
+    "seen": 1794240539.361966,
+    "ast_hash": "c20e12dc5a53b176b1f67e2334c1d36d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Assets.xcassets/FMLogo.imageset/fm_logo.png": {
+    "mtime": 1794236926.5483088,
+    "seen": 1794240539.361966,
+    "ast_hash": "b0ba2bbdbf7db8250aab6a69bc290587",
+    "semantic_hash": ""
+  },
+  "assets/fm_logo.png": {
+    "mtime": 1794236926.5964537,
+    "seen": 1794240539.361966,
+    "ast_hash": "b0ba2bbdbf7db8250aab6a69bc290587",
+    "semantic_hash": ""
+  },
+  "Scripts/test_client_identity_matching.sh": {
+    "mtime": 1794236926.491349,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6093284e6fed12a32cde55e2ebee4f8f",
+    "semantic_hash": ""
+  },
+  "Scripts/test_split_dns.sh": {
+    "mtime": 1794236926.5028226,
+    "seen": 1794240539.3607523,
+    "ast_hash": "64f9b7e26198f0878e5641b915887ff5",
+    "semantic_hash": ""
+  },
+  "Scripts/dmg-assets/background.png": {
+    "mtime": 1794236926.4881425,
+    "seen": 1794240539.361966,
+    "ast_hash": "ae8e0c3c36d86e5f69ab26efa7b08e3a",
+    "semantic_hash": ""
+  },
+  "Scripts/test_app_routing_contract.sh": {
+    "mtime": 1794236926.4902558,
+    "seen": 1794240539.3607523,
+    "ast_hash": "b3a41db178c42cd7f436e6a04ce68f95",
+    "semantic_hash": ""
+  },
+  "Scripts/test_app_routing_coordinator.sh": {
+    "mtime": 1794236926.4902558,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3327862c992650a35bc8baccbc1b2358",
+    "semantic_hash": ""
+  },
+  "Scripts/test_app_routing_engine.sh": {
+    "mtime": 1794236926.491349,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e48c2829fc27d8f7e6d4fa21e08272c4",
+    "semantic_hash": ""
+  },
+  "Scripts/test_app_routing_model.sh": {
+    "mtime": 1794236926.491349,
+    "seen": 1794240539.3607523,
+    "ast_hash": "59366c88b2319ee39520840d666dd301",
+    "semantic_hash": ""
+  },
+  "Scripts/test_interface_matching.sh": {
+    "mtime": 1794236926.4954967,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1b97801e881d06b8f7d98f5290e946b3",
+    "semantic_hash": ""
+  },
+  "Tests/ConfigNameTests.swift": {
+    "mtime": 1794236926.5112677,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a72d122181080c52b33d7d30efec53f3",
+    "semantic_hash": ""
+  },
+  "Tests/ConfigStorageTests.swift": {
+    "mtime": 1794236926.5112677,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e4f0605b5dd5df9390c4d06d6617e616",
+    "semantic_hash": ""
+  },
+  "Tests/MenuBarSetupNoticeTests.swift": {
+    "mtime": 1794236926.5165248,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1c104c9c7e4163b64275d1d2b428c7a0",
+    "semantic_hash": ""
+  },
+  "Tests/OnDemandEditorTests.swift": {
+    "mtime": 1794236926.5165248,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c592f4fcf541fee67fcb88298e9b003d",
+    "semantic_hash": ""
+  },
+  "Tests/PhysicalNetworkMonitorTests.swift": {
+    "mtime": 1794236926.5184379,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5e2d1dc0a0bff9809786a3b100a81587",
+    "semantic_hash": ""
+  },
+  "Tests/RuntimeConfigLocatorTests.swift": {
+    "mtime": 1794236926.5194786,
+    "seen": 1794240539.3607523,
+    "ast_hash": "90b260a09aa5e26f7aff3cf4a6e43a1f",
+    "semantic_hash": ""
+  },
+  "Tests/SharedEndpointLifecycleTests.swift": {
+    "mtime": 1794236926.5205088,
+    "seen": 1794240539.3607523,
+    "ast_hash": "0c1b771163ee4ba4664f3f538f9f6c2f",
+    "semantic_hash": ""
+  },
+  "Tests/StatusMonitorTests.swift": {
+    "mtime": 1794236926.5205088,
+    "seen": 1794240539.3607523,
+    "ast_hash": "be682d053b8c51e711bb184ba7be4b47",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelConfigLoadingTests.swift": {
+    "mtime": 1794236926.521541,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a1eeaedb8b6eb83000608ce954168754",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelDuplicationTests.swift": {
+    "mtime": 1794236926.5225742,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8adee3bc3e5b8f9aaa93c48d8fa3d217",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelMatchingTests.swift": {
+    "mtime": 1794236926.5225742,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e9d0c047451d88148cb4833869fb6eaf",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelRepositoryTests.swift": {
+    "mtime": 1794236926.5236063,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9133919041a06c1d44d496f201362f86",
+    "semantic_hash": ""
+  },
+  "Tests/run_config_loading_tests.py": {
+    "mtime": 1794236926.5246682,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4b7ef7190cbc2adcb740511a5b66260c",
+    "semantic_hash": ""
+  },
+  "Tests/run_menu_setup_tests.py": {
+    "mtime": 1794236926.5246682,
+    "seen": 1794240539.3607523,
+    "ast_hash": "b29aa4e93692e8ce8741c6cfea65bfd5",
+    "semantic_hash": ""
+  },
+  "Tests/run_metadata_tests.py": {
+    "mtime": 1794236926.5246682,
+    "seen": 1794240539.3607523,
+    "ast_hash": "fa4410415b2472fc46d8f35fb7e97a66",
+    "semantic_hash": ""
+  },
+  "Tests/run_name_tests.py": {
+    "mtime": 1794236926.5257146,
+    "seen": 1794240539.3607523,
+    "ast_hash": "da4810582350ed01ae66d3fc5b6c9e65",
+    "semantic_hash": ""
+  },
+  "Tests/run_network_monitor_tests.py": {
+    "mtime": 1794236926.5257146,
+    "seen": 1794240539.3607523,
+    "ast_hash": "121756b0f7926bdf626f405c24ec1047",
+    "semantic_hash": ""
+  },
+  "Tests/run_on_demand_tests.py": {
+    "mtime": 1794236926.5257146,
+    "seen": 1794240539.3607523,
+    "ast_hash": "77c2f5db2f51c1b0e5b0190656c9b9d0",
+    "semantic_hash": ""
+  },
+  "Tests/run_tests.py": {
+    "mtime": 1794236926.5257146,
+    "seen": 1794240539.3607523,
+    "ast_hash": "12f38eb57f8d3c2c7dcd4cee35d62b34",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/MenuBarSetupNotice.swift": {
+    "mtime": 1794236926.5549324,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2584d0bef33bc6c9ca2e5dcf9506fe10",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/InterfaceAddressCollector.swift": {
+    "mtime": 1794236926.5621114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "658e9f0717723b74b11c77acedee7047",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/PhysicalNetworkSnapshot.swift": {
+    "mtime": 1794236926.5642438,
+    "seen": 1794240539.3607523,
+    "ast_hash": "da66e0693aeb53e52e418239c393fe96",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/RecoverableJSONStore.swift": {
+    "mtime": 1794236926.565247,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e635e70ad32d77ed60b41bb6ee57aae0",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelConfigLoadingState.swift": {
+    "mtime": 1794236926.5673048,
+    "seen": 1794240539.3607523,
+    "ast_hash": "bb6dea9061a4ad46027bb8ce9792d116",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelDuplicationService.swift": {
+    "mtime": 1794236926.5673048,
+    "seen": 1794240539.3607523,
+    "ast_hash": "666860a5ff91254bed7a4eb1eb9400e6",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/OnDemandMatchSection.swift": {
+    "mtime": 1794236926.5769093,
+    "seen": 1794240539.3607523,
+    "ast_hash": "49db86a140ff1e3f84ec5b210a692bda",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/ConfigName.swift": {
+    "mtime": 1794236926.5852506,
+    "seen": 1794240539.3607523,
+    "ast_hash": "463e6d24849aa74f40339acb34f22968",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/RuntimeConfigLocator.swift": {
+    "mtime": 1794236926.5888035,
+    "seen": 1794240539.3607523,
+    "ast_hash": "33cb65f8366cdad66183f04c8d7a24fa",
+    "semantic_hash": ""
+  },
+  "assets/advanced-editor.png": {
+    "mtime": 1794236926.5922441,
+    "seen": 1794240539.361966,
+    "ast_hash": "4e413c119605988969b2e8eab0c6bae6",
+    "semantic_hash": ""
+  },
+  "assets/banner.png": {
+    "mtime": 1794236926.593275,
+    "seen": 1794240539.361966,
+    "ast_hash": "e9cacfd2c85a4a62449578540c646fb4",
+    "semantic_hash": ""
+  },
+  "assets/basic-editor.png": {
+    "mtime": 1794236926.594386,
+    "seen": 1794240539.361966,
+    "ast_hash": "96111db1799f886dff9185cd74d19281",
+    "semantic_hash": ""
+  },
+  "assets/dashboard.png": {
+    "mtime": 1794236926.5964537,
+    "seen": 1794240539.361966,
+    "ast_hash": "9f3d9be8c361216efb0253d5f7e11156",
+    "semantic_hash": ""
+  },
+  "assets/import.png": {
+    "mtime": 1794236926.5980158,
+    "seen": 1794240539.361966,
+    "ast_hash": "267c79b1a467df437bc3c6c17c3e492b",
+    "semantic_hash": ""
+  },
+  "assets/logs-errors.png": {
+    "mtime": 1794236926.600135,
+    "seen": 1794240539.361966,
+    "ast_hash": "7c9ae367a15191b3714cfd707dfeceef",
+    "semantic_hash": ""
+  },
+  "assets/menubar-connected.png": {
+    "mtime": 1794236926.6011655,
+    "seen": 1794240539.361966,
+    "ast_hash": "c9486b8b2517b643caa7af0fb8e4939b",
+    "semantic_hash": ""
+  },
+  "assets/menubar-disconnected.png": {
+    "mtime": 1794236926.6011655,
+    "seen": 1794240539.361966,
+    "ast_hash": "4e04bcb3ffd6130f64bd4d8e14518c2d",
+    "semantic_hash": ""
+  },
+  "assets/settings.png": {
+    "mtime": 1794236926.603231,
+    "seen": 1794240539.361966,
+    "ast_hash": "235e7c4f4406f6b90a1e735311dcb768",
+    "semantic_hash": ""
+  },
+  "assets/template.png": {
+    "mtime": 1794236926.6042569,
+    "seen": 1794240539.361966,
+    "ast_hash": "84ad35669785f89a4ad8c5b00d596d36",
+    "semantic_hash": ""
+  },
+  "assets/tunnel-status.png": {
+    "mtime": 1794236926.6052842,
+    "seen": 1794240539.361966,
+    "ast_hash": "7e2ae82bf836f238c4dc7e68105bf273",
+    "semantic_hash": ""
+  },
+  "Tests/CommandRunnerTests.swift": {
+    "mtime": 1794236926.5102637,
+    "seen": 1794240539.3607523,
+    "ast_hash": "234ac754b7a4c12bc7ea8b1e19ec71d0",
+    "semantic_hash": ""
+  },
+  "Tests/LogServiceTests.swift": {
+    "mtime": 1794236926.5155277,
+    "seen": 1794240539.3607523,
+    "ast_hash": "85a0e98f3a963aabb121f6fee0400192",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/HelperCommandEvent.swift": {
+    "mtime": 1794236926.5538836,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1b19fe102b0a0ab8c839b277056a3bfb",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/CommandRunner.swift": {
+    "mtime": 1794236926.5841882,
+    "seen": 1794240539.3607523,
+    "ast_hash": "53c8947f9ac1fcc9fa7026e1e204ff2e",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/HelperCommandLog.swift": {
+    "mtime": 1794236926.5862553,
+    "seen": 1794240539.3607523,
+    "ast_hash": "76e7d168f066f04a625dc633bd95b580",
+    "semantic_hash": ""
+  },
+  "Tests/DNSRecoveryTests.swift": {
+    "mtime": 1794236926.5112677,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5bf41cdd4cc54b4d7d979a0a113b4d6c",
+    "semantic_hash": ""
+  },
+  "Tests/Fixtures/wg-quick-darwin.bash": {
+    "mtime": 1794236926.5122964,
+    "seen": 1794240539.3607523,
+    "ast_hash": "92c825c53013db2c31dcef0926d31fd4",
+    "semantic_hash": ""
+  },
+  "Tests/Fixtures/wg-quick-source.json": {
+    "mtime": 1794236926.5122964,
+    "seen": 1794240539.3607523,
+    "ast_hash": "ba2a69252efa6e16cacb9e3cbc10b64b",
+    "semantic_hash": ""
+  },
+  "Tests/test_wg_quick_cleanup.py": {
+    "mtime": 1794236926.5267518,
+    "seen": 1794240539.3607523,
+    "ast_hash": "f957e7b89f28e334274650de667897a6",
+    "semantic_hash": ""
+  },
+  "Tests/test_wg_quick_dns.py": {
+    "mtime": 1794236926.5267518,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9edc53e1e00a96b62e585aa595b625fb",
+    "semantic_hash": ""
+  },
+  "Tests/test_wg_quick_dns_recovery.py": {
+    "mtime": 1794236926.5267518,
+    "seen": 1794240539.3607523,
+    "ast_hash": "dc453d9bddbc2448fc45cea7f5c89031",
+    "semantic_hash": ""
+  },
+  "Tests/wg_quick_fixture.py": {
+    "mtime": 1794236926.528286,
+    "seen": 1794240539.3607523,
+    "ast_hash": "089e5fac4882b4539e0fd9bd58df1a90",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/DNSRecoveryService.swift": {
+    "mtime": 1794236926.5862553,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7903503f9e4bf2f30fb8a0497fc82c1c",
+    "semantic_hash": ""
+  },
+  "Tests/README.md": {
+    "mtime": 1794236926.5184379,
+    "seen": 1794240539.361966,
+    "ast_hash": "270b0bd377bd86219087d949ca40e7c4",
+    "semantic_hash": ""
+  },
+  "Tests/AwakeTimeoutTests.swift": {
+    "mtime": 1794236926.5102637,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d62faba67bd23923465c59072d9c79c1",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AwakeTimeout.swift": {
+    "mtime": 1794236926.5600257,
+    "seen": 1794240539.3607523,
+    "ast_hash": "de31a5c03beacf4c6c19b298330614d1",
+    "semantic_hash": ""
+  },
+  "Tests/MenuBarDismissalTests.swift": {
+    "mtime": 1794236926.5165248,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8f9a6e359c64d8f8795fd0274d983a42",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/MenuBarDismissalController.swift": {
+    "mtime": 1794236926.5621114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "aa0885e29c9a1d5852ebe9a3dae5a0d6",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/MenuBar/MenuBarClickAwayDismissal.swift": {
+    "mtime": 1794236926.5805662,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6ba7f6cd543fb6b7e8df3f7ef7cab5de",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelConnectionReadinessTests.swift": {
+    "mtime": 1794236926.521541,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e4373b334047921b37e3df8a9c0ea184",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelShutdownTests.swift": {
+    "mtime": 1794236926.5236063,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7e27974ebe7331bf0a4ac81b276f8f3d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/TunnelConnectionReadiness.swift": {
+    "mtime": 1794236926.5559635,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6591a0ba7f0fb3d44b61ebf81ed3b485",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelShutdownCoordinator.swift": {
+    "mtime": 1794236926.5696416,
+    "seen": 1794240539.3607523,
+    "ast_hash": "991c9cec1eff0df092555b321c71b0c5",
+    "semantic_hash": ""
+  },
+  "Tests/TunnelConnectionFeedbackTests.swift": {
+    "mtime": 1794236926.521541,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3d2b8ecc9dc004fb7feab340684a23dd",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/TunnelConnectionFeedback.swift": {
+    "mtime": 1794236926.5559635,
+    "seen": 1794240539.3607523,
+    "ast_hash": "30996bf512eee66bb8cba77bea1e5daf",
+    "semantic_hash": ""
+  },
+  "Scripts/examples/servers.json": {
+    "mtime": 1794236926.4881425,
+    "seen": 1794240539.3607523,
+    "ast_hash": "84db5e52889d38c458bef7c4fc9be9a7",
+    "semantic_hash": ""
+  },
+  "Scripts/server_ips.py": {
+    "mtime": 1794236926.4892545,
+    "seen": 1794240539.3607523,
+    "ast_hash": "de56d82bce855571d8924081ce6155b3",
+    "semantic_hash": ""
+  },
+  "Shared/InventoryRouting.swift": {
+    "mtime": 1794236926.5091884,
+    "seen": 1794240539.3607523,
+    "ast_hash": "539473e1d99504d7066ddbda4786b9ff",
+    "semantic_hash": ""
+  },
+  "Shared/KillSwitchEntry.swift": {
+    "mtime": 1794236926.5091884,
+    "seen": 1794240539.3607523,
+    "ast_hash": "222aceca37fd88963fb83fbc5eed87cf",
+    "semantic_hash": ""
+  },
+  "Tests/InventoryAppFixture.swift": {
+    "mtime": 1794236926.5144598,
+    "seen": 1794240539.3607523,
+    "ast_hash": "9740677d7153b3fa13a4605f80148ae3",
+    "semantic_hash": ""
+  },
+  "Tests/InventoryRoutingTests.swift": {
+    "mtime": 1794236926.5144598,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7675755f70fbd1c8e349f4c1c9068326",
+    "semantic_hash": ""
+  },
+  "Tests/KillSwitchRulesTests.swift": {
+    "mtime": 1794236926.5155277,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d55a5eacbd5b93ad3b3ed410e4f7959f",
+    "semantic_hash": ""
+  },
+  "Tests/test_inventory_routing.sh": {
+    "mtime": 1794236926.5267518,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a17a9b6b5f5dcb0e1fb5e225ad05534e",
+    "semantic_hash": ""
+  },
+  "Tests/test_server_ips.py": {
+    "mtime": 1794236926.5267518,
+    "seen": 1794240539.3607523,
+    "ast_hash": "6e16a9d2e701999f6c4f2067c66dd087",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/InventoryCommandService.swift": {
+    "mtime": 1794236926.5621114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "b47acfb64a80477d131e522fbc057740",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/TunnelInventoryIntegration.swift": {
+    "mtime": 1794236926.568332,
+    "seen": 1794240539.3607523,
+    "ast_hash": "da78d8754c66e8ab60285907be941b19",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Views/Dashboard/InventorySettingsView.swift": {
+    "mtime": 1794236926.575877,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8a961bc66175d08530b3cfc6bc39811c",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/InventoryInterfaceMonitor.swift": {
+    "mtime": 1794236926.5872853,
+    "seen": 1794240539.3607523,
+    "ast_hash": "67ceac9cc0a6666382fef3f619d2ec03",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/InventoryRouteSocket.swift": {
+    "mtime": 1794236926.5882778,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c48600a41ef4070110bdf608fcdf9825",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/InventoryRoutingService.swift": {
+    "mtime": 1794236926.5882778,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cc9a92525cb59c6bb95bb09de6697011",
+    "semantic_hash": ""
+  },
+  "Scripts/INVENTORY.md": {
+    "mtime": 1794236926.473544,
+    "seen": 1794240539.361966,
+    "ast_hash": "713c2c0bd6a1fb6910594d390b6433ca",
+    "semantic_hash": ""
+  },
+  "Scripts/generate_tool_anchors.sh": {
+    "mtime": 1794236926.4881425,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a46dd2165516e4a9f412a81994463d51",
+    "semantic_hash": ""
+  },
+  "Scripts/test_helper_access_control.sh": {
+    "mtime": 1794236926.4934344,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2ab2897c7c09f7b929d493907de3db33",
+    "semantic_hash": ""
+  },
+  "Tests/EthernetSubnetTests.swift": {
+    "mtime": 1794236926.5112677,
+    "seen": 1794240539.3607523,
+    "ast_hash": "45fe0ae2e0bda4af4fa4078279527b64",
+    "semantic_hash": ""
+  },
+  "Tests/InterfaceAddressCollectorTests.swift": {
+    "mtime": 1794236926.5144598,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4b8934d3a0e644fd9a55aee0fa845b68",
+    "semantic_hash": ""
+  },
+  "Tests/ManagedOnDemandPersistenceTests.swift": {
+    "mtime": 1794236926.5155277,
+    "seen": 1794240539.3607523,
+    "ast_hash": "d99c379102e01ca2c79ba680741ff77b",
+    "semantic_hash": ""
+  },
+  "Tests/NetworkChangeSchedulerTests.swift": {
+    "mtime": 1794236926.5165248,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2612bafe1b3bdca16a45301d206ee6ce",
+    "semantic_hash": ""
+  },
+  "Tests/NetworkPolicyStopTests.swift": {
+    "mtime": 1794236926.5165248,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3d284bdb9ddb2b032a5a205ba28e678d",
+    "semantic_hash": ""
+  },
+  "Tests/ToolInstallerTests.swift": {
+    "mtime": 1794236926.5205088,
+    "seen": 1794240539.3607523,
+    "ast_hash": "e54b4e212d547ea09a0691996e9f1519",
+    "semantic_hash": ""
+  },
+  "Tests/WireGuardDNSTests.swift": {
+    "mtime": 1794236926.5246682,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5e500304c566061b2034a46635ec963e",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/IPSubnet.swift": {
+    "mtime": 1794236926.5549324,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cd292980722ae2b0b37b87a2753d51df",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/AutoConnectNetworkMatcher.swift": {
+    "mtime": 1794236926.5585198,
+    "seen": 1794240539.3607523,
+    "ast_hash": "bf74f6ce81a68d2cf84a8717d4487747",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/NetworkChangeScheduler.swift": {
+    "mtime": 1794236926.5632105,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3e69fd9f744d6f4da01cba94d6f2afb8",
+    "semantic_hash": ""
+  },
+  "WireTunnelsHelper/ToolInstaller.swift": {
+    "mtime": 1794236926.5888035,
+    "seen": 1794240539.3607523,
+    "ast_hash": "ee4a15d556b4a9690e5eb49015677b0b",
+    "semantic_hash": ""
+  },
+  "Tests/IPFamilyLeakDetectorTests.swift": {
+    "mtime": 1794236926.5133286,
+    "seen": 1794240539.3607523,
+    "ast_hash": "141b5b420c72667b26abad84ca0ca507",
+    "semantic_hash": ""
+  },
+  "Tests/IPFamilyLeakFixTests.swift": {
+    "mtime": 1794236926.5133286,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a41f9bfbc53f0fbd2f5d23d23c07ff3e",
+    "semantic_hash": ""
+  },
+  "Tests/IPFamilyRoutingTests.swift": {
+    "mtime": 1794236926.5133286,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2d5ce7385b89d4f98c3d438f86f8dc5e",
+    "semantic_hash": ""
+  },
+  "Tests/RouteLookupTests.swift": {
+    "mtime": 1794236926.5194786,
+    "seen": 1794240539.3607523,
+    "ast_hash": "54e159c059fa1a586c7b71a45bb4e9de",
+    "semantic_hash": ""
+  },
+  "Tests/test_wg_quick_loop_guard.py": {
+    "mtime": 1794236926.528286,
+    "seen": 1794240539.3607523,
+    "ast_hash": "8e181c7d2b871affe94e8e9244cdfe6d",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Models/IPFamilyLeak.swift": {
+    "mtime": 1794236926.5549324,
+    "seen": 1794240539.3607523,
+    "ast_hash": "191aea53599b909794c225518dbed76e",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/IPFamilyLeakFix.swift": {
+    "mtime": 1794236926.561084,
+    "seen": 1794240539.3607523,
+    "ast_hash": "b49d94f98d00931e63b6c70cf8d0200b",
+    "semantic_hash": ""
+  },
+  "WireTunnels/Services/RouteLookupService.swift": {
+    "mtime": 1794236926.5662873,
+    "seen": 1794240539.3607523,
+    "ast_hash": "bf1051bfc4b012cc12c6a3164a683dab",
+    "semantic_hash": ""
+  },
+  "windows/WireTunnels.Windows.sln": {
+    "mtime": 1794241738.4242373,
+    "seen": 1794242480.3218222,
+    "ast_hash": "b55c9355e10f5f29a37b7ed8eec7953d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Cli/Program.cs": {
+    "mtime": 1794321821.653866,
+    "seen": 1794322111.0085468,
+    "ast_hash": "31c03c1e147e15a78ed382af01894745",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Cli/WireTunnels.Cli.csproj": {
+    "mtime": 1794319526.7791772,
+    "seen": 1794320722.263581,
+    "ast_hash": "4c607c696405f1a73ff4ea7932355f9b",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Contracts/Protocol.cs": {
+    "mtime": 1794319872.465751,
+    "seen": 1794320722.263581,
+    "ast_hash": "a3d85f54d6e3bda2275f8fe26cdcf9e1",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Contracts/ServiceClient.cs": {
+    "mtime": 1794319882.6415675,
+    "seen": 1794320722.263581,
+    "ast_hash": "726f1d74d4a1fffa469fd4a68d6107a8",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Contracts/WireTunnels.Contracts.csproj": {
+    "mtime": 1794322696.0937457,
+    "seen": 1794327891.803779,
+    "ast_hash": "d5f852b0eaea5fad5f7a3e42d708f44e",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Config/ConfigName.cs": {
+    "mtime": 1794237319.12089,
+    "seen": 1794240539.3607523,
+    "ast_hash": "387ff358457684d57d0540fc21c42884",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Config/ConfigSafety.cs": {
+    "mtime": 1794237319.1221867,
+    "seen": 1794240539.3607523,
+    "ast_hash": "79a66dc3475580eafd874558c45107a7",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Config/WireGuardConfig.cs": {
+    "mtime": 1794237319.1221867,
+    "seen": 1794240539.3607523,
+    "ast_hash": "a5e85e0c1ea030e2f3b526d1d79b8fea",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Config/WireGuardDns.cs": {
+    "mtime": 1794237319.1221867,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4ba1484f1d69be102b4e4559383bc725",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Config/WireGuardKey.cs": {
+    "mtime": 1794237319.1221867,
+    "seen": 1794240539.3607523,
+    "ast_hash": "04ff79e524e2115de34ca1fed803deeb",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Models/AutoConnectRule.cs": {
+    "mtime": 1794237319.1236916,
+    "seen": 1794240539.3607523,
+    "ast_hash": "2395b8e06d887f35517fd2bfb8754029",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Models/Tunnel.cs": {
+    "mtime": 1794237319.124705,
+    "seen": 1794240539.3607523,
+    "ast_hash": "5d95f9af77fd5a4750f8219191ea86d1",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Models/TunnelWarning.cs": {
+    "mtime": 1794239500.3254325,
+    "seen": 1794240539.3607523,
+    "ast_hash": "43b81aa8ad0ff8dfa65d928e65453763",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Net/IPFamilyRouting.cs": {
+    "mtime": 1794237319.1257455,
+    "seen": 1794240539.3607523,
+    "ast_hash": "384ca0a1cb5a2f86f77e1c8e32a6cf13",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Net/IPPrefix.cs": {
+    "mtime": 1794240960.0005682,
+    "seen": 1794242480.3218222,
+    "ast_hash": "37671ff26994ccddce74d2b990ec9fb6",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Storage/CoreJson.cs": {
+    "mtime": 1794237319.1269076,
+    "seen": 1794240539.3607523,
+    "ast_hash": "eb5fa96c3d5af5d39d91077dc6a519ef",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Storage/RecoverableJsonStore.cs": {
+    "mtime": 1794237319.1269076,
+    "seen": 1794240539.3607523,
+    "ast_hash": "7b9c6866985f3397cb93fd52be803a2d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/WireTunnels.Core.csproj": {
+    "mtime": 1794319526.888886,
+    "seen": 1794320722.263581,
+    "ast_hash": "e87b9fb2504a1e2ca21ba820a8e061e4",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Ipc/PipeServer.cs": {
+    "mtime": 1794320026.6188312,
+    "seen": 1794320722.263581,
+    "ast_hash": "3a89264ec130cd90aebfbcaff83d8945",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Ipc/RequestDispatcher.cs": {
+    "mtime": 1794320951.3536081,
+    "seen": 1794321074.3134038,
+    "ast_hash": "67f153619dc3aad5ba001733176b0a48",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Native/IpHelper.cs": {
+    "mtime": 1794238978.5858037,
+    "seen": 1794240539.3607523,
+    "ast_hash": "4130d59d6b0ff27762ac34a34b9bd518",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Native/WireGuardNative.cs": {
+    "mtime": 1794322698.538906,
+    "seen": 1794327891.803779,
+    "ast_hash": "c78a5bf7ade19be33824827ed98c7335",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Program.cs": {
+    "mtime": 1794322709.1256795,
+    "seen": 1794327891.803779,
+    "ast_hash": "cc48a8f2d5240f1a611383c47c8f1a9b",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/WireGuard/ConfigBlob.cs": {
+    "mtime": 1794241120.620182,
+    "seen": 1794242480.3218222,
+    "ast_hash": "14f20708fb8bad0a8ffea84fc8074b8d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/WireGuard/TunnelRunner.cs": {
+    "mtime": 1794241124.094792,
+    "seen": 1794242480.3218222,
+    "ast_hash": "1df8985ded7482ca22389a346cfcda70",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/WireTunnels.Service.csproj": {
+    "mtime": 1794319917.7479625,
+    "seen": 1794320722.263581,
+    "ast_hash": "2ea25b14422970bf969ab593deb5576c",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/appsettings.json": {
+    "mtime": 1794237319.1337428,
+    "seen": 1794240539.361966,
+    "ast_hash": "efb942c8788e089b2e52cbbff0b04b7e",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Core.Tests/ConfigTests.cs": {
+    "mtime": 1794237319.1337428,
+    "seen": 1794240539.361966,
+    "ast_hash": "2a94b7826958979bdf6c58a18dd77238",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Core.Tests/GlobalUsings.cs": {
+    "mtime": 1794237319.135249,
+    "seen": 1794240539.361966,
+    "ast_hash": "5a6674b5690f598af47ff55d055e5524",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Core.Tests/NetAndModelTests.cs": {
+    "mtime": 1794237319.135249,
+    "seen": 1794240539.361966,
+    "ast_hash": "7ca04b73439c4a11b8dec224e551dc2d",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Core.Tests/WireTunnels.Core.Tests.csproj": {
+    "mtime": 1794319527.0142884,
+    "seen": 1794320722.263581,
+    "ast_hash": "7ff418260b9dd5055415caf09a4b941e",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/GlobalUsings.cs": {
+    "mtime": 1794237319.1368103,
+    "seen": 1794240539.361966,
+    "ast_hash": "5a6674b5690f598af47ff55d055e5524",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/ServiceTests.cs": {
+    "mtime": 1794241228.6772647,
+    "seen": 1794242480.3218222,
+    "ast_hash": "898072baf0a53e1574677abfab591256",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/WireTunnels.Service.Tests.csproj": {
+    "mtime": 1794319527.0449643,
+    "seen": 1794320722.263581,
+    "ast_hash": "2538fdd894170197d2516dbd29b839f1",
+    "semantic_hash": ""
+  },
+  "docs/WINDOWS_PORT_ARCHITECTURE.md": {
+    "mtime": 1794320701.659411,
+    "seen": 1794320722.263581,
+    "ast_hash": "1db27e7412b27b4fb9357c74c014b31d",
+    "semantic_hash": ""
+  },
+  "windows/README.md": {
+    "mtime": 1794323187.3817554,
+    "seen": 1794327891.803779,
+    "ast_hash": "f7f8348df653a1acea414fdafd08d666",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20261105_220515_4b535af1_come_procedere_con_il_porting_windows_di_wiretunne.md": {
+    "mtime": 1794238138.9379404,
+    "seen": 1794240539.361966,
+    "ast_hash": "794de585795263538060d3e9c61fad40",
+    "semantic_hash": ""
+  },
+  "windows/NEXT_STEPS.md": {
+    "mtime": 1794325614.4386797,
+    "seen": 1794327891.803779,
+    "ast_hash": "9cbc78b9358611ea0b5d80af6475653f",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/App.xaml": {
+    "mtime": 1794327409.397305,
+    "seen": 1794327891.803779,
+    "ast_hash": "348ea45cbbdac2f7658f6598db9a8803",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/App.xaml.cs": {
+    "mtime": 1794327421.540881,
+    "seen": 1794327891.803779,
+    "ast_hash": "a4f237f23709fa3b759457a040e1aca3",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Assets/make-icons.ps1": {
+    "mtime": 1794238053.7782018,
+    "seen": 1794240539.3607523,
+    "ast_hash": "0a7748d2cadedd358a8dd2e3342c41f9",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Program.cs": {
+    "mtime": 1794322860.9896216,
+    "seen": 1794327891.803779,
+    "ast_hash": "c2cda20cc01e957a8833715c7ab63024",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Services/WindowsIntegration.cs": {
+    "mtime": 1794321821.8089025,
+    "seen": 1794322111.0085468,
+    "ast_hash": "36c306113e29bc2ed7ead3ee10c62c60",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/ViewModels/ShellViewModel.cs": {
+    "mtime": 1794238053.7814205,
+    "seen": 1794240539.3607523,
+    "ast_hash": "cdf438c41b184fb70a3eb8b63ea38b72",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/ViewModels/TunnelItem.cs": {
+    "mtime": 1794238053.7825272,
+    "seen": 1794240539.3607523,
+    "ast_hash": "23d68b65eccf9e0f3a25888a72212797",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/Controls.cs": {
+    "mtime": 1794327421.4970133,
+    "seen": 1794327891.803779,
+    "ast_hash": "3bbcaae66069f880d5e1940410e2a096",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/FlyoutWindow.xaml": {
+    "mtime": 1794327409.3978364,
+    "seen": 1794327891.803779,
+    "ast_hash": "9e001e9ec2017645c86f7c52de3b9066",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/FlyoutWindow.xaml.cs": {
+    "mtime": 1794238053.7835624,
+    "seen": 1794240539.3607523,
+    "ast_hash": "42a4a9dd8eced315e14308fb97458e0a",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/ImportDialog.cs": {
+    "mtime": 1794326364.6814804,
+    "seen": 1794327891.803779,
+    "ast_hash": "2f4556533f87299d7bf8c8462970392b",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/MainWindow.xaml": {
+    "mtime": 1794327409.3978364,
+    "seen": 1794327891.803779,
+    "ast_hash": "0c81fcdab4d09da4417a5b94b866f6c5",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/MainWindow.xaml.cs": {
+    "mtime": 1794327446.4785597,
+    "seen": 1794327891.803779,
+    "ast_hash": "92ba79f0000d3d691309d1a5024b47a8",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/Pages.cs": {
+    "mtime": 1794326406.5382974,
+    "seen": 1794327891.803779,
+    "ast_hash": "19b3b1788d2f8d34c2a88ea7b7e9ed99",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/TrayIcon.cs": {
+    "mtime": 1794238053.7855747,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1aa15b6e76d407cc7f0de516c3ef9d82",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/TunnelDetailView.xaml": {
+    "mtime": 1794327409.3978364,
+    "seen": 1794327891.803779,
+    "ast_hash": "81e179d26d49f0bd90ee558595840f57",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/TunnelDetailView.xaml.cs": {
+    "mtime": 1794239963.7619114,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3c09c1dd8351fe21d7a142f9c07087a7",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/TunnelEditorDialog.xaml": {
+    "mtime": 1794238053.786577,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1d72e4f8c9646c563011a2cf46eef8a9",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/TunnelEditorDialog.xaml.cs": {
+    "mtime": 1794320394.1373298,
+    "seen": 1794320722.263581,
+    "ast_hash": "8a35dd878b72bcf906d2c8cdb611c3f4",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/WireTunnels.App.csproj": {
+    "mtime": 1794326526.7589233,
+    "seen": 1794327891.803779,
+    "ast_hash": "3d45667c3540214f80ba635a9dc288ac",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/AppPaths.cs": {
+    "mtime": 1794326406.5372932,
+    "seen": 1794327891.803779,
+    "ast_hash": "c794f1647b79a12d81e406c760d2b3e1",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/AppSettings.cs": {
+    "mtime": 1794322771.0577931,
+    "seen": 1794327891.803779,
+    "ast_hash": "4e185f14746474175847382efe5370bf",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/ConfigStore.cs": {
+    "mtime": 1794238053.7890942,
+    "seen": 1794240539.3607523,
+    "ast_hash": "03fc1b390ba942604c8d0de8937e5287",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/ConfigTemplates.cs": {
+    "mtime": 1794238053.7901037,
+    "seen": 1794240539.3607523,
+    "ast_hash": "706cd51f306ed98b32b3c873b2ad23ec",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/ConnectionFeedback.cs": {
+    "mtime": 1794238053.7901037,
+    "seen": 1794240539.3607523,
+    "ast_hash": "3e4fa51c61c40aab381fe80701d1da9e",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/ConnectionTester.cs": {
+    "mtime": 1794238053.7901037,
+    "seen": 1794240539.3607523,
+    "ast_hash": "f76bae44b5f1ad285a65d61a805a9f5b",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/Formatting.cs": {
+    "mtime": 1794238053.7914577,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c9736e57ced4794f9963185960076706",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/LogService.cs": {
+    "mtime": 1794238053.7914577,
+    "seen": 1794240539.3607523,
+    "ast_hash": "416588786232277fcf7fe9b64aae6271",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/ShutdownCoordinator.cs": {
+    "mtime": 1794238053.7924724,
+    "seen": 1794240539.3607523,
+    "ast_hash": "1b75f07b0b28d050bab77d31b8c28bcf",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelManager.cs": {
+    "mtime": 1794321692.4009364,
+    "seen": 1794322111.0085468,
+    "ast_hash": "4fc0c6bb7711de75a800e547496ce580",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelService.cs": {
+    "mtime": 1794320206.5931141,
+    "seen": 1794320722.263581,
+    "ast_hash": "86efc485202ddf55fd4a2ec94e906c0a",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/WireTunnels.Client.csproj": {
+    "mtime": 1794321692.445978,
+    "seen": 1794322111.0085468,
+    "ast_hash": "05c2f4d4236509d48bd5641b71621f3c",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/Fakes.cs": {
+    "mtime": 1794321933.3812041,
+    "seen": 1794322111.0085468,
+    "ast_hash": "ddbc118e0620ba864be3ba1baceb5d42",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/SupportTests.cs": {
+    "mtime": 1794238053.7965634,
+    "seen": 1794240539.361966,
+    "ast_hash": "722251ca80fce4988ae0e29ef22b6737",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/TunnelManagerTests.cs": {
+    "mtime": 1794239814.8851173,
+    "seen": 1794240539.361966,
+    "ast_hash": "b1e310b72de66452b7831943a4525d81",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/WireTunnels.Client.Tests.csproj": {
+    "mtime": 1794319526.9810338,
+    "seen": 1794320722.263581,
+    "ast_hash": "fcfdafafb59eec0fc5413aaa0719db0d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Assets/app-256.png": {
+    "mtime": 1794238053.7751799,
+    "seen": 1794240539.361966,
+    "ast_hash": "cb6e8bce568dc004f150a105c26002ad",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/MultiHopView.cs": {
+    "mtime": 1794240053.4689746,
+    "seen": 1794240539.3607523,
+    "ast_hash": "c161f2d3b67c854cb02c0ae168f3d092",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Views/NetworkSettingsView.cs": {
+    "mtime": 1794321967.635152,
+    "seen": 1794322111.0085468,
+    "ast_hash": "fcff1b59975eecde3f4ed371a3a228cb",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/NetworkInfo.cs": {
+    "mtime": 1794239758.739808,
+    "seen": 1794240539.3607523,
+    "ast_hash": "94623e66d7507ea95c9c1abb0c90c1fa",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelManager.Network.cs": {
+    "mtime": 1794320951.3526092,
+    "seen": 1794321074.3134038,
+    "ast_hash": "147bfdc51a8c5cb99b52ea98fb150bc1",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Core/Net/IPFamilyLeak.cs": {
+    "mtime": 1794239484.8213024,
+    "seen": 1794240539.3607523,
+    "ast_hash": "43bf6bd017d1f73a396fbad1ebe0af80",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Native/Wfp.cs": {
+    "mtime": 1794325521.9676678,
+    "seen": 1794327891.803779,
+    "ast_hash": "b1f20afbf6f9c8b66b5b4d6a03866a72",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Network/Firewall.cs": {
+    "mtime": 1794241111.322572,
+    "seen": 1794242480.3218222,
+    "ast_hash": "7ccba42424ea3fcd5bee7e13c89b613c",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Network/FirewallRules.cs": {
+    "mtime": 1794241103.199329,
+    "seen": 1794242480.3218222,
+    "ast_hash": "0cdf05200268f2a6204dfa30473ab26c",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Network/NetworkPolicy.cs": {
+    "mtime": 1794320013.3057914,
+    "seen": 1794320722.263581,
+    "ast_hash": "5bee92d2b39f851fb1bfedb0ee9aa18f",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Network/SplitDns.cs": {
+    "mtime": 1794238947.318826,
+    "seen": 1794240539.361966,
+    "ast_hash": "079f9031703fca9cf91809aa9445df63",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/NetworkParityTests.cs": {
+    "mtime": 1794239871.0699928,
+    "seen": 1794240539.361966,
+    "ast_hash": "490e88d02d332468216acc6669189c68",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Core.Tests/IPFamilyLeakTests.cs": {
+    "mtime": 1794239545.225744,
+    "seen": 1794240539.361966,
+    "ast_hash": "961d42a221022684cb7421eb0adfaabf",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/LiveNetworkTests.cs": {
+    "mtime": 1794325549.80197,
+    "seen": 1794327891.803779,
+    "ast_hash": "59f793c059aa1e4661dd052d1e28ecf3",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/NetworkTests.cs": {
+    "mtime": 1794320049.06536,
+    "seen": 1794320722.263581,
+    "ast_hash": "365a34774b901b7147d22e1973ae38bb",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/InventoryCommandRunner.cs": {
+    "mtime": 1794241346.869513,
+    "seen": 1794242480.3218222,
+    "ast_hash": "47df9bb62a90d569545d56f612c0f781",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/QrCode.cs": {
+    "mtime": 1794241459.2355757,
+    "seen": 1794242480.3218222,
+    "ast_hash": "057ef748ad3715764f72626312882668",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelManager.Inventory.cs": {
+    "mtime": 1794241476.295042,
+    "seen": 1794242480.3218222,
+    "ast_hash": "125f91d858ef49f8b951d5fad8636f6d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Network/Inventory.cs": {
+    "mtime": 1794320036.893834,
+    "seen": 1794320722.263581,
+    "ast_hash": "961377e3ac370902afafa4d8f7e025e9",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.App.UITests/DashboardTests.cs": {
+    "mtime": 1794242282.6181364,
+    "seen": 1794242480.3218222,
+    "ast_hash": "aedd4538ea79394802a9396fd3d1d328",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.App.UITests/WireTunnels.App.UITests.csproj": {
+    "mtime": 1794319526.9374852,
+    "seen": 1794320722.263581,
+    "ast_hash": "f9b2f035cda513b1dfface4b0787cc29",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/InventoryAndResetTests.cs": {
+    "mtime": 1794241531.33244,
+    "seen": 1794242480.3218222,
+    "ast_hash": "32833da78533489c9aab0f954e874fc3",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/InventoryTests.cs": {
+    "mtime": 1794241292.1149726,
+    "seen": 1794242480.3218222,
+    "ast_hash": "8b73841e304aeb79ad1b624d37188e81",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/Elevation.cs": {
+    "mtime": 1794320187.0359075,
+    "seen": 1794320722.263581,
+    "ast_hash": "50bd3ac30b875700766fe1294643d6b6",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelManager.Managed.cs": {
+    "mtime": 1794326322.6751175,
+    "seen": 1794327891.803779,
+    "ast_hash": "50ec0442035aa3d2a7a90e80a762f3f9",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Ipc/RequestDispatcher.Managed.cs": {
+    "mtime": 1794320164.0527174,
+    "seen": 1794320722.263581,
+    "ast_hash": "02f15dbac8d1d27b0b8e570f1eb9dba9",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Ipc/SessionAwareLifetime.cs": {
+    "mtime": 1794320026.6633844,
+    "seen": 1794320722.263581,
+    "ast_hash": "f531e5a41dba70e0bf6f042c4fc1a0e6",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Managed/ManagedStore.cs": {
+    "mtime": 1794319917.716435,
+    "seen": 1794320722.263581,
+    "ast_hash": "d6c6cc4d8e915d307beae10f5bb169f7",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/Managed/SecureFolder.cs": {
+    "mtime": 1794320036.8625624,
+    "seen": 1794320722.263581,
+    "ast_hash": "bce25beb6069500bf1d5a676f63a4772",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/SharedTunnelTests.cs": {
+    "mtime": 1794326347.199625,
+    "seen": 1794327891.803779,
+    "ast_hash": "1cde19cb814c67809274a4a8c32bbd3d",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Service.Tests/ManagedTests.cs": {
+    "mtime": 1794320951.3536081,
+    "seen": 1794321074.3134038,
+    "ast_hash": "93834fc7a528d951c59a7f9c0b670e1d",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/NetworkMonitor.cs": {
+    "mtime": 1794321619.3331366,
+    "seen": 1794322111.0085468,
+    "ast_hash": "4e70dbd00a9c67fcecc00acd45f31fc1",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/TunnelManager.Automation.cs": {
+    "mtime": 1794321933.3802009,
+    "seen": 1794322111.0085468,
+    "ast_hash": "00844c86e7912070b827e6897ae98336",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Contracts/AppLink.cs": {
+    "mtime": 1794321821.59371,
+    "seen": 1794322111.0085468,
+    "ast_hash": "113a641e68a80ca886442ccad9b35fcb",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/AutomationTests.cs": {
+    "mtime": 1794322008.0824687,
+    "seen": 1794322111.0085468,
+    "ast_hash": "018f6b94e44f40a1ad9cd168c50a99cc",
+    "semantic_hash": ""
+  },
+  "windows/installer/release.ps1": {
+    "mtime": 1794325606.6192985,
+    "seen": 1794327891.803779,
+    "ast_hash": "6959fb95dc66fa9c6c06f1b62df84577",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.App/Services/MacPalette.cs": {
+    "mtime": 1794327409.3498323,
+    "seen": 1794327891.803779,
+    "ast_hash": "f9256f5f2074f3fe9ca70160fe340cde",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Client/Updater.cs": {
+    "mtime": 1794326427.640443,
+    "seen": 1794327891.803779,
+    "ast_hash": "1e55389eac37981a138d3e662e9b5a8a",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Contracts/WinTrust.cs": {
+    "mtime": 1794322696.063042,
+    "seen": 1794327891.803779,
+    "ast_hash": "d58aa2459aed8b180884cdf1bc1af918",
+    "semantic_hash": ""
+  },
+  "windows/src/WireTunnels.Service/UninstallCleanup.cs": {
+    "mtime": 1794325505.3126295,
+    "seen": 1794327891.803779,
+    "ast_hash": "9f5c87c91b551c1e8fe2c6bc5d28c1d9",
+    "semantic_hash": ""
+  },
+  "windows/tests/WireTunnels.Client.Tests/UpdaterTests.cs": {
+    "mtime": 1794326432.3000765,
+    "seen": 1794327891.803779,
+    "ast_hash": "582e22ff5ce9fee82ffd6971fdff6d82",
+    "semantic_hash": ""
+  },
+  "windows/tools/WireTunnels.SignUpdate/Program.cs": {
+    "mtime": 1794322925.0333548,
+    "seen": 1794327891.803779,
+    "ast_hash": "e42c5b9ea65dc23b11881f8d4be7118c",
+    "semantic_hash": ""
+  },
+  "windows/tools/WireTunnels.SignUpdate/WireTunnels.SignUpdate.csproj": {
+    "mtime": 1794322925.0053337,
+    "seen": 1794327891.803779,
+    "ast_hash": "62e7ba124a1da697b6a0124e3df1fd39",
+    "semantic_hash": ""
+  },
+  "windows/installer/README.md": {
+    "mtime": 1794325606.6787007,
+    "seen": 1794327891.803779,
+    "ast_hash": "d3208a9fabb88993ec23d242da2330ad",
+    "semantic_hash": ""
+  }
+}
