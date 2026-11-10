@@ -82,7 +82,7 @@ flowchart LR
 
 | Livello | Scelta raccomandata | Motivo |
 |---|---|---|
-| Linguaggio | **C# / .NET 8 LTS** (o successiva LTS) | Nativo per Windows, P/Invoke diretto su Win32 (IP Helper, WFP, WLAN, NRPT), async/await simile al modello Swift attuale, tooling e test maturi |
+| Linguaggio | **C# / .NET 10 LTS** (inizio su .NET 8, migrato il 2026-11-10) | Nativo per Windows, P/Invoke diretto su Win32 (IP Helper, WFP, WLAN, NRPT), async/await simile al modello Swift attuale, tooling e test maturi |
 | UI | **WinUI 3 (Windows App SDK)** | UI nativa Fluent di Windows 11; equivalente di SwiftUI (XAML + MVVM con `CommunityToolkit.Mvvm`) |
 | Tray icon | `H.NotifyIcon.WinUI` (o `Shell_NotifyIcon` via P/Invoke) | WinUI 3 non ha tray nativa; equivale a `MenuBarExtra` |
 | Motore WireGuard | **wireguard-nt** (`wireguard.dll`, driver kernel ufficiale) | Equivalente di `wireguard-go` ma in kernel; API C per creare adapter, impostare config, leggere statistiche. Più tunnel simultanei = più adapter |
@@ -138,7 +138,7 @@ flowchart LR
 ```text
 WireTunnels.Windows.sln
 ├─ src/
-│  ├─ WireTunnels.Core/          # net8.0, nessuna dipendenza Windows
+│  ├─ WireTunnels.Core/          # net10.0, nessuna dipendenza Windows
 │  │   Models/        Tunnel, AutoConnectRule, HopChain, ManagedTunnelPolicy, SystemSettings, TunnelWarning
 │  │   Config/        WireGuardConfigParser, ConfigSafety (validazione condivisa app/servizio)
 │  │   Net/           IPPrefix, IPSubnet, IPFamilyLeak detector, AutoConnectNetworkMatcher

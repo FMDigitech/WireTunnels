@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using WireTunnels.Core.Models;
 
 namespace WireTunnels.Contracts;
 
@@ -10,7 +11,7 @@ public static class Protocol
 {
     public const string PipeName = "WireTunnels.Service";
     /// Bump on any incompatible change; client and service refuse to talk across revisions.
-    public const string Revision = "3";
+    public const string Revision = "4";
     /// Room for an inventory of 100,000 prefixes (the macOS helper accepts 8 MiB of inventory too).
     public const int MaxMessageBytes = 16 * 1024 * 1024;
 
@@ -69,6 +70,17 @@ public static class Ops
     public const string SyncSplitDns = "syncSplitDNS";
     public const string SyncRoutes = "syncRoutes";
     public const string UpdateInventoryRouting = "updateInventoryRouting";
+    // Shared (managed) tunnels: configs live in the service and never reach a non-admin client.
+    public const string ListManaged = "listManagedTunnels";
+    public const string StartManaged = "startManagedTunnel";
+    public const string GetSystemSettings = "getSystemSettings";
+    // Elevated administrators only (ClientIdentity.IsElevatedAdmin).
+    public const string ReadManaged = "readManagedConfig";
+    public const string InstallManaged = "installManagedTunnel";
+    public const string UpdateManaged = "updateManagedTunnel";
+    public const string DeleteManaged = "deleteManagedTunnel";
+    public const string ListManagedUsers = "listManagedTunnelUsers";
+    public const string SetSystemSettings = "setSystemSettings";
 }
 
 public sealed class Request
@@ -161,6 +173,27 @@ public sealed class SyncRoutesArgs
     /// A tunnel id (exclusions) or a hop-chain id (its host routes).
     public Guid OwnerId { get; set; }
     public List<RouteEntry> Entries { get; set; } = [];
+}
+
+public sealed class ManagedIdArgs
+{
+    public Guid Id { get; set; }
+}
+
+public sealed class InstallManagedArgs
+{
+    public string Name { get; set; } = "";
+    public string Contents { get; set; } = "";
+}
+
+/// Port of updateManagedTunnel: a null Contents keeps the stored config.
+public sealed class UpdateManagedArgs
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string? Contents { get; set; }
+    public ManagedTunnelPolicy Policy { get; set; } = new();
+    public AutoConnectRule AutoConnectRule { get; set; } = new();
 }
 
 public enum InventoryAction { Protect, Apply, Remove }

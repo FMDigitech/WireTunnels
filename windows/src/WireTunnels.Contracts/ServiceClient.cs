@@ -55,17 +55,23 @@ public sealed class ServiceClient : IAsyncDisposable
 
     public async Task<T?> CallAsync<T>(string op, object? args, CancellationToken ct = default)
     {
-        var request = new Request
+        var response = await SendAsync(new Request
         {
-            Id = ++_nextId,
             Op = op,
             Args = args is null ? null : JsonSerializer.SerializeToNode(args, Protocol.Json)?.AsObject(),
-        };
+        }, ct);
+        if (!response.Ok) throw new ServiceException(response.Error ?? "The service reported an error");
+        return response.Data is null ? default : response.Data.Deserialize<T>(Protocol.Json);
+    }
+
+    /// One raw round trip (the elevated helper relays requests as-is); errors stay in the response.
+    public async Task<Response> SendAsync(Request request, CancellationToken ct = default)
+    {
+        request.Id = ++_nextId;
         await Protocol.WriteAsync(_pipe, request, ct);
         var response = await Protocol.ReadAsync<Response>(_pipe, ct) ?? throw new ServiceException("The service closed the connection");
         if (response.Id != request.Id) throw new ServiceException("Out-of-order response from the service");
-        if (!response.Ok) throw new ServiceException(response.Error ?? "The service reported an error");
-        return response.Data is null ? default : response.Data.Deserialize<T>(Protocol.Json);
+        return response;
     }
 
     public Task CallAsync(string op, object? args, CancellationToken ct = default) => CallAsync<JsonNode>(op, args, ct);

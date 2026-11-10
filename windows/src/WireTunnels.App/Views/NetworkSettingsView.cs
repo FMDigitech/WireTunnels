@@ -40,11 +40,12 @@ public sealed class NetworkSettingsView : UserControl
     private void Render()
     {
         var t = _id is { } id ? _manager.Find(id) : null;
-        var signature = t is null ? "" : JsonSerializer.Serialize(new object[]
+        var signature = t is null ? "" : JsonSerializer.Serialize(new object?[]
         {
             t.Id, t.IsActive, t.Scope, t.IsKillSwitchEnabled, t.IpFamilyLeakWarningAcknowledged, t.ExcludedRoutes, t.EffectiveSplitDNSDomains,
             t.Dns, _manager.IsBusy(t.Id), _manager.LeaksOf(t.Id).Select(l => $"{l.Family}{l.Reason}{_manager.FixUnavailableReason(t.Id, l)}"),
             t.InventoryCommand, t.InventoryAllowedIPs.Count, t.InventoryUpdatedAt, _manager.InventoryErrorOf(t.Id), _manager.IsRefreshingInventory(t.Id),
+            t.Name, t.ManagedPolicy,
         });
         if (signature == _shown) return;
         _shown = signature;
@@ -55,6 +56,89 @@ public sealed class NetworkSettingsView : UserControl
         if (t.Scope == TunnelScope.Personal) _root.Children.Add(ExclusionsCard(t));
         _root.Children.Add(SplitDnsCard(t));
         if (t.Scope == TunnelScope.Personal) _root.Children.Add(InventoryCard(t));
+        if (_manager.CanAdminister) _root.Children.Add(t.Scope == TunnelScope.Managed ? SharedAdminCard(t) : MakeSharedCard(t));
+    }
+
+    private bool IsAdminManaged(Tunnel t) => t.Scope == TunnelScope.Managed && _manager.CanAdminister;
+
+    /// A copy of the tunnel's policy with one change, for UpdateManagedPolicyAsync.
+    private static ManagedTunnelPolicy Policy(Tunnel t, Action<ManagedTunnelPolicy> change)
+    {
+        var p = t.ManagedPolicy ?? new();
+        var copy = new ManagedTunnelPolicy
+        {
+            UsersCanConnect = p.UsersCanConnect, UsersCanDisconnect = p.UsersCanDisconnect,
+            KillSwitchEnabled = p.KillSwitchEnabled, SplitDNSDomains = [.. p.SplitDNSDomains],
+        };
+        change(copy);
+        return copy;
+    }
+
+    /// Port of the macOS "Make Shared" action (administrators only).
+    private Border MakeSharedCard(Tunnel t)
+    {
+        var share = new Button { Content = "Make Shared…", IsEnabled = !t.IsActive && !_manager.IsBusy(t.Id) };
+        share.Click += async (_, _) =>
+        {
+            var dialog = new ContentDialog
+            {
+                Title = $"Share \"{t.Name}\" with all users of this PC?",
+                Content = "Every Windows user will see it and can connect it. Its configuration moves to the WireTunnels service, "
+                    + "where only administrators can read or change it, and the personal copy is removed.",
+                PrimaryButtonText = "Make Shared",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary) await RunAsync(() => _manager.MakeSharedAsync(t.Id));
+        };
+        return Card("Sharing", "", Caption(t.IsActive
+            ? "Disconnect the tunnel to share it with the other users of this PC."
+            : "Make this tunnel available to every user of this PC. Windows asks for administrator approval."), share);
+    }
+
+    /// Administrator controls of a shared tunnel: access, connected users, config, delete.
+    private Border SharedAdminCard(Tunnel t)
+    {
+        var policy = t.ManagedPolicy ?? new();
+        var users = new StackPanel { Spacing = 4 };
+        var showUsers = new Button { Content = "Show Connected Users" };
+        showUsers.Click += async (_, _) => await RunAsync(async () =>
+        {
+            var sessions = await _manager.ConnectedUsersAsync(t.Id);
+            users.Children.Clear();
+            if (sessions.Count == 0) users.Children.Add(Caption("Nobody has this tunnel connected."));
+            foreach (var session in sessions) users.Children.Add(Row(session.Username, "", null, () => Task.CompletedTask));
+        });
+        var edit = new Button { Content = "Edit Config…", IsEnabled = !t.IsActive };
+        edit.Click += async (_, _) => await TunnelEditorDialog.EditAsync((App)Application.Current, XamlRoot, t.Id);
+        var delete = new Button { Content = "Delete Shared Tunnel…", IsEnabled = !t.IsActive };
+        delete.Click += async (_, _) =>
+        {
+            var dialog = new ContentDialog
+            {
+                Title = $"Delete the shared tunnel \"{t.Name}\"?",
+                Content = "It is removed for every user of this PC. This action cannot be undone.",
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary) await RunAsync(() => _manager.DeleteManagedAsync(t.Id));
+        };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        buttons.Children.Add(showUsers);
+        buttons.Children.Add(edit);
+        buttons.Children.Add(delete);
+        return Card("Shared Tunnel", "",
+            Caption("Applies to every user of this PC. Each change asks for administrator approval."),
+            Toggle("Users can connect", policy.UsersCanConnect, true,
+                on => _ = RunAsync(() => _manager.UpdateManagedPolicyAsync(t.Id, Policy(t, p => p.UsersCanConnect = on)))),
+            Toggle("Users can disconnect", policy.UsersCanDisconnect, true,
+                on => _ = RunAsync(() => _manager.UpdateManagedPolicyAsync(t.Id, Policy(t, p => p.UsersCanDisconnect = on)))),
+            buttons,
+            users,
+            Caption(t.IsActive ? "Disconnect the tunnel to edit or delete it." : ""));
     }
 
     /// Port of InventorySettingsView.
@@ -120,7 +204,8 @@ public sealed class NetworkSettingsView : UserControl
     private async Task RunAsync(Func<Task> action)
     {
         try { await action(); }
-        catch (Exception e) when (e is InventoryException or ServiceException or IOException or InvalidDataException or System.Security.Cryptography.CryptographicException)
+        catch (Exception e) when (e is InventoryException or ServiceException or IOException or InvalidDataException or InvalidOperationException
+            or ConfigValidationException or System.Security.Cryptography.CryptographicException)
         {
             _manager.ErrorMessage = e.Message;
         }
@@ -153,9 +238,12 @@ public sealed class NetworkSettingsView : UserControl
     {
         var managed = t.Scope == TunnelScope.Managed;
         var items = new List<UIElement>();
-        if (managed) items.Add(Caption("Set by your administrator and applied to all users. You can't change it here."));
-        items.Add(Toggle("Block traffic if this tunnel drops", t.IsKillSwitchEnabled, !managed,
-            on => _ = _manager.UpdateKillSwitchAsync(t.Id, on)));
+        if (IsAdminManaged(t)) items.Add(Caption("Applies to every user of this shared tunnel."));
+        else if (managed) items.Add(Caption("Set by your administrator and applied to all users. You can't change it here."));
+        items.Add(Toggle("Block traffic if this tunnel drops", t.IsKillSwitchEnabled, !managed || IsAdminManaged(t),
+            on => _ = managed
+                ? RunAsync(() => _manager.UpdateManagedPolicyAsync(t.Id, Policy(t, p => p.KillSwitchEnabled = on)))
+                : _manager.UpdateKillSwitchAsync(t.Id, on)));
         items.Add(Caption("Blocks all other network traffic until this tunnel reconnects. Disconnecting it yourself does not trigger a block."));
         if (!managed)
         {
@@ -183,7 +271,7 @@ public sealed class NetworkSettingsView : UserControl
 
     private Border SplitDnsCard(Tunnel t)
     {
-        var editable = t.Scope == TunnelScope.Personal;
+        var editable = t.Scope == TunnelScope.Personal || IsAdminManaged(t);
         var domains = t.EffectiveSplitDNSDomains;
         var items = new List<UIElement>
         {
@@ -231,7 +319,16 @@ public sealed class NetworkSettingsView : UserControl
             if (choice == ContentDialogResult.None) return;
             reconnect = choice == ContentDialogResult.Primary;
         }
-        await _manager.UpdateSplitDnsDomainsAsync(t.Id, domains, reconnect);
+        if (t.Scope == TunnelScope.Personal)
+        {
+            await _manager.UpdateSplitDnsDomainsAsync(t.Id, domains, reconnect);
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            await _manager.UpdateManagedPolicyAsync(t.Id, Policy(t, p => p.SplitDNSDomains = domains));
+            if (reconnect && await _manager.DisconnectAsync(t.Id)) await _manager.ConnectAsync(t.Id);
+        });
     }
 
     // MARK: building blocks

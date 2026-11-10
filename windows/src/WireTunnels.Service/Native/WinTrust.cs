@@ -17,7 +17,7 @@ internal static partial class WinTrust
         if (status != 0) return $"{Path.GetFileName(path)} has no valid Authenticode signature (0x{status:X8})";
         try
         {
-#pragma warning disable SYSLIB0057 // the signer of an embedded signature; no replacement in .NET 8
+#pragma warning disable SYSLIB0057 // the signer of an embedded signature; no replacement in .NET 10
             using var signer = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
 #pragma warning restore SYSLIB0057
             var name = signer.GetNameInfo(X509NameType.SimpleName, forIssuer: false);

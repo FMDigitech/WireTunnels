@@ -152,7 +152,8 @@ public sealed partial class TunnelManager
     private async Task SyncSplitDnsStateAsync(bool force = false)
     {
         if (IsShuttingDown) return;
-        var entries = _tunnels.Where(t => t.IsActive && t.EffectiveSplitDNSDomains.Count > 0).Select(t => new SplitDnsEntry
+        // Shared tunnels' rules are the service's (one set for the machine, not one per user).
+        var entries = _tunnels.Where(t => t.IsActive && t.Scope == TunnelScope.Personal && t.EffectiveSplitDNSDomains.Count > 0).Select(t => new SplitDnsEntry
         {
             OwnerId = t.Id.ToString(),
             Domains = [.. t.EffectiveSplitDNSDomains],

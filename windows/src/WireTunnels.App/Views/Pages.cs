@@ -137,8 +137,16 @@ public sealed class SettingsView : UserControl
             Caption("Configurations are encrypted with your Windows account (DPAPI): other users of this PC cannot read your private keys."),
             openConfigs));
 
-        var launch = Toggle("Launch at Login", "Start WireTunnels in the notification area when you sign in to Windows.", LaunchAtLogin.IsEnabled, on =>
+        StackPanel launch = null!;
+        launch = Toggle("Launch at Login", "Start WireTunnels in the notification area when you sign in to Windows.", LaunchAtLogin.IsEnabled, async on =>
         {
+            // An administrator may require approval to turn it off (system setting, macOS requireAdminToDisableLaunchAtLogin).
+            if (!on && LaunchAtLogin.IsEnabled && !await _app.Manager.AuthorizeDisablingLaunchAtLoginAsync())
+            {
+                ((ToggleSwitch)launch.Children[0]).IsOn = true;
+                _app.Manager.ErrorMessage = "Your administrator requires approval to turn off Launch at Login.";
+                return;
+            }
             try { LaunchAtLogin.Set(on); }
             catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
@@ -150,6 +158,25 @@ public sealed class SettingsView : UserControl
         var notifications = Toggle("Show Notifications", "Notify when tunnels connect, disconnect, or encounter errors.",
             _app.Settings.ShowNotifications, on => { _app.Settings.ShowNotifications = on; _app.SaveSettings(); });
         panel.Children.Add(Section("Behavior", "", launch, background, notifications));
+
+        if (_app.Manager.CanAdminister)
+        {
+            StackPanel require = null!;
+            require = Toggle("Require an Administrator to Turn Off Launch at Login",
+                "Applies to every user of this PC. Changing it asks for administrator approval.",
+                _app.Manager.SystemSettings.RequireAdminToDisableLaunchAtLogin, async on =>
+                {
+                    if (on == _app.Manager.SystemSettings.RequireAdminToDisableLaunchAtLogin) return;
+                    try { await _app.Manager.SetRequireAdminToDisableLaunchAtLoginAsync(on); }
+                    catch (Exception e) when (e is Contracts.ServiceException or IOException or UnauthorizedAccessException)
+                    {
+                        _app.Manager.ErrorMessage = $"Unable to change the setting: {e.Message}";
+                        ((ToggleSwitch)require.Children[0]).IsOn = !on;
+                    }
+                });
+            panel.Children.Add(Section("Administrator", "", require,
+                Caption("Shared tunnels are managed from their detail pane: Make Shared on a personal tunnel, then set who can connect and disconnect it.")));
+        }
 
         var reset = new Button { Content = "Reset…" };
         AutomationProperties.SetName(reset, "Reset App Data");

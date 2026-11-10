@@ -4,7 +4,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
 using WireTunnels.Core.Net;
+using WireTunnels.Core.Models;
+using WireTunnels.Core.Storage;
 using WireTunnels.Service.Ipc;
+using WireTunnels.Service.Managed;
 using WireTunnels.Service.Network;
 using WireTunnels.Service.WireGuard;
 
@@ -50,6 +53,21 @@ internal sealed class FakeBackend : ITunnelBackend
     public IReadOnlySet<ulong> Luids => _luids.Values.ToHashSet();
 }
 
+internal sealed class FakeManagedStore : IManagedStore
+{
+    public List<Tunnel> Records = [];
+    public readonly Dictionary<Guid, string> Configs = [];
+    public SystemSettings Settings = new();
+    private static Tunnel Copy(Tunnel t) => JsonSerializer.Deserialize<Tunnel>(JsonSerializer.Serialize(t, CoreJson.Options), CoreJson.Options)!;
+    public List<Tunnel> Load() => Records.Select(Copy).ToList();
+    public void Save(IReadOnlyList<Tunnel> records) => Records = records.Select(Copy).ToList();
+    public string ReadConfig(Guid id) => Configs.TryGetValue(id, out var c) ? c : throw new InvalidDataException("missing");
+    public void WriteConfig(Guid id, string contents) => Configs[id] = contents;
+    public void DeleteConfig(Guid id) => Configs.Remove(id);
+    public SystemSettings LoadSettings() => Settings;
+    public void SaveSettings(SystemSettings settings) => Settings = settings;
+}
+
 /// Records what the policy asks of the firewall, NRPT, routing table and journal.
 internal sealed class NetworkFakes : IFirewall, INrptStore, IRouteTable, IJournal, IInventoryStore
 {
@@ -57,8 +75,9 @@ internal sealed class NetworkFakes : IFirewall, INrptStore, IRouteTable, IJourna
     List<InventoryRecord> IInventoryStore.Load() => Saved.Select(r => r.Copy()).ToList();
     void IInventoryStore.Save(IReadOnlyList<InventoryRecord> records) => Saved = records.Select(r => r.Copy()).ToList();
     public InventoryPolicy Inventory(ITunnelBackend backend) => new(backend, this, this, this, NullLogger<InventoryPolicy>.Instance);
+    public readonly FakeManagedStore Managed = new();
     public RequestDispatcher Dispatcher(ITunnelBackend backend) =>
-        new(backend, Policy(backend), Inventory(backend), NullLogger<RequestDispatcher>.Instance);
+        new(backend, Policy(backend), Inventory(backend), Managed, NullLogger<RequestDispatcher>.Instance);
 
     public const ulong PhysicalLuid = 1;
     public IReadOnlyList<KillSwitchRule> KillSwitch = [];

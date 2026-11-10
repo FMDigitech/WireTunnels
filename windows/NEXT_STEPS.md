@@ -1,7 +1,7 @@
 # WireTunnels for Windows — next steps (phase 3 onward)
 
-State on 2026-11-09, branch `windows-port`: phases 1–4 done (phase 3 except what needs phases 5–6); 223 unit tests,
-7 opt-in live network tests, 5 opt-in UI tests.
+State on 2026-11-10, branch `windows-port`: phases 1–5 done (phase 3 except the On-Demand section, phase 6), on .NET 10;
+244 unit tests, 7 opt-in live network tests, 5 opt-in UI tests.
 Architecture and rationale: [`../docs/WINDOWS_PORT_ARCHITECTURE.md`](../docs/WINDOWS_PORT_ARCHITECTURE.md).
 Every phase: port the macOS behaviour (the Swift code and `Tests/`, `Scripts/test_*.sh` are the spec),
 add xUnit tests for the new logic, keep `dotnet test` green, run `graphify update .` after code changes.
@@ -60,7 +60,9 @@ disconnect all then exit, setup wizard when the service is unreachable, settings
   Login), UI smoke tests with FlaUI (`tests/WireTunnels.App.UITests`, opt-in; they run the installed app on a
   throw-away data folder through `WIRETUNNELS_DATA_DIR`, which also gives that app its own single-instance key).
   The UI tests found a crash: rebuilding the Settings page re-parented a TextBlock (stowed exception 0xc000027b).
-- .NET 8 support ends on 2026-11-10: plan the move of the whole solution to .NET 10 LTS (then H.NotifyIcon 2.4).
+- **Moved to .NET 10 LTS on 2026-11-10** (.NET 8 support ended that day): every project targets `net10.0`, Microsoft
+  packages 10.0.14, H.NotifyIcon.WinUI 2.4.1. `MVVMTK0045` is suppressed in the app: `[ObservableProperty]` on fields
+  only matters for Native AOT, which the app does not use. UI tests pass against the installed .NET 10 build.
 
 Original plan:
 
@@ -132,6 +134,36 @@ Add ops to `Contracts/Protocol.cs` (bump `Protocol.Revision`) and handlers in `R
 8. IP-family leak detector (`Models/IPFamilyLeak.swift`, `Services/IPFamilyLeakFix.swift`) into Core + warnings.
 
 ## 5. Multi-user (managed shared tunnels)
+
+**Done on 2026-11-10.** Protocol revision 4. Service: `Managed/ManagedStore.cs` (`%ProgramData%\WireTunnels\managed\`
+`tunnels.json`, `settings.json`, `configs\<id>.conf.dpapi`, DPAPI LocalMachine inside the SYSTEM + Administrators folder,
+`Managed/SecureFolder.cs` now shared with the inventory store), `Ipc/RequestDispatcher.Managed.cs`, `Ipc/SessionAwareLifetime.cs`.
+CLI: `wiretunnels elevated <request> <response file>` (the UAC helper). Client: `Elevation.cs`, `TunnelManager.Managed.cs`.
+App: Sharing / Shared Tunnel cards in the detail pane, admin kill switch and split DNS for shared tunnels, editing a shared
+config, Settings > Administrator. Verified on this PC through the installed service and the relay: install, sanitized list
+(no private key), policy with split DNS (NRPT rule, no adapter DNS), start, status, connected users, read, ACL
+SYSTEM + Administrators, config not in plain text, stop (adapter and NRPT gone), delete. Not verified live: the UAC prompt
+from a non-elevated app (needs a person) and the rejection of a non-elevated caller (unit tests only). Decisions:
+- A shared tunnel is **machine-wide**: once up it is up for every user and all of them see it. "Disconnect" stops it for
+  everyone, as the policy allows. As on macOS, Quit and Reset App Data disconnect shared tunnels too (a policy that forbids
+  disconnecting makes the quit fail with Retry / Cancel), and so does a logoff (macOS quits the app at logout).
+- No staging: users start a shared tunnel by id (`startManagedTunnel`) and the service reads its own copy, so the config
+  never reaches a non-admin client. Connected users are tracked by the service on start (no mark ops) and kept in memory
+  only (the adapters do not outlive the service either).
+- Its split DNS is applied by the service (one NRPT rule set per tunnel); the apps skip shared tunnels in `syncSplitDNS`,
+  otherwise two users' apps would conflict over the same domains. Its kill switch is still armed by each user's app.
+- A record is a Core `Tunnel` with `Scope = Managed` whose `ConfigPath` holds the adapter alias; renaming or replacing the
+  config, and deleting, require it to be disconnected. A personal tunnel cannot take a shared tunnel's alias.
+- Admin ops need an elevated token: the app runs `wiretunnels.exe elevated` through UAC with the request on the command
+  line (it cannot be changed after approval), and reads the response from `%LOCALAPPDATA%\WireTunnels\elevated`.
+  Admin controls are shown to administrator accounts only (split token or elevated); a standard user does not see them.
+- Logoff (`SERVICE_CONTROL_SESSIONCHANGE`): when a user's last known session ends, their personal tunnels stop, running
+  shared tunnels that users may disconnect stop, and their kill switch, split DNS and routes are dropped. A session is "known" once the app or CLI talked to the service from it.
+  No `PRESHUTDOWN` handler: shutdown stops the service, and a clean stop already removes everything.
+- Not ported: importing a `.conf` straight as shared (import it, then Make Shared), the On-Demand rule of a shared tunnel
+  (phase 6; the field is stored and passed through).
+
+Original plan:
 
 1. `%ProgramData%\WireTunnels\managed\{configs,metadata}` with ACL SYSTEM + Administrators; configs DPAPI LocalMachine.
 2. Ops from the macOS protocol: List/Read/Install/Update/Delete managed, StageManaged, Mark connected/disconnected, ListManagedTunnelUsers, Get/SetSystemSettings. Writes and `ReadManaged` need `ClientIdentity.IsElevatedAdmin`; users get sanitized metadata only.

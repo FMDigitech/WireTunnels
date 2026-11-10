@@ -1,12 +1,11 @@
 using System.Net;
 using System.Runtime.Versioning;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text.Json;
 using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
 using WireTunnels.Core.Net;
 using WireTunnels.Service.Ipc;
+using WireTunnels.Service.Managed;
 using WireTunnels.Service.WireGuard;
 
 namespace WireTunnels.Service.Network;
@@ -229,46 +228,18 @@ internal sealed class InventoryPolicy(ITunnelBackend backend, IFirewall firewall
 [SupportedOSPlatform("windows")]
 internal sealed class ProgramDataInventoryStore : IInventoryStore
 {
-    private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
-    private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
-
-    private readonly string _directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WireTunnels");
-    private string PolicyFile => Path.Combine(_directory, "inventory.json");
+    private static string PolicyFile => Path.Combine(SecureFolder.Root, "inventory.json");
 
     public List<InventoryRecord> Load()
     {
         if (!File.Exists(PolicyFile)) return [];
-        EnsureSecureDirectory();
+        SecureFolder.Ensure();
         return JsonSerializer.Deserialize<List<InventoryRecord>>(File.ReadAllText(PolicyFile), Protocol.Json) ?? [];
     }
 
     public void Save(IReadOnlyList<InventoryRecord> records)
     {
-        EnsureSecureDirectory();
-        var temp = PolicyFile + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(records, Protocol.Json));
-        File.Move(temp, PolicyFile, overwrite: true);
-    }
-
-    /// ProgramData lets any user create folders: a WireTunnels folder someone else created is refused,
-    /// and ours always gets a protected ACL (no inheritance from ProgramData).
-    private void EnsureSecureDirectory()
-    {
-        var security = new DirectorySecurity();
-        security.SetOwner(Administrators);
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        foreach (var sid in new[] { LocalSystem, Administrators })
-            security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-        var info = new DirectoryInfo(_directory);
-        if (!info.Exists)
-        {
-            info.Create(security);
-            return;
-        }
-        var owner = info.GetAccessControl().GetOwner(typeof(SecurityIdentifier));
-        if (owner != LocalSystem && owner != Administrators)
-            throw new UnauthorizedAccessException($"{_directory} is owned by another account; remove it so the service can recreate it");
-        info.SetAccessControl(security);
+        SecureFolder.Ensure();
+        SecureFolder.WriteAtomically(PolicyFile, JsonSerializer.Serialize(records, Protocol.Json));
     }
 }

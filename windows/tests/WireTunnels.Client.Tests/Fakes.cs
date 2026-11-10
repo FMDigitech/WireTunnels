@@ -89,6 +89,64 @@ internal sealed class FakeTunnelService : ITunnelService
         return Task.CompletedTask;
     }
 
+    public List<Tunnel> Managed = [];
+    public readonly Dictionary<Guid, string> ManagedConfigs = [];
+    public readonly List<string> AdminCalls = [];
+    public Exception? FailAdmin;
+    public SystemSettings Settings = new();
+
+    public Task<IReadOnlyList<Tunnel>> ListManagedAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Tunnel>>(Managed.Select(t => System.Text.Json.JsonSerializer.Deserialize<Tunnel>(
+            System.Text.Json.JsonSerializer.Serialize(t, Protocol.Json), Protocol.Json)!).ToList());
+
+    public Task StartManagedAsync(Guid id, CancellationToken ct = default)
+    {
+        var record = Managed.Single(t => t.Id == id);
+        Calls.Add($"start shared {record.ConfigPath}");
+        Running[record.ConfigPath] = ManagedConfigs[id];
+        return Task.CompletedTask;
+    }
+
+    public Task<SystemSettings> GetSystemSettingsAsync(CancellationToken ct = default) => Task.FromResult(Settings);
+
+    /// Plays the service's part of each admin op (the real service validates and authorizes).
+    public Task<T?> AdminAsync<T>(string op, object? args, CancellationToken ct = default)
+    {
+        AdminCalls.Add(op);
+        if (FailAdmin is { } e) return Task.FromException<T?>(e);
+        object? result = null;
+        switch (args)
+        {
+            case InstallManagedArgs install:
+                var parsed = WireGuardConfig.Parse(install.Contents);
+                var record = new Tunnel
+                {
+                    Name = install.Name, ConfigPath = ConfigName.FileBaseName(install.Name), Scope = TunnelScope.Managed, ManagedPolicy = new(),
+                    Dns = [.. parsed.Dns], Endpoint = parsed.PrimaryPeer?.Endpoint, AllowedIPs = [.. parsed.PrimaryPeer?.AllowedIPs ?? []],
+                };
+                Managed.Add(record);
+                ManagedConfigs[record.Id] = install.Contents;
+                result = record;
+                break;
+            case UpdateManagedArgs update:
+                var target = Managed.Single(t => t.Id == update.Id);
+                target.Name = update.Name;
+                target.ManagedPolicy = update.Policy;
+                if (update.Contents is { } c) ManagedConfigs[target.Id] = c;
+                break;
+            case ManagedIdArgs id when op == Ops.ReadManaged:
+                result = ManagedConfigs[id.Id];
+                break;
+            case ManagedIdArgs id when op == Ops.DeleteManaged:
+                Managed.RemoveAll(t => t.Id == id.Id);
+                break;
+            case SystemSettings settings:
+                Settings = settings;
+                break;
+        }
+        return Task.FromResult((T?)result);
+    }
+
     public Task SyncRoutesAsync(Guid ownerId, IReadOnlyList<RouteEntry> entries, CancellationToken ct = default)
     {
         Calls.Add($"routes {string.Join(",", entries.Select(e => e.Cidr + (e.Tunnel is { } t ? "@" + t : "")))}");

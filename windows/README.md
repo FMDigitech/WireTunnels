@@ -9,18 +9,17 @@ Next phases, step by step: [`NEXT_STEPS.md`](NEXT_STEPS.md).
 |---|---|
 | `src/WireTunnels.Core` | Platform-neutral logic: models (same JSON as macOS `tunnels.json`), `.conf` parser and validation, DNS, IP prefixes, on-demand matching, warnings, recoverable JSON store, X25519 keys |
 | `src/WireTunnels.Contracts` | Named-pipe protocol (framing, operations, DTOs) and `ServiceClient` |
-| `src/WireTunnels.Service` | Windows Service (LocalSystem): pipe server with per-user authorization, wireguard-nt adapters, addresses, routes, metric/MTU, DNS; kill switch and DNS leak guard (WFP), split DNS (NRPT), excluded and multi-hop routes |
-| `src/WireTunnels.Cli` | `wiretunnels.exe connect / disconnect / status / genkey` |
+| `src/WireTunnels.Service` | Windows Service (LocalSystem): pipe server with per-user authorization, wireguard-nt adapters, addresses, routes, metric/MTU, DNS; kill switch and DNS leak guard (WFP), split DNS (NRPT), excluded and multi-hop routes; shared tunnels for all users; logoff cleanup |
+| `src/WireTunnels.Cli` | `wiretunnels.exe connect / disconnect / status / genkey`, plus `elevated` (the UAC helper the app uses for administrator actions) |
 | `src/WireTunnels.Client` | App logic without UI (port of `TunnelManager.swift`): tunnels, connect/disconnect, status polling, kill switch, split DNS, exclusions, multi-hop, IPv4/IPv6 leaks, DPAPI-encrypted config store, log, quit |
 | `src/WireTunnels.App` | `WireTunnels.App.exe`, WinUI 3: notification-area icon + flyout, dashboard, import / new / edit, setup wizard, settings, log |
 | `tests/*` | xUnit; Core, Service and Client tests run on any OS |
 
-Not yet implemented (see the plan in the architecture doc): managed shared tunnels, on-demand rules,
-session/logoff handling, installer, updater.
+Not yet implemented (see the plan in the architecture doc): on-demand rules, installer, updater.
 
 ## Build and test
 
-Requires the .NET 8 SDK.
+Requires the .NET 10 SDK.
 
 ```powershell
 dotnet test
@@ -60,6 +59,9 @@ It is named `WireTunnels.App.exe` because NTFS is case-insensitive and the CLI i
    ```
    Release builds of the service only accept the app and the CLI from its own folder; a Debug app run from
    `bin\` shows the setup wizard with "refused the connection".
+
+Shared tunnels live in `%ProgramData%\WireTunnels\managed` (SYSTEM and Administrators only, configs encrypted with DPAPI
+for the machine). Administrator actions in the app ask for UAC approval and need `wiretunnels.exe` next to the app.
 
 The app stores its data in `%LOCALAPPDATA%\WireTunnels` (configs encrypted with DPAPI for the current user,
 `metadata\tunnels.json` in the macOS JSON shape, `logs\WireTunnels.log`). `WIRETUNNELS_TRACE_EXCEPTIONS=1` logs

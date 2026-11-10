@@ -139,6 +139,15 @@ internal sealed class NetworkPolicy(ITunnelBackend backend, IFirewall firewall, 
         Save();
     }
 
+    /// The user logged off: drop their kill switch, split DNS rules and routes.
+    public void ForgetUser(string sid)
+    {
+        foreach (var key in _routes.Keys.Where(k => k.Sid == sid).ToList())
+            SyncRoutes(sid, key.Owner, []);
+        SplitDns.Sync(nrpt, sid, new Dictionary<string, IReadOnlyList<string>>());
+        if (_killSwitch.ContainsKey(sid)) SyncKillSwitch(sid, []);
+    }
+
     /// A clean service stop (also at Windows shutdown) leaves nothing behind: the stop is deliberate.
     public void Shutdown()
     {

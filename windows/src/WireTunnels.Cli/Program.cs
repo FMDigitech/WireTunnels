@@ -1,4 +1,4 @@
-﻿using WireTunnels.Contracts;
+using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
 
 // wiretunnels: drive the service without the app (automation, scripts, PowerToys Run, Task Scheduler).
@@ -46,6 +46,28 @@ try
             }
             return 0;
         }
+        case ["elevated", var encoded, var responsePath]:
+        {
+            // Run by the app through UAC for shared-tunnel admin ops: relays one request with this (elevated) token.
+            // The request comes on the command line, so it cannot change after the user approved the prompt.
+            var full = Path.GetFullPath(responsePath);
+            var allowed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WireTunnels") + Path.DirectorySeparatorChar;
+            if (!full.StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) return Fail("Invalid response path");
+            var request = System.Text.Json.JsonSerializer.Deserialize<Request>(Convert.FromBase64String(encoded), Protocol.Json)
+                ?? throw new InvalidDataException("Empty request");
+            Response response;
+            try
+            {
+                await using var client = await Connect();
+                response = await client.SendAsync(request);
+            }
+            catch (ServiceException e)
+            {
+                response = new Response { Error = e.Message };
+            }
+            await File.WriteAllBytesAsync(full, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(response, Protocol.Json));
+            return 0;
+        }
         case ["genkey"]:
         {
             var (priv, pub) = WireGuardKey.Generate();
@@ -57,7 +79,7 @@ try
             return 2;
     }
 }
-catch (Exception e) when (e is ServiceException or IOException or UnauthorizedAccessException)
+catch (Exception e) when (e is ServiceException or IOException or UnauthorizedAccessException or FormatException or System.Text.Json.JsonException)
 {
     return Fail(e.Message);
 }

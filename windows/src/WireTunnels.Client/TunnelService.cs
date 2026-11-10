@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.ServiceProcess;
 using WireTunnels.Contracts;
+using WireTunnels.Core.Models;
 
 namespace WireTunnels.Client;
 
@@ -19,10 +20,18 @@ public interface ITunnelService
     Task SyncSplitDnsAsync(IReadOnlyList<SplitDnsEntry> entries, CancellationToken ct = default);
     Task SyncRoutesAsync(Guid ownerId, IReadOnlyList<RouteEntry> entries, CancellationToken ct = default);
     Task UpdateInventoryAsync(InventoryRoutingRequest request, CancellationToken ct = default);
+    /// Shared tunnels: sanitized records, visible to every user.
+    Task<IReadOnlyList<Tunnel>> ListManagedAsync(CancellationToken ct = default);
+    /// The service starts it from its own copy of the config (users never see it).
+    Task StartManagedAsync(Guid id, CancellationToken ct = default);
+    Task<SystemSettings> GetSystemSettingsAsync(CancellationToken ct = default);
+    /// An administrator op (Ops.ReadManaged, InstallManaged, ...): elevated through UAC when the app is not.
+    Task<T?> AdminAsync<T>(string op, object? args, CancellationToken ct = default);
 }
 
 /// One pipe connection shared by the whole app. Calls are serialized (a pipe carries one
 /// request at a time) and a dropped connection is reopened once, e.g. after a service restart.
+[SupportedOSPlatform("windows")]
 public sealed class PipeTunnelService : ITunnelService, IAsyncDisposable
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
@@ -46,6 +55,26 @@ public sealed class PipeTunnelService : ITunnelService, IAsyncDisposable
 
     public Task UpdateInventoryAsync(InventoryRoutingRequest request, CancellationToken ct = default) =>
         Send(Ops.UpdateInventoryRouting, request, ct);
+
+    public async Task<IReadOnlyList<Tunnel>> ListManagedAsync(CancellationToken ct = default) =>
+        await CallAsync(async c => await c.CallAsync<List<Tunnel>>(Ops.ListManaged, null, ct) ?? [], ct);
+
+    public Task StartManagedAsync(Guid id, CancellationToken ct = default) => Send(Ops.StartManaged, new ManagedIdArgs { Id = id }, ct);
+
+    public async Task<SystemSettings> GetSystemSettingsAsync(CancellationToken ct = default) =>
+        await CallAsync(async c => await c.CallAsync<SystemSettings>(Ops.GetSystemSettings, null, ct) ?? new(), ct);
+
+    public async Task<T?> AdminAsync<T>(string op, object? args, CancellationToken ct = default)
+    {
+        if (Elevation.IsElevated) return await CallAsync(c => c.CallAsync<T>(op, args, ct), ct);
+        var response = await Elevation.RelayAsync(new Request
+        {
+            Op = op,
+            Args = args is null ? null : System.Text.Json.JsonSerializer.SerializeToNode(args, Protocol.Json)?.AsObject(),
+        }, ct);
+        if (!response.Ok) throw new ServiceException(response.Error ?? "The service reported an error");
+        return response.Data is null ? default : System.Text.Json.JsonSerializer.Deserialize<T>(response.Data, Protocol.Json);
+    }
 
     private Task Send(string op, object args, CancellationToken ct) =>
         CallAsync(async c => { await c.CallAsync(op, args, ct); return true; }, ct);

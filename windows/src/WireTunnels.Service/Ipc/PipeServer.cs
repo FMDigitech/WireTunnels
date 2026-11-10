@@ -93,7 +93,8 @@ internal sealed partial class PipeServer(RequestDispatcher dispatcher, ILogger<P
             using var token = new WindowsIdentity(raw);
             // Under UAC a non-elevated admin token has Administrators as deny-only, so IsInRole is false.
             return new ClientIdentity(token.User!.Value, token.Name,
-                new WindowsPrincipal(token).IsInRole(WindowsBuiltInRole.Administrator));
+                new WindowsPrincipal(token).IsInRole(WindowsBuiltInRole.Administrator),
+                GetNamedPipeClientSessionId(pipe.SafePipeHandle, out var session) ? (int)session : -1);
         }
         finally
         {
@@ -135,6 +136,10 @@ internal sealed partial class PipeServer(RequestDispatcher dispatcher, ILogger<P
         }
 #endif
     }
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetNamedPipeClientSessionId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint sessionId);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

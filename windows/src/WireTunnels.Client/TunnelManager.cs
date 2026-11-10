@@ -34,6 +34,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
     private readonly INetworkInfo _network;
     private readonly IInventoryRunner _inventory;
     private readonly RecoverableJsonStore<List<HopChain>>? _hopChainStore;
+    private readonly Func<bool> _canAdminister;
     private readonly ConnectionFeedback _feedback = new();
     private readonly ShutdownCoordinator _shutdown = new();
     private readonly HashSet<Guid> _connecting = [];
@@ -51,8 +52,10 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
 
     public TunnelManager(ITunnelService service, IServiceProbe probe, ConfigStore configs, RecoverableJsonStore<List<Tunnel>> store,
         LogService log, INotifier notifier, Func<bool> notificationsEnabled, TimeProvider? time = null,
-        INetworkInfo? network = null, RecoverableJsonStore<List<HopChain>>? hopChains = null, IInventoryRunner? inventory = null)
+        INetworkInfo? network = null, RecoverableJsonStore<List<HopChain>>? hopChains = null, IInventoryRunner? inventory = null,
+        Func<bool>? canAdminister = null)
     {
+        _canAdminister = canAdminister ?? (() => false);
         _inventory = inventory ?? new InventoryCommandRunner();
         _network = network ?? new SystemNetworkInfo();
         _hopChainStore = hopChains;
@@ -126,6 +129,11 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             _log.Info($"Loaded {_tunnels.Count} tunnel(s)");
             LoadHopChains();
             await RefreshServiceStateAsync();
+            if (SetupState == SetupState.Ready)
+            {
+                await LoadManagedTunnelsAsync();
+                await LoadSystemSettingsAsync();
+            }
             // Reconcile silently: a tunnel saved as active that is gone after a reboot or a service
             // restart while the app was closed is simply disconnected, not a "connection lost".
             _silentReconcile = true;
@@ -218,17 +226,25 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         _log.Info($"{(automatic ? "Auto-connecting" : "Starting")} tunnel: {tunnel.Name}");
         try
         {
-            var alias = _configs.AliasOf(tunnel.ConfigPath)
-                ?? throw new InvalidDataException("The tunnel's configuration file is missing.");
-            var contents = _configs.Read(tunnel.ConfigPath);
-            var parsed = WireGuardConfig.Parse(contents);
-            if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
-            // Inventory destinations are blocked before the tunnel comes up; AfterConnectAsync opens them through it.
-            if (tunnel.InventoryCommand is not null) await ProtectInventoryAsync(tunnel);
-            // Split DNS replaces the adapter's DNS with NRPT rules for its domains, set after the connect.
-            var withoutDns = suppressDns || tunnel.EffectiveSplitDNSDomains.Count > 0;
-            await _log.TimedAsync($"Connect {tunnel.Name}: starting WireGuard", () => _service.StartAsync(alias, contents, withoutDns));
-            _runningRouting[id] = new([.. parsed.Address], [.. parsed.PrimaryPeer?.AllowedIPs ?? []], [.. parsed.Dns]);
+            var alias = AliasOf(tunnel) ?? throw new InvalidDataException("The tunnel's configuration file is missing.");
+            if (tunnel.Scope == TunnelScope.Managed)
+            {
+                // The service starts it from its own copy and applies its split DNS; we only see the metadata.
+                await _log.TimedAsync($"Connect {tunnel.Name}: starting shared tunnel", () => _service.StartManagedAsync(tunnel.Id));
+                _runningRouting[id] = new([.. tunnel.Address ?? []], [.. tunnel.AllowedIPs], [.. tunnel.Dns]);
+            }
+            else
+            {
+                var contents = _configs.Read(tunnel.ConfigPath);
+                var parsed = WireGuardConfig.Parse(contents);
+                if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
+                // Inventory destinations are blocked before the tunnel comes up; AfterConnectAsync opens them through it.
+                if (tunnel.InventoryCommand is not null) await ProtectInventoryAsync(tunnel);
+                // Split DNS replaces the adapter's DNS with NRPT rules for its domains, set after the connect.
+                var withoutDns = suppressDns || tunnel.EffectiveSplitDNSDomains.Count > 0;
+                await _log.TimedAsync($"Connect {tunnel.Name}: starting WireGuard", () => _service.StartAsync(alias, contents, withoutDns));
+                _runningRouting[id] = new([.. parsed.Address], [.. parsed.PrimaryPeer?.AllowedIPs ?? []], [.. parsed.Dns]);
+            }
 
             if (Find(id) is not { } live) throw new InvalidOperationException("The tunnel was removed while connecting.");
             live.IsActive = true;
@@ -283,7 +299,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         _log.Info($"{(automatic ? "Auto-disconnecting" : "Stopping")} tunnel: {tunnel.Name}");
         try
         {
-            var alias = tunnel.InterfaceName ?? _configs.AliasOf(tunnel.ConfigPath)
+            var alias = tunnel.InterfaceName ?? AliasOf(tunnel)
                 ?? throw new InvalidDataException("The tunnel's interface is unknown.");
             if (tunnel.InventoryCommand is not null) await ProtectInventoryAsync(tunnel);
             await _service.StopAsync(alias);
@@ -306,6 +322,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         }
     }
 
+    /// Shared tunnels too, as on macOS (quit and reset stop them for every user, as their policy allows).
     public async Task<bool> StopAllActiveAsync()
     {
         var succeeded = true;
@@ -387,7 +404,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         var lost = false;
         foreach (var tunnel in _tunnels)
         {
-            var alias = tunnel.InterfaceName ?? _configs.AliasOf(tunnel.ConfigPath);
+            var alias = tunnel.InterfaceName ?? AliasOf(tunnel);
             if (alias is not null && byName.TryGetValue(alias, out var status))
             {
                 matched.Add(alias);
@@ -451,12 +468,13 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
             _pollInProgress = true;
             try
             {
-                if (NeedsSetup)
+                if (NeedsSetup) await RefreshServiceStateAsync();
+                if (SetupState == SetupState.Ready)
                 {
-                    await RefreshServiceStateAsync();
-                    if (SetupState == SetupState.Ready) await RefreshStatusAsync(reportError: false);
+                    // Shared tunnels change under us (an administrator, another user): refresh them every 10 s, like macOS.
+                    if (Now - _managedLoadedAt >= ManagedRefreshInterval) await LoadManagedTunnelsAsync();
+                    await RefreshStatusAsync(reportError: false);
                 }
-                else await RefreshStatusAsync(reportError: false);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -578,7 +596,7 @@ public sealed partial class TunnelManager : ObservableObject, IShutdownClient
         if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
 
         var names = _tunnels.Select(t => t.Name.ToLowerInvariant()).ToHashSet();
-        var aliases = _tunnels.SelectMany(t => new[] { _configs.AliasOf(t.ConfigPath), t.InterfaceName })
+        var aliases = _tunnels.SelectMany(t => new[] { AliasOf(t), t.InterfaceName })
             .Concat(_unrecognizedRuntimeTunnels).OfType<string>().Select(a => a.ToLowerInvariant()).ToHashSet();
         var baseName = ConfigName.DisplayName(source.Name);
         for (var number = 1; ; number++)

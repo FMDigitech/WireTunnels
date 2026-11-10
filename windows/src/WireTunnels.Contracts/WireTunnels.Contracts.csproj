@@ -1,9 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The managed-tunnel ops carry Core models (Tunnel, ManagedTunnelPolicy, SystemSettings). -->
+    <ProjectReference Include="..\WireTunnels.Core\WireTunnels.Core.csproj" />
+  </ItemGroup>
 
 </Project>

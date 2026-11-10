@@ -70,7 +70,8 @@ public partial class App : Application
             Log,
             _notifier,
             () => Settings.ShowNotifications,
-            hopChains: new RecoverableJsonStore<List<HopChain>>(_paths.HopChainsFile, () => []));
+            hopChains: new RecoverableJsonStore<List<HopChain>>(_paths.HopChainsFile, () => []),
+            canAdminister: () => Elevation.CanAdminister);
         Shell = new ShellViewModel(Manager);
         _flyout = new FlyoutWindow(this, Shell);
         _tray = new TrayIcon(Shell,

@@ -3,15 +3,16 @@
   <!-- App logic without any UI dependency (the macOS TunnelManager and its services), so it is unit-tested on any OS.
        Windows-only pieces (DPAPI, service control) are marked [SupportedOSPlatform] and kept behind interfaces. -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks> <!-- LibraryImport (Elevation) -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.14" />
     <PackageReference Include="ZXing.Net" Version="0.16.9" />
   </ItemGroup>
 

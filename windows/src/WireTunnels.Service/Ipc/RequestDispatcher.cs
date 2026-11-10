@@ -2,28 +2,39 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using WireTunnels.Contracts;
 using WireTunnels.Core.Config;
+using WireTunnels.Core.Models;
 using WireTunnels.Core.Net;
+using WireTunnels.Service.Managed;
 using WireTunnels.Service.Network;
 using WireTunnels.Service.WireGuard;
 
 namespace WireTunnels.Service.Ipc;
 
 /// Who is calling, taken from the pipe client's impersonation token (never from the request).
-internal sealed record ClientIdentity(string Sid, string UserName, bool IsElevatedAdmin);
+/// SessionId is the client's Windows logon session (-1 when unknown, e.g. in tests).
+internal sealed record ClientIdentity(string Sid, string UserName, bool IsElevatedAdmin, int SessionId = -1);
 
 /// Validates and authorizes every request (the macOS HelperSession). A user can only start,
 /// stop and see the tunnels they started; an elevated administrator can manage any of them.
-internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy network, InventoryPolicy inventory, ILogger<RequestDispatcher> log)
+/// Shared tunnels are in RequestDispatcher.Managed.cs.
+internal sealed partial class RequestDispatcher(ITunnelBackend backend, NetworkPolicy network, InventoryPolicy inventory, IManagedStore managed,
+    ILogger<RequestDispatcher> log)
 {
     private const int MaxKillSwitchEntries = 64, MaxSplitDnsEntries = 64, MaxRouteEntries = 1024;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    /// Running alias -> owner SID, or ManagedOwnerPrefix + id for a shared tunnel.
     private readonly Dictionary<string, string> _owners = new(StringComparer.Ordinal);
+    /// Logon sessions each user has talked to us from (for SessionLoggedOffAsync).
+    private readonly Dictionary<string, HashSet<int>> _sessions = new(StringComparer.Ordinal);
 
     public static string Version => typeof(RequestDispatcher).Assembly.GetName().Version?.ToString() ?? "0";
 
     public async Task<Response> HandleAsync(Request request, ClientIdentity client, CancellationToken ct)
     {
+        if (client.SessionId >= 0)
+            lock (_sessions)
+                (_sessions.TryGetValue(client.Sid, out var known) ? known : _sessions[client.Sid] = []).Add(client.SessionId);
         try
         {
             var data = request.Op switch
@@ -37,6 +48,15 @@ internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy ne
                 Ops.SyncSplitDns => await SyncSplitDnsAsync(Args<SyncSplitDnsArgs>(request), client),
                 Ops.SyncRoutes => await SyncRoutesAsync(Args<SyncRoutesArgs>(request), client),
                 Ops.UpdateInventoryRouting => await UpdateInventoryAsync(Args<InventoryRoutingRequest>(request), client),
+                Ops.ListManaged => ListManaged(),
+                Ops.StartManaged => await StartManagedAsync(Args<ManagedIdArgs>(request), client, ct),
+                Ops.GetSystemSettings => JsonSerializer.SerializeToNode(managed.LoadSettings(), Protocol.Json),
+                Ops.ReadManaged => ReadManaged(Args<ManagedIdArgs>(request), client),
+                Ops.InstallManaged => await InstallManagedAsync(Args<InstallManagedArgs>(request), client),
+                Ops.UpdateManaged => await UpdateManagedAsync(Args<UpdateManagedArgs>(request), client),
+                Ops.DeleteManaged => await DeleteManagedAsync(Args<ManagedIdArgs>(request), client),
+                Ops.ListManagedUsers => await ListManagedUsersAsync(Args<ManagedIdArgs>(request), client),
+                Ops.SetSystemSettings => SetSystemSettings(Args<SystemSettings>(request), client),
                 _ => throw new RequestException($"Unknown operation: {request.Op}"),
             };
             return new Response { Id = request.Id, Ok = true, Data = data };
@@ -61,6 +81,8 @@ internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy ne
         await _gate.WaitAsync(ct);
         try
         {
+            // A personal tunnel must not take a shared tunnel's adapter name (macOS stageConfig).
+            if (ManagedRecordForAlias(alias) is not null) throw new RequestException("A shared tunnel already uses this name");
             if (backend.IsRunning(alias))
             {
                 // Same tolerance as wg-quick's "already exists": reconnecting your own tunnel is a no-op.
@@ -83,15 +105,63 @@ internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy ne
         try
         {
             if (!backend.IsRunning(alias)) return null;
-            if (!client.IsElevatedAdmin && _owners.GetValueOrDefault(alias) != client.Sid)
+            var owner = _owners.GetValueOrDefault(alias);
+            if (IsManagedOwner(owner)) AuthorizeManagedStop(alias, client);
+            else if (!client.IsElevatedAdmin && owner != client.Sid)
                 throw new RequestException($"{alias} was connected by another user");
-            backend.Stop(alias);
-            _owners.Remove(alias);
-            network.ForgetTunnel(alias);
-            inventory.TunnelStopped(alias);
-            RefreshKillSwitch();
+            StopRunning(alias);
             log.LogInformation("{User} disconnected {Alias}", client.UserName, alias);
             return null;
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// Callers hold the gate. A shared tunnel stops for everyone.
+    private void StopRunning(string alias)
+    {
+        backend.Stop(alias);
+        if (_owners.Remove(alias, out var owner) && IsManagedOwner(owner))
+        {
+            var id = Guid.Parse(owner[ManagedOwnerPrefix.Length..]);
+            _managedSessions.Remove(id);
+            if (managed.Load().FirstOrDefault(r => r.Id == id) is { } record) SyncManagedSplitDns(record, stopped: true);
+        }
+        network.ForgetTunnel(alias);
+        inventory.TunnelStopped(alias);
+        RefreshKillSwitch();
+    }
+
+    /// SERVICE_CONTROL_SESSIONCHANGE logoff: when a user's last known session ends, their personal tunnels stop and
+    /// their kill switch, split DNS and routes go, so the next user of the PC is neither tunneled nor blocked.
+    /// Running shared tunnels stop too when their policy lets users disconnect: on macOS the app quits at logout and
+    /// its quit disconnects every tunnel. shortcut: a user only counts as logged on in sessions their app or CLI talked
+    /// to the service from; a user who never ran WireTunnels in another open session loses their tunnels on this logoff.
+    public async Task SessionLoggedOffAsync(int sessionId)
+    {
+        List<string> gone = [];
+        lock (_sessions)
+        {
+            foreach (var (sid, known) in _sessions)
+                if (known.Remove(sessionId) && known.Count == 0) gone.Add(sid);
+            foreach (var sid in gone) _sessions.Remove(sid);
+        }
+        if (gone.Count == 0) return;
+        await _gate.WaitAsync();
+        try
+        {
+            foreach (var sid in gone)
+            {
+                foreach (var alias in _owners.Where(o => o.Value == sid).Select(o => o.Key).ToList()) StopRunning(alias);
+                foreach (var alias in _owners.Where(o => IsManagedOwner(o.Value)).Select(o => o.Key).ToList())
+                    if (ManagedRecordForAlias(alias)?.ManagedPolicy is not { UsersCanDisconnect: false }) StopRunning(alias);
+                foreach (var sessions in _managedSessions.Values) sessions.RemoveAll(s => s.Sid == sid);
+                network.ForgetUser(sid);
+                log.LogInformation("Session {Session} logged off: stopped the tunnels and network policy of {Sid}", sessionId, sid);
+            }
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or RequestException)
+        {
+            log.LogError(e, "Unable to clean up after the logoff of session {Session}", sessionId);
         }
         finally { _gate.Release(); }
     }
@@ -101,7 +171,7 @@ internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy ne
         await _gate.WaitAsync();
         try
         {
-            var visible = _owners.Where(o => client.IsElevatedAdmin || o.Value == client.Sid).Select(o => o.Key);
+            var visible = _owners.Where(o => client.IsElevatedAdmin || o.Value == client.Sid || IsManagedOwner(o.Value)).Select(o => o.Key);
             return JsonSerializer.SerializeToNode(visible.Select(backend.Status).ToList(), Protocol.Json);
         }
         finally { _gate.Release(); }
@@ -127,8 +197,8 @@ internal sealed class RequestDispatcher(ITunnelBackend backend, NetworkPolicy ne
         await _gate.WaitAsync();
         try
         {
-            // A running tunnel can only be armed by whoever started it; a stopped one blocks for its owner.
-            if (args.Entries.FirstOrDefault(e => backend.IsRunning(e.Name) && _owners.GetValueOrDefault(e.Name) != client.Sid) is { } foreign)
+            // A running tunnel can only be armed by whoever started it (any user for a shared one); a stopped one blocks for its owner.
+            if (args.Entries.FirstOrDefault(e => backend.IsRunning(e.Name) && _owners.GetValueOrDefault(e.Name) is var o && o != client.Sid && !IsManagedOwner(o)) is { } foreign)
                 throw new RequestException($"{foreign.Name} was connected by another user");
             network.SyncKillSwitch(client.Sid, args.Entries);
             return null;

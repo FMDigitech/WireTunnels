@@ -4,7 +4,7 @@
        (Windows App SDK runtime shipped next to the exe), so the MSI needs no extra runtime installer. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>WireTunnels.App</RootNamespace>
     <!-- Not "WireTunnels": NTFS is case-insensitive and the CLI is wiretunnels.exe/.dll in the same folder. -->
@@ -24,13 +24,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks> <!-- LibraryImport (user32) -->
     <!-- Program.cs owns Main: single instance before any window exists. -->
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <!-- [ObservableProperty] on fields: only matters for Native AOT, which this app does not use. -->
+    <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
-    <!-- 2.4 requires .NET 10; 2.3.2 is the last release for .NET 8. -->
-    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.2" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 

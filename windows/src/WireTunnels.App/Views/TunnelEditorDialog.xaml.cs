@@ -49,16 +49,18 @@ public sealed partial class TunnelEditorDialog : ContentDialog
         return dialog.CreatedId;
     }
 
+    /// A shared tunnel's config is read from the service and saved back to it, both after a UAC prompt.
     public static async Task EditAsync(App app, XamlRoot root, Guid id)
     {
+        var tunnel = app.Manager.Find(id);
+        var shared = tunnel?.Scope == Core.Models.TunnelScope.Managed;
         string contents;
-        try { contents = app.Manager.ReadConfig(id); }
-        catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+        try { contents = shared ? await app.Manager.ReadManagedConfigAsync(id) : app.Manager.ReadConfig(id); }
+        catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException or Contracts.ServiceException)
         {
             app.Manager.ErrorMessage = $"Unable to load configuration: {e.Message}";
             return;
         }
-        var tunnel = app.Manager.Find(id);
         var dialog = new TunnelEditorDialog(app, root, id)
         {
             Title = $"Edit Config — {tunnel?.Name}",
@@ -201,9 +203,24 @@ public sealed partial class TunnelEditorDialog : ContentDialog
     /// New: "Save & Connect". Edit: "Save".
     private async void OnPrimary(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        if (_editing is { } id)
+        if (_editing is { } id && Manager.Find(id)?.Scope == Core.Models.TunnelScope.Managed)
         {
-            if (!Save(() => Manager.Update(id, NameBox.Text, EffectiveConfig))) args.Cancel = true;
+            var wait = args.GetDeferral();
+            try
+            {
+                await Manager.UpdateManagedAsync(id, NameBox.Text, EffectiveConfig);
+            }
+            catch (Exception e) when (e is IOException or InvalidOperationException or ConfigValidationException or Contracts.ServiceException)
+            {
+                ShowError(e.Message);
+                args.Cancel = true;
+            }
+            finally { wait.Complete(); }
+            return;
+        }
+        if (_editing is { } editing)
+        {
+            if (!Save(() => Manager.Update(editing, NameBox.Text, EffectiveConfig))) args.Cancel = true;
             return;
         }
         var deferral = args.GetDeferral();
