@@ -9,6 +9,8 @@
     <RootNamespace>WireTunnels.App</RootNamespace>
     <!-- Not "WireTunnels": NTFS is case-insensitive and the CLI is wiretunnels.exe/.dll in the same folder. -->
     <AssemblyName>WireTunnels.App</AssemblyName>
+    <!-- The name Explorer shows in "Open with" and Task Manager (the file description). -->
+    <AssemblyTitle>WireTunnels</AssemblyTitle>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>

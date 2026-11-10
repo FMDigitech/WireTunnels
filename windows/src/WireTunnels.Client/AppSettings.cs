@@ -8,6 +8,7 @@ public sealed class AppSettings
 {
     public bool StartInBackground { get; set; }
     public bool ShowNotifications { get; set; } = true;
+    public bool CheckForUpdates { get; set; } = true;
 }
 
 public sealed class AppSettingsStore(string file)

@@ -15,7 +15,7 @@ Next phases, step by step: [`NEXT_STEPS.md`](NEXT_STEPS.md).
 | `src/WireTunnels.App` | `WireTunnels.App.exe`, WinUI 3: notification-area icon + flyout, dashboard, import / new / edit, setup wizard, settings, log |
 | `tests/*` | xUnit; Core, Service and Client tests run on any OS |
 
-Not yet implemented (see the plan in the architecture doc): installer, updater.
+Installer and updater: [`installer/README.md`](installer/README.md).
 
 ## Build and test
 

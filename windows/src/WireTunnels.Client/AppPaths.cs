@@ -19,6 +19,8 @@ public sealed class AppPaths(string root)
     public string TunnelsFile => Path.Combine(Metadata, "tunnels.json");
     public string HopChainsFile => Path.Combine(Metadata, "hopchains.json");
     public string SettingsFile => Path.Combine(Root, "settings.json");
+    /// Written by the update command line (`ok` / `fail`), read at the next start.
+    public string UpdateResultFile => Path.Combine(Root, "update-result.txt");
     public string Logs => Path.Combine(Root, "logs");
     public string LogFile => Path.Combine(Logs, "WireTunnels.log");
 }

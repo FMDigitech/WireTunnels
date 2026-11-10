@@ -1,0 +1,17 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!-- MSI for one architecture. Build through release.ps1 (it publishes the binaries into StageDir first):
+       dotnet build installer -c Release -p:InstallerPlatform=x64 -p:StageDir=<folder> -->
+  <PropertyGroup>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
+    <Platform>$(InstallerPlatform)</Platform>
+    <OutputName>WireTunnels-$(Version)-$(InstallerPlatform)</OutputName>
+    <OutputPath>bin\$(InstallerPlatform)\</OutputPath>
+    <IntermediateOutputPath>obj\$(InstallerPlatform)\</IntermediateOutputPath>
+    <DefineConstants>$(DefineConstants);Version=$(Version);StageDir=$(StageDir)</DefineConstants>
+    <!-- ICE03: the Windows App SDK / .NET binaries carry language strings the File table rejects; harmless. -->
+    <SuppressIces>ICE03</SuppressIces>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

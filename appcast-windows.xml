@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>WireTunnels for Windows Changelog</title>
+    <link>https://github.com/FMDigitech/WireTunnels</link>
+    <description>WireTunnels for Windows update feed</description>
+    <!-- Items are added by windows/installer/release.ps1 -Appcast. -->
+  </channel>
+</rss>

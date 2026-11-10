@@ -13,11 +13,25 @@
             <DataTemplate x:Key="PlainHeader">
                 <TextBlock Text="{Binding}" FontFamily="{ThemeResource ContentControlThemeFontFamily}" />
             </DataTemplate>
-            <SolidColorBrush x:Key="ConnectedBrush" Color="#16A34A" />
-            <SolidColorBrush x:Key="WarningBrush" Color="#D97706" />
-            <SolidColorBrush x:Key="ErrorBrush" Color="#DC2626" />
-            <SolidColorBrush x:Key="RxBrush" Color="#16A34A" />
-            <SolidColorBrush x:Key="TxBrush" Color="#2563EB" />
+            <!-- The macOS accent (AccentColor.colorset) replaces the Windows accent in every control. -->
+            <Color x:Key="SystemAccentColor">#7C4DFF</Color>
+            <Color x:Key="SystemAccentColorLight1">#9670FF</Color>
+            <Color x:Key="SystemAccentColorLight2">#B094FF</Color>
+            <Color x:Key="SystemAccentColorLight3">#CAB8FF</Color>
+            <Color x:Key="SystemAccentColorDark1">#6129FF</Color>
+            <Color x:Key="SystemAccentColorDark2">#4300FF</Color>
+            <Color x:Key="SystemAccentColorDark3">#3900D6</Color>
+            <!-- macOS system colours; Services/MacPalette.cs sets the light or dark value at start and on theme change. -->
+            <SolidColorBrush x:Key="ConnectedBrush" Color="#34C759" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#FF9500" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#FF3B30" />
+            <SolidColorBrush x:Key="RxBrush" Color="#34C759" />
+            <SolidColorBrush x:Key="TxBrush" Color="#007AFF" />
+            <SolidColorBrush x:Key="YellowBrush" Color="#FFCC00" />
+            <SolidColorBrush x:Key="PurpleBrush" Color="#AF52DE" />
+            <SolidColorBrush x:Key="IndigoBrush" Color="#5856D6" />
+            <SolidColorBrush x:Key="TealBrush" Color="#30B0C7" />
+            <SolidColorBrush x:Key="GrayBrush" Color="#8E8E93" />
 
             <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
                 <Setter Property="Margin" Value="0,0,0,8" />

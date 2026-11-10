@@ -23,7 +23,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <Ellipse Width="8" Height="8" Fill="{x:Bind Item.StatusBrush, Mode=OneWay}" VerticalAlignment="Center" />
                         <TextBlock Text="{x:Bind Item.StatusText, Mode=OneWay}" Foreground="{x:Bind Item.StatusBrush, Mode=OneWay}" />
-                        <FontIcon Glyph="&#xE735;" FontSize="12" Foreground="{StaticResource WarningBrush}" Visibility="{x:Bind Item.IsFavorite, Mode=OneWay}" />
+                        <FontIcon Glyph="&#xE735;" FontSize="12" Foreground="{StaticResource YellowBrush}" Visibility="{x:Bind Item.IsFavorite, Mode=OneWay}" />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

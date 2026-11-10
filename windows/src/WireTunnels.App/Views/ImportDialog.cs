@@ -19,6 +19,7 @@ public sealed class ImportDialog : ContentDialog
     private readonly TextBlock _file = new() { TextWrapping = TextWrapping.Wrap };
     private readonly InfoBar _result = new() { IsClosable = false, IsOpen = false };
     private readonly StackPanel _warnings = new() { Spacing = 4 };
+    private readonly CheckBox _share = new() { Content = "Import as a shared tunnel for all users (asks for administrator approval)" };
     private Guid? _imported;
 
     public ImportDialog(App app, XamlRoot root, Window owner)
@@ -67,6 +68,7 @@ public sealed class ImportDialog : ContentDialog
         });
         panel.Children.Add(drop);
         panel.Children.Add(paste);
+        if (app.Manager.CanAdminister) panel.Children.Add(_share);
         panel.Children.Add(_file);
         panel.Children.Add(_result);
         panel.Children.Add(_warnings);
@@ -101,7 +103,7 @@ public sealed class ImportDialog : ContentDialog
             {
                 var file = await StorageFile.GetFileFromPathAsync(path);
                 using var stream = await file.OpenReadAsync();
-                ImportQr(await DecodeQrAsync(stream), Path.GetFileNameWithoutExtension(path));
+                await ImportQrAsync(await DecodeQrAsync(stream), Path.GetFileNameWithoutExtension(path));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
             {
@@ -114,7 +116,8 @@ public sealed class ImportDialog : ContentDialog
             Show(InfoBarSeverity.Error, "Import Failed", "Only .conf files and QR code images are supported.");
             return;
         }
-        Report(() => (_app.Manager.Import(path), TunnelManager.Inspect(path)));
+        if (_share.IsChecked == true) await ReportSharedAsync(Path.GetFileNameWithoutExtension(path), () => ConfigStore.ReadSource(path));
+        else Report(() => (_app.Manager.Import(path), TunnelManager.Inspect(path)));
     }
 
     private async Task PasteAsync()
@@ -130,7 +133,7 @@ public sealed class ImportDialog : ContentDialog
         try
         {
             using var stream = await (await content.GetBitmapAsync()).OpenReadAsync();
-            ImportQr(await DecodeQrAsync(stream), "QR Import");
+            await ImportQrAsync(await DecodeQrAsync(stream), "QR Import");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
@@ -149,7 +152,7 @@ public sealed class ImportDialog : ContentDialog
 
     /// The decoded text goes through the same validation as a file. The name comes from the image (or
     /// "QR Import"), with a number added when a tunnel already has it.
-    private void ImportQr(string? text, string name)
+    private async Task ImportQrAsync(string? text, string name)
     {
         if (text is null)
         {
@@ -158,7 +161,25 @@ public sealed class ImportDialog : ContentDialog
         }
         var taken = _app.Manager.Tunnels.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unique = Enumerable.Range(1, 99).Select(n => n == 1 ? name : $"{name} {n}").FirstOrDefault(n => !taken.Contains(n)) ?? name;
-        Report(() => (_app.Manager.Create(unique, text), WireGuardConfig.Parse(text)));
+        if (_share.IsChecked == true) await ReportSharedAsync(unique, () => text);
+        else Report(() => (_app.Manager.Create(unique, text), WireGuardConfig.Parse(text)));
+    }
+
+    /// Straight to the service: the administrator prompt can be declined, which leaves nothing behind.
+    private async Task ReportSharedAsync(string name, Func<string> read)
+    {
+        try
+        {
+            var contents = read();
+            var parsed = WireGuardConfig.Parse(contents);
+            var tunnel = await _app.Manager.ImportSharedAsync(name, contents);
+            Show(InfoBarSeverity.Success, "Import Successful", $"Shared tunnel \"{tunnel.Name}\" has been added for all users.");
+            ShowWarnings(parsed);
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or ConfigValidationException or UnauthorizedAccessException or WireTunnels.Contracts.ServiceException)
+        {
+            Show(InfoBarSeverity.Error, "Import Failed", e.Message);
+        }
     }
 
     private void Report(Func<(WireTunnels.Core.Models.Tunnel Tunnel, WireGuardConfig Parsed)> import)
@@ -168,17 +189,22 @@ public sealed class ImportDialog : ContentDialog
             var (tunnel, parsed) = import();
             _imported = tunnel.Id;
             Show(InfoBarSeverity.Success, "Import Successful", $"Tunnel \"{tunnel.Name}\" has been added.");
-            foreach (var warning in parsed.Warnings)
-            {
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                row.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = (Brush)Application.Current.Resources["WarningBrush"] });
-                row.Children.Add(new TextBlock { Text = Describe(warning), TextWrapping = TextWrapping.Wrap, MaxWidth = 420, Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"] });
-                _warnings.Children.Add(row);
-            }
+            ShowWarnings(parsed);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or ConfigValidationException or UnauthorizedAccessException)
         {
             Show(InfoBarSeverity.Error, "Import Failed", e.Message);
+        }
+    }
+
+    private void ShowWarnings(WireGuardConfig parsed)
+    {
+        foreach (var warning in parsed.Warnings)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = (Brush)Application.Current.Resources["WarningBrush"] });
+            row.Children.Add(new TextBlock { Text = Describe(warning), TextWrapping = TextWrapping.Wrap, MaxWidth = 420, Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"] });
+            _warnings.Children.Add(row);
         }
     }
 

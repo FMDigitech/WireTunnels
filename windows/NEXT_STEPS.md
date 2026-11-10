@@ -1,6 +1,6 @@
 # WireTunnels for Windows — next steps (phase 3 onward)
 
-State on 2026-11-10, branch `windows-port`: phases 1–6 done, on .NET 10; phase 7 (distribution) remains.
+State on 2026-11-10, branch `windows-port`: phases 1–7 done, on .NET 10; what remains is signing with a real certificate and the clean-machine release checklist.
 262 unit tests, 7 opt-in live network tests, 5 opt-in UI tests.
 Architecture and rationale: [`../docs/WINDOWS_PORT_ARCHITECTURE.md`](../docs/WINDOWS_PORT_ARCHITECTURE.md).
 Every phase: port the macOS behaviour (the Swift code and `Tests/`, `Scripts/test_*.sh` are the spec),
@@ -205,7 +205,24 @@ Original plan:
 
 ## 7. Distribution
 
-1. WiX MSI: Program Files, service install (auto start), `wireguard.dll` per arch (x64, ARM64), `.conf` file association.
-2. Signing: app, service, CLI and MSI with the same certificate (Azure Trusted Signing or EV).
-3. Updates: NetSparkleUpdater with an Ed25519-signed Windows appcast; verify the MSI's Authenticode signature before running it.
-4. Release checklist: Release build, all tests, smoke test on clean Windows 10 2004 and Windows 11 (x64 + ARM64).
+**Done on 2026-11-10** (`installer/`, see `installer/README.md`). Verified on this PC (Windows 11 Pro 26100, x64): install over a
+removed hand-made service, crash recovery (SCM restarted the service in 5 s), the app from the install folder, `.conf` import
+through the registered command (path with spaces), upgrade 1.0.0 > 1.0.1 > 1.0.2 > 1.0.3 (service restarted, `%ProgramData%`
+kept, cleanup skipped), downgrade refused, the app ended by the installer, uninstall (service, registry entries, shortcut and
+`%ProgramData%\WireTunnels` gone, WFP filters, providers and sublayer removed), a 100k-prefix inventory (782 filters, 0.6 s to install
+and 0.6 s to remove, still blocks). The ARM64 MSI builds but was never run; nothing is signed (no certificate); the
+update feed does not exist yet (the app logs a 404 and carries on). Bugs found by that run and fixed: the launch condition
+used `WindowsBuild`, which Windows Installer does not define, so the install always failed; the installer could not close the
+tray app (it hides on close) so it now ends it; the uninstall left the WFP providers behind. Pieces:
+- `installer/Package.wxs` + `WireTunnels.Installer.wixproj` (WiX 5.0.2): Program Files, service (LocalSystem, auto, BFE
+  dependency, restart on failure), pinned `wireguard.dll` per arch, machine-wide `wiretunnels://`, `.conf` "Import with
+  WireTunnels" verb, Start menu shortcut, in-place upgrade. Uninstall (not upgrade) runs `WireTunnels.Service.exe --cleanup`
+  (`UninstallCleanup.cs`): removes the persistent kill switch and inventory WFP filters and `%ProgramData%\WireTunnels`.
+- `installer/release.ps1`: tests, publish x64/arm64, sign (signtool args), MSI, appcast item. Versions in `Directory.Build.props`.
+- Updater (`Client/Updater.cs`, Settings > Updates, check at start): `appcast-windows.xml`, Ed25519 (Sparkle format) **and**
+  Authenticode publisher checked before `msiexec /i /passive` through UAC; then the app quits. NetSparkle was not used:
+  it has no WinUI 3 UI and the part we need is ~100 lines. `WinTrust` moved to `Contracts` to be shared.
+- `tools/WireTunnels.SignUpdate`: key generation, signing, appcast items.
+- The app opens `.conf` arguments (file association) by importing them.
+Before the first release: set `UpdateService.DefaultPublisher` to the certificate's subject, provide the Ed25519 private key
+(`DefaultPublicKey` is the macOS feed's), then run the checklist in `installer/README.md` (Windows 10 2004 / 11, x64 and ARM64).

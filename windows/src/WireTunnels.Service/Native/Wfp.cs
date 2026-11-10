@@ -113,6 +113,8 @@ internal static unsafe partial class Wfp
     [LibraryImport(Dll)] private static partial uint FwpmTransactionAbort0(IntPtr engine);
     [LibraryImport(Dll)] private static partial uint FwpmProviderAdd0(IntPtr engine, in Provider provider, IntPtr sd);
     [LibraryImport(Dll)] private static partial uint FwpmSubLayerAdd0(IntPtr engine, in SubLayer subLayer, IntPtr sd);
+    [LibraryImport(Dll)] private static partial uint FwpmProviderDeleteByKey0(IntPtr engine, in Guid key);
+    [LibraryImport(Dll)] private static partial uint FwpmSubLayerDeleteByKey0(IntPtr engine, in Guid key);
     [LibraryImport(Dll)] private static partial uint FwpmFilterAdd0(IntPtr engine, in Filter filter, IntPtr sd, out ulong id);
     [LibraryImport(Dll)] private static partial uint FwpmFilterDeleteById0(IntPtr engine, ulong id);
     [LibraryImport(Dll)] private static partial uint FwpmFilterCreateEnumHandle0(IntPtr engine, IntPtr template, out IntPtr handle);
@@ -160,6 +162,20 @@ internal static unsafe partial class Wfp
         }
         finally { Marshal.FreeHGlobal(name); }
     }
+
+    /// Uninstall: drops the sublayer and providers once their filters are gone (a missing object is fine).
+    public static void RemoveProviderAndSubLayer(IntPtr engine) =>
+        Transaction(engine, () =>
+        {
+            const uint ProviderNotFound = 0x80320005, SubLayerNotFound = 0x80320007;
+            var error = FwpmSubLayerDeleteByKey0(engine, SubLayerKey);
+            if (error != SubLayerNotFound) Check(error, "Unable to remove the WireTunnels firewall sublayer");
+            foreach (var key in new[] { ProviderKey, InventoryProviderKey })
+            {
+                error = FwpmProviderDeleteByKey0(engine, key);
+                if (error != ProviderNotFound) Check(error, "Unable to remove the WireTunnels firewall provider");
+            }
+        });
 
     /// Runs `body` in one WFP transaction: either every change applies or none does.
     public static void Transaction(IntPtr engine, Action body)

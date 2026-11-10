@@ -84,6 +84,19 @@ public sealed partial class TunnelManager
         _log.Info($"Made tunnel shared for all users: {tunnel.Name}");
     }
 
+    /// Import as shared: the config goes straight to the service (administrator prompt), never stored as a personal tunnel.
+    public async Task<Tunnel> ImportSharedAsync(string name, string contents)
+    {
+        var parsed = WireGuardConfig.Parse(contents);
+        if (!parsed.IsValid) throw new ConfigValidationException(parsed.Errors.Select(e => e.Message));
+        var displayName = ConfigName.DisplayName(name);
+        var tunnel = await _service.AdminAsync<Tunnel>(Ops.InstallManaged, new InstallManagedArgs { Name = displayName, Contents = contents })
+            ?? throw new InvalidDataException("The service returned no tunnel.");
+        await LoadManagedTunnelsAsync();
+        _log.Info($"Imported shared tunnel: {displayName}");
+        return tunnel;
+    }
+
     public async Task<string> ReadManagedConfigAsync(Guid id) =>
         await _service.AdminAsync<string>(Ops.ReadManaged, new ManagedIdArgs { Id = id })
             ?? throw new InvalidDataException("The shared tunnel's configuration is empty.");

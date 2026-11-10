@@ -85,6 +85,21 @@ public class SharedTunnelTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportSharedGoesStraightToTheServiceWithoutAPersonalCopy()
+    {
+        await M.InitializeAsync();
+        var config = Harness.Config();
+        var shared = await M.ImportSharedAsync("lab", config);
+
+        Assert.Equal([Ops.InstallManaged], _h.Service.AdminCalls);
+        Assert.Equal(config, _h.Service.ManagedConfigs.Values.Single());
+        Assert.Empty(M.Tunnels.Where(t => t.Scope == TunnelScope.Personal));
+        Assert.Equal(shared.Id, Assert.Single(M.SharedTunnels).Id);
+        await Assert.ThrowsAsync<ConfigValidationException>(() => M.ImportSharedAsync("bad", "[Interface]"));
+        Assert.Single(_h.Service.AdminCalls);
+    }
+
+    [Fact]
     public async Task MakeSharedKeepsThePersonalTunnelWhenTheAdminPromptIsDeclined()
     {
         await M.InitializeAsync();

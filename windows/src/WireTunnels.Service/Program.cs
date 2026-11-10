@@ -10,6 +10,8 @@ if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
     return 1;
 }
 
+if (args is ["--cleanup"]) return WireTunnels.Service.UninstallCleanup.Run();
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(options => options.ServiceName = "WireTunnels");
 // Replaces the lifetime AddWindowsService registered, to receive logoff notifications.

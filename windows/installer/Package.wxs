@@ -1,0 +1,79 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="WireTunnels" Manufacturer="FMDigitech" Version="$(Version)" Scope="perMachine"
+           UpgradeCode="6D0F6E1A-3B7C-4E52-9A8D-5C1E2F4B7A90" InstallerVersion="500" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of WireTunnels is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <!-- Windows Installer reports at most 6.3 and does not expose the build number: the exact floor (10 version 2004) is checked by the service at start. -->
+    <Launch Condition="Installed OR VersionNT &gt;= 603" Message="WireTunnels requires Windows 10 version 2004 or later." />
+    <Icon Id="AppIcon" SourceFile="$(StageDir)\Assets\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <Feature Id="Main" Title="WireTunnels" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ServiceComponent" />
+      <ComponentRef Id="AppComponent" />
+      <ComponentRef Id="ShortcutComponent" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="WireTunnels" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- Everything else the publish produced (runtime, Windows App SDK, wireguard.dll, CLI). -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(StageDir)\**">
+        <Exclude Files="$(StageDir)\WireTunnels.Service.exe" />
+        <Exclude Files="$(StageDir)\WireTunnels.App.exe" />
+        <Exclude Files="$(StageDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- LocalSystem service, automatic start, restarted by the SCM after a crash (the kill switch stays
+         armed meanwhile). BFE is the WFP engine the kill switch and the inventory guards need. -->
+    <Component Id="ServiceComponent" Directory="INSTALLFOLDER">
+      <File Id="ServiceExe" Source="$(StageDir)\WireTunnels.Service.exe" KeyPath="yes" />
+      <ServiceInstall Id="WireTunnelsService" Name="WireTunnels" DisplayName="WireTunnels Service"
+                      Description="Creates the WireGuard adapters, routes, DNS and firewall rules for WireTunnels."
+                      Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem">
+        <ServiceDependency Id="BFE" />
+        <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="5" ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <ServiceControl Id="WireTunnelsServiceControl" Name="WireTunnels" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+    </Component>
+
+    <!-- The app, plus the machine-wide wiretunnels:// links and "Open with" for .conf files. -->
+    <Component Id="AppComponent" Directory="INSTALLFOLDER">
+      <File Id="AppExe" Source="$(StageDir)\WireTunnels.App.exe" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\wiretunnels" Value="URL:WireTunnels" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\wiretunnels" Name="URL Protocol" Value="" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\wiretunnels\shell\open\command" Value="&quot;[#AppExe]&quot; &quot;%1&quot;" Type="string" />
+      <!-- "Open with" only: .conf is also used by nginx and many other tools, so we never become the default. -->
+      <RegistryValue Root="HKLM" Key="Software\Classes\.conf\OpenWithProgids" Name="WireTunnels.Config" Value="" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\WireTunnels.Config" Value="WireGuard configuration" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\WireTunnels.Config\DefaultIcon" Value="&quot;[#AppExe]&quot;,0" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\WireTunnels.Config\shell\open" Value="Import with WireTunnels" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\Applications\WireTunnels.App.exe" Name="FriendlyAppName" Value="WireTunnels" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\Applications\WireTunnels.App.exe\SupportedTypes" Name=".conf" Value="" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\Applications\WireTunnels.App.exe\shell\open\command" Value="&quot;[#AppExe]&quot; &quot;%1&quot;" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\Classes\WireTunnels.Config\shell\open\command" Value="&quot;[#AppExe]&quot; &quot;%1&quot;" Type="string" />
+    </Component>
+
+    <Component Id="ShortcutComponent" Directory="ProgramMenuFolder">
+      <Shortcut Id="StartMenuShortcut" Name="WireTunnels" Target="[#AppExe]" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\FMDigitech\WireTunnels" Name="Shortcut" Value="1" Type="integer" KeyPath="yes" />
+    </Component>
+
+    <!-- Uninstall (not upgrade): the persistent firewall filters and %ProgramData%\WireTunnels would keep
+         inventory destinations blocked. Runs after the service is stopped. -->
+    <CustomAction Id="RemoveFirewallAndData" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[INSTALLFOLDER]WireTunnels.Service.exe&quot; --cleanup" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveFirewallAndData" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <!-- An update replaces files of the running app: close it, and end it if it only hides to the tray (the Quit command already did when the app started this). -->
+    <util:CloseApplication Id="CloseApp" Target="WireTunnels.App.exe" CloseMessage="yes" TerminateProcess="1" RebootPrompt="no" />
+  </Package>
+</Wix>

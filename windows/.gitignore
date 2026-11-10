@@ -4,3 +4,4 @@ obj/
 .vs/
 TestResults/
 wireguard.dll
+artifacts/

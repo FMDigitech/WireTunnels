@@ -2,13 +2,13 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography.X509Certificates;
 
-namespace WireTunnels.Service.Native;
+namespace WireTunnels.Contracts;
 
 /// Authenticode check of a file with an embedded signature: a valid chain to a trusted root
 /// (WinVerifyTrust) and a leaf certificate issued to the expected publisher. A valid signature
 /// alone is not enough: any signed DLL would pass.
 [SupportedOSPlatform("windows")]
-internal static partial class WinTrust
+public static partial class WinTrust
 {
     /// null when the file is signed by `publisher`, otherwise why it is not.
     public static string? Verify(string path, string publisher)

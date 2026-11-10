@@ -128,6 +128,29 @@ public class LiveNetworkTests
         finally { Wfp.Close(engine); }
     }
 
+    /// Phase 7 measurement: a 100k-prefix inventory (the macOS limit class) installs in one transaction and still blocks.
+    [Fact]
+    public void LargeInventoryInstallsAndBlocks()
+    {
+        if (!Live) return;
+        var prefixes = Enumerable.Range(0, 100_000).Select(i => IPPrefix.Parse($"198.{18 + (i >> 16)}.{(i >> 8) & 255}.{i & 255}/32")).ToList();
+        prefixes.Add(IPPrefix.Parse("192.0.2.0/25"));
+        var engine = Wfp.Open(dynamic: true);
+        try
+        {
+            Wfp.EnsureProviderAndSubLayer(engine);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var filters = FirewallRules.Inventory([new InventoryGuard(prefixes, AllowedLuid: 0x1234_5678, null)]);
+            Wfp.Transaction(engine, () => { foreach (var f in filters) Wfp.Add(engine, f, Wfp.InventoryProviderKey, persistent: false); });
+            var installed = watch.Elapsed;
+            Assert.Equal(SocketError.AccessDenied, Connect("192.0.2.5", 9));
+            Wfp.Transaction(engine, () => { foreach (var id in Wfp.OurFilters(engine, Wfp.InventoryProviderKey, persistent: false)) Wfp.Delete(engine, id); });
+            Console.WriteLine($"100k prefixes: {filters.Count} filters installed in {installed.TotalSeconds:F1}s, removed in {(watch.Elapsed - installed).TotalSeconds:F1}s");
+            Assert.True(installed < TimeSpan.FromSeconds(60), $"took {installed}");
+        }
+        finally { Wfp.Close(engine); }
+    }
+
     [Fact]
     public void PersistentFiltersAreFoundAndRemoved()
     {

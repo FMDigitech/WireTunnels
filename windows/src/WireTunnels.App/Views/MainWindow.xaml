@@ -27,39 +27,39 @@
                         IsSettingsVisible="True" SelectionChanged="OnNavigationChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="All Tunnels" Tag="All" IsSelected="True">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8FD;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8FD;" Foreground="{ThemeResource AccentFillColorDefaultBrush}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Active" Tag="Active">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE945;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE945;" Foreground="{StaticResource ConnectedBrush}" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge Value="{x:Bind ViewModel.ActiveCount, Mode=OneWay}" Background="{StaticResource ConnectedBrush}"
                                    Visibility="{x:Bind local:Bind.VisibleIfPositive(ViewModel.ActiveCount), Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Shared" Tag="Shared">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" Foreground="{StaticResource PurpleBrush}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Favorites" Tag="Favorites">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" Foreground="{StaticResource YellowBrush}" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
-                        <InfoBadge Value="{x:Bind ViewModel.FavoriteCount, Mode=OneWay}" Style="{StaticResource AttentionValueInfoBadgeStyle}"
+                        <InfoBadge Value="{x:Bind ViewModel.FavoriteCount, Mode=OneWay}" Style="{StaticResource AttentionValueInfoBadgeStyle}" Background="{StaticResource GrayBrush}"
                                    Visibility="{x:Bind local:Bind.VisibleIfPositive(ViewModel.FavoriteCount), Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Multi-Hop" Tag="MultiHop">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8AB;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8AB;" Foreground="{StaticResource IndigoBrush}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Warnings" Tag="Warnings">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7BA;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7BA;" Foreground="{StaticResource WarningBrush}" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
-                        <InfoBadge Value="{x:Bind ViewModel.WarningCount, Mode=OneWay}" Background="{StaticResource WarningBrush}"
+                        <InfoBadge Value="{x:Bind ViewModel.WarningCount, Mode=OneWay}" Background="{StaticResource YellowBrush}"
                                    Visibility="{x:Bind ViewModel.HasWarnings, Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
                 <NavigationViewItem Content="Log" Tag="Log">
-                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9F9;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9F9;" Foreground="{StaticResource TxBrush}" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 

@@ -1,4 +1,5 @@
 using Microsoft.UI;
+using WireTunnels.App.Services;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -116,11 +117,13 @@ public sealed class FieldRow : UserControl
 /// (sections, keys, comments). Pastes are always plain text.
 public sealed class ConfigTextEditor : UserControl
 {
-    private static readonly Color InterfaceColor = Color.FromArgb(255, 0xD9, 0x82, 0x2B);
-    private static readonly Color PeerColor = Color.FromArgb(255, 0x2A, 0x9D, 0x8F);
-    private static readonly Color KeyColor = Color.FromArgb(255, 0x3B, 0x82, 0xF6);
-    private static readonly Color CommentColor = Color.FromArgb(255, 0x22, 0xA0, 0x6B);
-    private static readonly Color EqualsColor = Colors.Gray;
+    // ConfigEditorView.swift: comments green, [Interface] orange, [Peer] teal, keys blue, "=" secondary.
+    private bool Dark => ActualTheme == ElementTheme.Dark;
+    private Color InterfaceColor => MacPalette.Pick(MacPalette.Orange, Dark);
+    private Color PeerColor => MacPalette.Pick(MacPalette.Teal, Dark);
+    private Color KeyColor => MacPalette.Pick(MacPalette.Blue, Dark);
+    private Color CommentColor => MacPalette.Pick(MacPalette.Green, Dark);
+    private Color EqualsColor => MacPalette.Pick(MacPalette.Gray, Dark);
 
     private readonly RichEditBox _box = new()
     {
@@ -195,7 +198,7 @@ public sealed class ConfigTextEditor : UserControl
         TextChanged?.Invoke();
     }
 
-    private static void ColorLine(RichEditTextDocument doc, int start, string line, Color normal)
+    private void ColorLine(RichEditTextDocument doc, int start, string line, Color normal)
     {
         var trimmed = line.Trim();
         void Paint(int from, int length, Color color, bool bold = false)

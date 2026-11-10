@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32.SafeHandles;
+using WireTunnels.Contracts;
 
 namespace WireTunnels.Service.Native;
 

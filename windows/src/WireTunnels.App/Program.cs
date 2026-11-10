@@ -33,7 +33,7 @@ public static partial class Program
         Application.Start(callback =>
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
-            _ = new App(instance, args.Contains(BackgroundArgument, StringComparer.OrdinalIgnoreCase), args.Select(Contracts.AppLink.Parse).FirstOrDefault(l => l is not null));
+            _ = new App(instance, args.Contains(BackgroundArgument, StringComparer.OrdinalIgnoreCase), args.Select(Contracts.AppLink.Parse).FirstOrDefault(l => l is not null), args.FirstOrDefault(App.IsConfigPath));
         });
         return 0;
     }

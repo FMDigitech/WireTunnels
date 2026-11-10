@@ -178,6 +178,47 @@ public sealed class SettingsView : UserControl
                 Caption("Shared tunnels are managed from their detail pane: Make Shared on a personal tunnel, then set who can connect and disconnect it.")));
         }
 
+        var autoUpdate = Toggle("Check for Updates Automatically", "Look for a new version each time WireTunnels starts.",
+            _app.Settings.CheckForUpdates, on => { _app.Settings.CheckForUpdates = on; _app.SaveSettings(); });
+        var updateState = Caption("");
+        var checkUpdate = new Button { Content = "Check for Updates" };
+        var notes = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
+        var install = new Button { Content = "Install and Restart", Visibility = Visibility.Collapsed };
+        UpdateItem? available = null;
+        checkUpdate.Click += async (_, _) =>
+        {
+            checkUpdate.IsEnabled = false;
+            updateState.Text = "Checking…";
+            try
+            {
+                available = await _app.Updater.CheckAsync(App.CurrentVersion);
+                updateState.Text = available is null ? "WireTunnels is up to date." : $"Version {available.Version.ToString(3)} is available.";
+                install.Visibility = available is null ? Visibility.Collapsed : Visibility.Visible;
+                notes.Text = available?.PlainNotes ?? "";
+                notes.Visibility = notes.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                updateState.Text = $"Unable to check for updates: {e.Message}";
+            }
+            checkUpdate.IsEnabled = true;
+        };
+        install.Click += async (_, _) =>
+        {
+            if (available is null) return;
+            install.IsEnabled = false;
+            updateState.Text = "Downloading and verifying…";
+            try { await _app.InstallUpdateAsync(available); }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or IOException)
+            {
+                updateState.Text = $"Unable to install the update: {e.Message}";
+                install.IsEnabled = true;
+            }
+        };
+        panel.Children.Add(Section("Updates", "", autoUpdate, updateState, notes,
+            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { checkUpdate, install } },
+            Caption("Updates are signed twice: with the WireTunnels update key and with the publisher's code-signing certificate. The installer asks for administrator approval.")));
+
         var reset = new Button { Content = "Reset…" };
         AutomationProperties.SetName(reset, "Reset App Data");
         reset.Click += async (_, _) =>
@@ -200,7 +241,7 @@ public sealed class SettingsView : UserControl
         panel.Children.Add(Section("Advanced", "\uE7BA", resetTitle,
             Caption("Removes all tunnels, preferences, and cached data, including inventory protection. This cannot be undone."), reset));
 
-        var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "";
+        var version = App.CurrentVersion.ToString(3);
         panel.Children.Add(Section("About", "",
             new TextBlock { Text = $"WireTunnels {version} for Windows", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] },
             Caption("Created by FMDigitech. WireGuard is a registered trademark of Jason A. Donenfeld.")));

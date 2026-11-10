@@ -17,8 +17,8 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4"
                             Visibility="{x:Bind ViewModel.HasWarnings, Mode=OneWay}"
                             ToolTipService.ToolTip="Warnings">
-                    <FontIcon Glyph="&#xE7BA;" FontSize="13" Foreground="{StaticResource WarningBrush}" />
-                    <TextBlock Text="{x:Bind ViewModel.WarningCount, Mode=OneWay}" Foreground="{StaticResource WarningBrush}"
+                    <FontIcon Glyph="&#xE7BA;" FontSize="13" Foreground="{StaticResource YellowBrush}" />
+                    <TextBlock Text="{x:Bind ViewModel.WarningCount, Mode=OneWay}" Foreground="{StaticResource YellowBrush}"
                                Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
                 </StackPanel>
             </Grid>
@@ -30,7 +30,7 @@
 
             <StackPanel Padding="14,6" Spacing="6" Visibility="{x:Bind ViewModel.HasSetupNotice, Mode=OneWay}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE7BA;" FontSize="14" Foreground="{StaticResource WarningBrush}" />
+                    <FontIcon Glyph="&#xE7BA;" FontSize="14" Foreground="{StaticResource YellowBrush}" />
                     <TextBlock Text="Setup Required" Style="{StaticResource BodyStrongTextBlockStyle}" />
                 </StackPanel>
                 <TextBlock Text="{x:Bind local:Bind.Text(ViewModel.SetupNotice), Mode=OneWay}" TextWrapping="Wrap"

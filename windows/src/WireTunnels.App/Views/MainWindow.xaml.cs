@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window
         {
             if (Nav.SettingsItem is not NavigationViewItem settings) return;
             settings.Content = "Settings";
+            if (settings.Icon is { } icon) icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["GrayBrush"]; // sidebar: Settings is gray
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(settings, "Settings");
         };
         Detail.Initialize(app, viewModel, OnDuplicated);
