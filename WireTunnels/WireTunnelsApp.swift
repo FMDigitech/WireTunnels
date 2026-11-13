@@ -116,9 +116,7 @@ private struct MenuBarIconView: View {
     let connectionStatus: TunnelConnectionStatus
 
     var body: some View {
-        Image(systemName: iconName)
-            .symbolRenderingMode(monochromeMenuBarIcon ? .monochrome : .palette)
-            .foregroundStyle(iconColor, .primary)
+        Image(nsImage: statusImage)
             .help(iconDescription)
             .accessibilityLabel("WireTunnels: \(iconDescription)")
             .task {
@@ -142,13 +140,28 @@ private struct MenuBarIconView: View {
         return connectionStatus.description
     }
 
-    private var iconColor: Color {
-        if monochromeMenuBarIcon { return .primary }
-        if hasError { return .red }
-        if connectionStatus == .connectionLost { return .red }
-        if connectionStatus == .connecting || connectionStatus == .reconnecting { return .orange }
-        if hasWarnings { return .yellow }
-        if hasActive { return .green }
-        return .primary
+    /// An AppKit image is placed by the status bar like the system's own items; a SwiftUI
+    /// symbol in the label sat higher than its neighbours (discussion #44).
+    private var statusImage: NSImage {
+        let symbol = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) ?? NSImage()
+        var configuration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+        if let iconColor {
+            configuration = configuration.applying(NSImage.SymbolConfiguration(paletteColors: [iconColor, .labelColor]))
+        }
+        let image = symbol.withSymbolConfiguration(configuration) ?? symbol
+        // A template follows the menu bar's light/dark and highlighted appearance.
+        image.isTemplate = iconColor == nil
+        return image
+    }
+
+    /// Nil draws the icon as a template in the menu bar's own color.
+    private var iconColor: NSColor? {
+        if monochromeMenuBarIcon { return nil }
+        if hasError { return .systemRed }
+        if connectionStatus == .connectionLost { return .systemRed }
+        if connectionStatus == .connecting || connectionStatus == .reconnecting { return .systemOrange }
+        if hasWarnings { return .systemYellow }
+        if hasActive { return .systemGreen }
+        return nil
     }
 }

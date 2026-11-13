@@ -2,6 +2,13 @@
 
 This file tracks work in progress toward the next release and keeps the shipped ones as technical/QA reference. It's more detailed than the public release notes in `appcast.xml` — distill the "Public release notes (draft)" section of the unreleased version into `appcast.xml` once a build is actually signed and tagged.
 
+## Unreleased
+
+### Fixes
+- **The menu bar icon sits on the same baseline as the other status items** (discussion #44, thanks @thesnallygaster). The icon was a SwiftUI symbol in the `MenuBarExtra` label and sat higher than its neighbours. It is now an AppKit symbol image at the system font size, placed by the status bar like the system's own items: a template image when uncoloured (idle or the monochrome setting), a palette image with the state colour otherwise.
+
+---
+
 ## 1.0.9 — released 2026-11-04
 
 Integrates the community pull requests #39, #40, #41, #42 and #43 (thanks @tobikris and @007hacky007).
