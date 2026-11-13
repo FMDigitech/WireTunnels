@@ -433,11 +433,15 @@ final class HelperTool: NSObject, NSXPCListenerDelegate {
         let bootstrap = HelperSession(clientUser: ClientUser(uid: 0, username: "root"))
         do { try bootstrap.restoreInventoryProtection() }
         catch { NSLog("Inventory protection could not be restored: %@", error.localizedDescription) }
+        // Temporary IPv6 services died with the previous helper; republish them for running tunnels.
+        bootstrap.reconcileIPv6Services()
         do {
             inventoryMonitor = try InventoryInterfaceMonitor {
                 HelperSession.inventoryQueue.async {
                     do { try bootstrap.reconcileInventoryProtection() }
                     catch { NSLog("Inventory interface protection failed: %@", error.localizedDescription) }
+                    // Also catches tunnels stopped outside the app and changed tunnel addresses.
+                    bootstrap.reconcileIPv6Services()
                 }
             }
             HelperSession.inventoryMonitoringAvailable = true
@@ -615,6 +619,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             timeout: 20
         )
         if result.exitCode == 0 || (result.stdout + result.stderr).contains("already exists as") {
+            reconcileIPv6Services()
             reply(true, nil)
         } else {
             // Only roll back a connection this up attempt could have created.
@@ -634,6 +639,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             // The startup group may have been killed while restoring DNS. A
             // fresh process releases only this attempt, even without an alias.
             let recovery = recoverDNS(token: alreadyRunning ? nil : environment["WIRETUNNELS_DNS_TOKEN"])
+            reconcileIPv6Services()
             let message = result.stderr.isEmpty ? result.stdout : result.stderr
             reply(false, recovery.exitCode == 0 ? message : message + "; DNS cleanup remains pending and will be retried")
         }
@@ -655,6 +661,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             environment: wireGuardEnvironment()
         )
         let recovery = recoverDNS()
+        reconcileIPv6Services()
         if result.exitCode == 0 && recovery.exitCode == 0 {
             reply(true, nil)
         } else {
@@ -1789,6 +1796,15 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             .ownerAccountID: 0,
             .groupOwnerAccountID: 0
         ], ofItemAtPath: url.path)
+    }
+
+    /// Publishes macOS IPv6 service state for running full IPv6 tunnels and drops it for the rest.
+    func reconcileIPv6Services() {
+        guard let paths = try? RuntimeConfigLocator.configPaths(
+            in: URL(fileURLWithPath: "/var/run/wireguard"),
+            resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
+        ) else { return }
+        IPv6ServiceRegistrar.shared.reconcile(configPaths: paths)
     }
 
     private func recoverDNS(token: String? = nil) -> (stdout: String, stderr: String, exitCode: Int32) {

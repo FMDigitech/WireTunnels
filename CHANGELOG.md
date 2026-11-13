@@ -5,7 +5,13 @@ This file tracks work in progress toward the next release and keeps the shipped 
 ## Unreleased
 
 ### Fixes
+- **IPv6-only hostnames resolve through a full IPv6 tunnel on an IPv4-only network** (issue #45, thanks @bicisteadm). macOS requests AAAA records only while a network service publishes IPv6 state, and wg-quick's utun publishes none: IPv6 traffic went through the tunnel, but `scutil --nwi` showed "No IPv6 states found" and IPv6-only hostnames failed to resolve. The helper now publishes `State:/Network/Service/WireTunnels-<utun>/IPv6` (addresses, prefix lengths, interface, router) for each running tunnel that routes `::/0` and has a non-link-local IPv6 address, and removes it when the tunnel stops. It reconciles after connect, after disconnect, at helper start and on every interface change, so a tunnel stopped outside the app loses its entry too. Entries are temporary dynamic-store values: configd drops them if the helper dies, and the restarted helper publishes them again. Split IPv6 tunnels and `Table = off` are skipped, because configd would install an IPv6 default route through the tunnel. Three seconds after publishing, the helper logs whether macOS reports global IPv6 state. New file: `WireTunnelsHelper/IPv6ServiceRegistrar.swift`.
 - **The menu bar icon sits on the same baseline as the other status items** (discussion #44, thanks @thesnallygaster). The icon was a SwiftUI symbol in the `MenuBarExtra` label and sat higher than its neighbours. It is now an AppKit symbol image at the system font size, placed by the status bar like the system's own items: a template image when uncoloured (idle or the monochrome setting), a palette image with the state colour otherwise.
+
+### Known limitations / follow-ups
+- **This works around a macOS behaviour, it is not an Apple API contract.** How configd reads these keys is undocumented and has already changed once: Ventura stopped accepting entries without a `Router`. A future macOS release may ignore them again. AAAA lookups then go back to failing as before, with no other side effect. Look in the system log for "macOS reports no IPv6 state" (`log show --predicate 'process == "com.fmdigitech.WireTunnels.helper"'`) and update `IPv6ServiceRegistrar.serviceValue`.
+- The router value (the first address's prefix network) follows a variant reported working on utun and is not confirmed on every macOS version. Check `scutil --nwi`, `scutil --dns` ("Request AAAA records") and an IPv6-only hostname on each new macOS release.
+- Whether a tunnel routes `::/0` is read from its runtime config; routes changed later with `wg set` are not followed.
 
 ---
 

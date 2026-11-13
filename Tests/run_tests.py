@@ -32,6 +32,8 @@ def main():
                   'Tests/IPFamilyLeakFixTests.swift'])
         run_suite(directory, 'route-lookup', ['WireTunnels/Services/WireGuardConfigParser.swift',
                   'WireTunnels/Services/RouteLookupService.swift', 'Tests/RouteLookupTests.swift'])
+        run_suite(directory, 'ipv6-service', ['WireTunnelsHelper/IPv6ServiceRegistrar.swift',
+                  'Tests/IPv6ServiceRegistrarTests.swift'])
         run_suite(directory, 'kill-switch-rules', ['Shared/KillSwitchEntry.swift', 'Tests/KillSwitchRulesTests.swift'])
         subprocess.run(['bash', str(ROOT / 'Tests/test_inventory_routing.sh')], check=True)
         subprocess.run(['python3', '-m', 'unittest', 'discover', '-s', 'Tests', '-p', 'test_server_ips.py'],
