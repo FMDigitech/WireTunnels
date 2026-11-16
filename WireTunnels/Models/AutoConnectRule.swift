@@ -93,7 +93,12 @@ struct AutoConnectRule: Codable, Equatable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
-        guard container.contains(.action) else {
+        // v1.0 stored the flat shape without an "action" key (a rule could only connect),
+        // so the flat shape is recognised by its keys, not by "action" alone.
+        let isFlatShape = container.contains(.action)
+            || (container.contains(.enabled) && !container.contains(.connect) && !container.contains(.disconnect))
+
+        guard isFlatShape else {
             connect = try container.decodeIfPresent(AutoConnectNetworkMatch.self, forKey: .connect)
                 ?? AutoConnectNetworkMatch()
             disconnect = try container.decodeIfPresent(AutoConnectNetworkMatch.self, forKey: .disconnect)

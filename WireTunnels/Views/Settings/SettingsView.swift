@@ -14,7 +14,11 @@ struct SettingsView: View {
     @AppStorage("hideDockIcon")      var hideDockIcon     = false
     @AppStorage("launchInBackground") var launchInBackground = false
     @AppStorage("monochromeMenuBarIcon") var monochromeMenuBarIcon = false
+    @AppStorage("notchEnabled")      var notchEnabled     = false
+    @AppStorage("notchShowStats")    var notchShowStats   = true
+    @AppStorage("notchHoverOnly")    var notchHoverOnly   = false
 
+    @State private var category: SettingsCategory = .behavior
     @State private var showingResetConfirm = false
     @State private var isRedetecting = false
     @ObservedObject private var logService: LogService = .shared
@@ -23,6 +27,16 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                Picker("Category", selection: $category) {
+                    ForEach(SettingsCategory.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                // MARK: Monitoring
+                SettingsSection(title: "Monitoring", systemImage: "waveform.path.ecg") {
+                    MonitoringSettingsView()
+                }
 
                 // MARK: WireGuard Tools
                 SettingsSection(title: "WireGuard Tools", systemImage: "wrench.and.screwdriver") {
@@ -37,6 +51,9 @@ struct SettingsView: View {
                     ToolPathRow(label: "wg", path: tunnelManager.environment.wgPath)
                     ToolPathRow(label: "wg-quick", path: tunnelManager.environment.wgQuickPath)
                     ToolPathRow(label: "wireguard-go", path: tunnelManager.environment.wireguardGoPath)
+                    ToolPathRow(label: "awg", path: tunnelManager.environment.awgPath)
+                    ToolPathRow(label: "awg-quick", path: tunnelManager.environment.awgQuickPath)
+                    ToolPathRow(label: "amneziawg-go", path: tunnelManager.environment.amneziawgGoPath)
 
                     Divider()
 
@@ -262,6 +279,48 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                 }
 
+                // MARK: Notch
+                SettingsSection(title: "Notch", systemImage: "rectangle.topthird.inset.filled") {
+                    Toggle(isOn: $notchEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show in the Notch")
+                                .font(.body)
+                            Text("On a MacBook with a notch, show the connection next to it while a tunnel is connected. Move the pointer to the notch to see every tunnel.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+
+                    if notchEnabled {
+                        Divider()
+
+                        Toggle(isOn: $notchShowStats) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show Statistics")
+                                    .font(.body)
+                                Text("Live download and upload speed and a traffic graph. When off, the notch shows only the connection status.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+
+                        Divider()
+
+                        Toggle(isOn: $notchHoverOnly) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Only on Hover")
+                                    .font(.body)
+                                Text("Keep the notch untouched until you move the pointer to it.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                }
+
                 // MARK: Updates
                 SettingsSection(title: "Updates", systemImage: "arrow.triangle.2.circlepath") {
                     Toggle(isOn: Binding(
@@ -368,6 +427,7 @@ struct SettingsView: View {
                 }
             }
             .padding(20)
+            .environment(\.settingsCategory, category)
         }
         .navigationTitle("Settings")
         .confirmationDialog(
@@ -442,6 +502,9 @@ struct SettingsView: View {
             hideDockIcon = false
             launchInBackground = false
             monochromeMenuBarIcon = false
+            notchEnabled = false
+            notchShowStats = true
+            notchHoverOnly = false
             NSApp.setActivationPolicy(.regular)
         }
     }
@@ -466,124 +529,47 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Log View
-
-struct LogView: View {
-    @ObservedObject var logService: LogService = .shared
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Toolbar
-            HStack {
-                Text("Application Log")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button {
-                    logService.clearLog()
-                } label: {
-                    Label("Clear", systemImage: "trash")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .help("Clear all log entries")
-
-                Button {
-                    copyLogToClipboard()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .help("Copy log to clipboard")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color(NSColor.windowBackgroundColor))
-
-            Divider()
-
-            if logService.logLines.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.secondary)
-                    Text("No Log Entries")
-                        .font(.headline)
-                    Text("Activity will appear here as you use the app.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(logService.logEntries) { entry in
-                                LogLineView(line: entry.line)
-                                    .id(entry.id)
-                            }
-                        }
-                        .padding(8)
-                    }
-                    .onChange(of: logService.logEntries.count) { _, _ in
-                        if let last = logService.logEntries.indices.last {
-                            withAnimation {
-                                proxy.scrollTo(logService.logEntries[last].id, anchor: .bottom)
-                            }
-                        }
-                    }
-                    .onAppear {
-                        if let last = logService.logEntries.last {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Log")
-    }
-
-    private func copyLogToClipboard() {
-        let text = logService.logLines.joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-}
-
-// MARK: - Log Line View
-
-private struct LogLineView: View {
-    let line: String
-
-    private var lineColor: Color {
-        let lower = line.lowercased()
-        if lower.contains("error") || lower.contains("failed") { return .red }
-        if lower.contains("warn")                               { return .orange }
-        if lower.contains("connected") || lower.contains("success") { return .green }
-        return .primary
-    }
-
-    var body: some View {
-        Text(line)
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(lineColor)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 1)
-            .textSelection(.enabled)
-    }
-}
-
 // MARK: - Supporting Views
+
+/// The categories of the Settings screen. Each existing section belongs to exactly one.
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case behavior = "Behavior", monitoring = "Monitoring", tools = "Tools", storage = "Storage"
+    case notch = "Notch", updates = "Updates", advanced = "Advanced", about = "About"
+    var id: String { rawValue }
+
+    var sectionTitle: String {
+        switch self {
+        case .tools: return "WireGuard Tools"
+        case .storage: return "Config Storage"
+        default: return rawValue
+        }
+    }
+}
+
+private struct SettingsCategoryKey: EnvironmentKey {
+    static let defaultValue: SettingsCategory? = nil
+}
+
+private extension EnvironmentValues {
+    var settingsCategory: SettingsCategory? {
+        get { self[SettingsCategoryKey.self] }
+        set { self[SettingsCategoryKey.self] = newValue }
+    }
+}
 
 private struct SettingsSection<Content: View>: View {
     let title: String
     let systemImage: String
     @ViewBuilder let content: Content
+    @Environment(\.settingsCategory) private var category
 
     var body: some View {
+        if category == nil || category?.sectionTitle == title {
+            card
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)

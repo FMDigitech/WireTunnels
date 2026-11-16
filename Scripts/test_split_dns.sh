@@ -27,6 +27,7 @@ TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/WireTunnelsSplitDNS.XXXXXX")"
 trap 'rm -rf "${TEST_DIR}"' EXIT
 {
   echo 'import Foundation'
+  awk '/^nonisolated enum WireGuardDNS/,/^}$/' "${ROOT_DIR}/WireTunnels/Services/WireGuardConfigParser.swift"
   echo 'enum TunnelManager {'
   awk '/nonisolated static func normalizedSplitDNSDomain/,/^    }$/' "$MANAGER"
   echo '}'

@@ -1,39 +1,6 @@
 import SwiftUI
 import Combine
 
-enum SidebarItem: String, CaseIterable, Hashable {
-    case all = "All Tunnels"
-    case active = "Active"
-    case shared = "Shared"
-    case favorites = "Favorites"
-    case multiHop = "Multi-Hop"
-    case warnings = "Warnings"
-    case settings = "Settings"
-    case log = "Log"
-
-    var systemImage: String {
-        switch self {
-        case .all:       return "list.bullet"
-        case .active:    return "bolt.fill"
-        case .shared:    return "person.2.fill"
-        case .favorites: return "star.fill"
-        case .multiHop:  return "arrow.triangle.branch"
-        case .warnings:  return "exclamationmark.triangle.fill"
-        case .settings:  return "gear"
-        case .log:       return "doc.text"
-        }
-    }
-
-    var usesTunnelDetail: Bool {
-        switch self {
-        case .all, .active, .shared, .favorites:
-            return true
-        case .multiHop, .warnings, .settings, .log:
-            return false
-        }
-    }
-}
-
 struct MainDashboardView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     @EnvironmentObject var dashboardNavigation: DashboardNavigation
@@ -43,6 +10,11 @@ struct MainDashboardView: View {
     @State private var selectedTunnel: Tunnel? = nil
     @State private var showingImport = false
     @State private var showingNewTunnel = false
+    /// A config handed from Import Config to the Advanced Editor so its errors can be fixed there.
+    @State private var newTunnelDraft: (config: String, name: String)?
+    /// The tunnel shown as a full-width page, and the tab to open when going back to the detail pane.
+    @State private var fullDetailsTunnel: Tunnel? = nil
+    @State private var detailTab: TunnelDetailTab = .overview
 
     var body: some View {
         NavigationSplitView {
@@ -56,6 +28,11 @@ struct MainDashboardView: View {
                     .environmentObject(tunnelManager)
             }
         }
+        .environmentObject(tunnelManager.monitor)
+        .onReceive(dashboardNavigation.$requestedSidebar.compactMap { $0 }) { item in
+            selection = item
+            dashboardNavigation.consumeSidebarRequest()
+        }
         .onAppear {
             tunnelManager.startPolling(interval: 2.0)
         }
@@ -66,6 +43,11 @@ struct MainDashboardView: View {
             if newSelection.usesTunnelDetail {
                 tunnelFilter = newSelection
             }
+            fullDetailsTunnel = nil
+        }
+        .onChange(of: selectedTunnel?.id) { _, _ in
+            detailTab = .overview
+            fullDetailsTunnel = nil
         }
         .onReceive(dashboardNavigation.$requestedTunnelID.compactMap { $0 }) { tunnelID in
             selection = .all
@@ -113,17 +95,29 @@ struct MainDashboardView: View {
             }
         }
         .sheet(isPresented: $showingImport) {
-            ImportConfigView()
-                .environmentObject(tunnelManager)
+            ImportConfigView(onFixInEditor: { config, name in
+                newTunnelDraft = (config, name)
+                showingImport = false
+                // The editor opens once the import sheet has finished closing.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showingNewTunnel = true }
+            })
+            .environmentObject(tunnelManager)
         }
-        .sheet(isPresented: $showingNewTunnel) {
-            NewTunnelView()
+        .sheet(isPresented: $showingNewTunnel, onDismiss: { newTunnelDraft = nil }) {
+            NewTunnelView(initialConfig: newTunnelDraft?.config, initialName: newTunnelDraft?.name ?? "")
                 .environmentObject(tunnelManager)
         }
     }
 
-    @ViewBuilder
     private var workspace: some View {
+        VStack(spacing: 0) {
+            FeedbackBanner()
+            workspaceContent
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceContent: some View {
         ZStack {
             tunnelWorkspace
                 .opacity(selection.usesTunnelDetail ? 1 : 0)
@@ -156,14 +150,32 @@ struct MainDashboardView: View {
     }
 
     private var tunnelWorkspace: some View {
-        HSplitView {
-            TunnelListView(filter: tunnelFilter, selectedTunnel: $selectedTunnel)
+        VStack(spacing: 0) {
+            if let tunnel = fullDetailsTunnel {
+                TunnelFullDetailsView(
+                    tunnel: tunnel,
+                    onClose: { fullDetailsTunnel = nil },
+                    onOpenTab: { tab in
+                        detailTab = tab
+                        fullDetailsTunnel = nil
+                    }
+                )
                 .environmentObject(tunnelManager)
-                .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)
-
-            detailView
-                .frame(minWidth: 320)
+            } else {
+                TunnelSummaryBanner(filter: tunnelFilter)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                // Active lists session columns, so its list gets more of the width.
+                MasterDetail(masterFraction: tunnelFilter == .active ? 0.66 : 0.46,
+                             masterMax: tunnelFilter == .active ? 720 : 600) {
+                    TunnelListView(filter: tunnelFilter, selectedTunnel: $selectedTunnel)
+                        .environmentObject(tunnelManager)
+                } detail: {
+                    detailView
+                }
+            }
         }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -178,8 +190,18 @@ struct MainDashboardView: View {
         case .multiHop:
             HopChainView()
                 .environmentObject(tunnelManager)
+        case .profiles:
+            NetworkProfilesView(manager: tunnelManager.networkProfiles, tunnels: tunnelManager.tunnels)
+        case .doctor:
+            NetworkDoctorView(doctor: tunnelManager.networkDoctor)
+                .environmentObject(tunnelManager)
+        case .mesh:
+            MeshVPNView(manager: tunnelManager.meshVPNs)
+                .environmentObject(tunnelManager)
+        case .devTools:
+            DevToolsView(manager: tunnelManager.devTools)
         case .warnings:
-            WarningsListView()
+            WarningsView()
                 .environmentObject(tunnelManager)
         default:
             EmptyView()
@@ -189,7 +211,7 @@ struct MainDashboardView: View {
     @ViewBuilder
     private var detailView: some View {
         if let tunnel = selectedTunnel {
-            TunnelDetailView(tunnel: tunnel)
+            TunnelDetailView(tunnel: tunnel, initialTab: detailTab, onFullDetails: { fullDetailsTunnel = tunnel })
                 .environmentObject(tunnelManager)
                 .id(tunnel.id)
         } else {
@@ -291,6 +313,10 @@ private struct SidebarView: View {
         case .shared:    return .purple
         case .favorites: return .yellow
         case .multiHop:  return .indigo
+        case .profiles:  return .teal
+        case .doctor:    return .mint
+        case .mesh:      return .cyan
+        case .devTools:  return .brown
         case .warnings:  return .orange
         case .settings:  return .gray
         case .log:       return .blue
@@ -299,40 +325,3 @@ private struct SidebarView: View {
     }
 }
 
-// MARK: - Warnings List
-
-private struct WarningsListView: View {
-    @EnvironmentObject var tunnelManager: TunnelManager
-
-    var body: some View {
-        if tunnelManager.activeWarnings.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.green)
-                Text("No Warnings")
-                    .font(.headline)
-                Text("Your tunnel configuration looks good.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            List(tunnelManager.activeWarnings) { warning in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.yellow)
-                        Text(warning.title)
-                            .font(.headline)
-                    }
-                    Text(warning.message)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-            .navigationTitle("Warnings")
-        }
-    }
-}

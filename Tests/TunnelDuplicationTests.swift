@@ -37,6 +37,7 @@ struct TunnelDuplicationTests {
         source.excludedRoutes = ["192.0.2.0/24"]
         source.splitDNSDomains = ["example"]
         source.speedTestURL = "https://example.com/test"
+        source.engine = .amneziaWG
         // Live metrics must not replace saved configuration in the duplicate.
         source.endpoint = "192.0.2.1:13231"
         source.allowedIPs = ["0.0.0.0/0"]
@@ -54,7 +55,8 @@ struct TunnelDuplicationTests {
               copy.localPublicKey == WireGuardKey.publicKey(fromPrivateKey: key),
               copy.killSwitchEnabled, copy.ipFamilyLeakWarningAcknowledged, copy.excludedRoutes == source.excludedRoutes,
               copy.splitDNSDomains == source.splitDNSDomains, copy.speedTestURL == source.speedTestURL,
-              copy.autoConnectRule.connect.wifiSSIDs == ["Test network"] else { fatalError("Duplicate lost saved config or routing settings") }
+              copy.autoConnectRule.connect.wifiSSIDs == ["Test network"],
+              copy.engine == .amneziaWG else { fatalError("Duplicate lost saved config or routing settings") }
         let attributes = try FileManager.default.attributesOfItem(atPath: copy.configPath)
         guard (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600 else { fatalError("Duplicate config is not private") }
         let second = try duplicator.duplicate(source, existingTunnels: [source, copy])

@@ -168,12 +168,86 @@ enum ConfigSafety {
     }
 }
 
+/// The extra keys AmneziaWG's `awg setconf` accepts (amneziawg-tools at the pinned revision,
+/// Scripts/wireguard-versions.env). A config that uses any of them needs awg, not wg.
+/// `awg` exits on a malformed value, so values are checked here, at import, with the same
+/// rules it applies.
+nonisolated enum AmneziaWGKeys {
+    enum Kind {
+        case uint16
+        case uint32Range
+        case uint16Range
+        case flag
+        case text
+        case key
+    }
+
+    /// Interface keys, in the order they are written back by the basic form.
+    static let interfaceKinds: [(name: String, kind: Kind)] = [
+        ("Jc", .uint16), ("Jmin", .uint16), ("Jmax", .uint16),
+        ("S1", .uint16), ("S2", .uint16), ("S3", .uint16), ("S4", .uint16),
+        ("H1", .uint32Range), ("H2", .uint32Range), ("H3", .uint32Range), ("H4", .uint32Range),
+        ("I1", .text), ("I2", .text), ("I3", .text), ("I4", .text), ("I5", .text),
+        ("HeaderProtectionKey", .key),
+        ("ContentPaddingAddition", .uint16Range),
+        ("RekeyAfterTime", .uint16Range), ("RekeyTimeout", .uint16Range),
+        ("RejectAfterTime", .uint16Range), ("KeepaliveTimeout", .uint16Range),
+        ("MaxHandshakeAttempts", .uint16Range),
+        ("RandomTrailers", .flag), ("DisableCookies", .flag)
+    ]
+    static let peerKinds: [(name: String, kind: Kind)] = [("AdvancedSecurity", .flag)]
+
+    static func interfaceKind(of key: String) -> (name: String, kind: Kind)? {
+        interfaceKinds.first { $0.name.caseInsensitiveCompare(key) == .orderedSame }
+    }
+
+    static func peerKind(of key: String) -> (name: String, kind: Kind)? {
+        peerKinds.first { $0.name.caseInsensitiveCompare(key) == .orderedSame }
+    }
+
+    static func isValid(_ value: String, kind: Kind) -> Bool {
+        switch kind {
+        case .uint16: return integer(value, maximum: 65535) != nil
+        case .uint32Range: return range(value, maximum: UInt64(UInt32.max))
+        case .uint16Range: return range(value, maximum: 65535)
+        case .flag:
+            return value.caseInsensitiveCompare("on") == .orderedSame
+                || value.caseInsensitiveCompare("off") == .orderedSame
+                || integer(value, maximum: UInt64(UInt32.max)) != nil
+        case .text:
+            return !value.isEmpty
+        case .key:
+            return Data(base64Encoded: value)?.count == 32
+        }
+    }
+
+    private static func integer(_ text: String, maximum: UInt64) -> UInt64? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+              let number = UInt64(text), number <= maximum else { return nil }
+        return number
+    }
+
+    /// "N" or "N-M" with N <= M, as awg's u32_range_from_string reads it.
+    private static func range(_ text: String, maximum: UInt64) -> Bool {
+        let parts = text.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let low = integer(parts[0], maximum: maximum) else { return false }
+        if parts.count == 1 { return true }
+        guard let high = integer(parts[1], maximum: maximum) else { return false }
+        return high >= low
+    }
+}
+
 struct ParsedConfig {
     // Interface section
     var privateKey: String?
     var address: [String] = []
     var dns: [String] = []
     var listenPort: Int?
+
+    /// AmneziaWG-only keys, as written (name, value), in file order. Empty for plain WireGuard.
+    var amneziaInterface: [(name: String, value: String)] = []
+    var amneziaPeer: [(name: String, value: String)] = []
+    var usesAmneziaWG: Bool { !amneziaInterface.isEmpty || !amneziaPeer.isEmpty }
 
     // Peer section (first peer only for MVP)
     var peerPublicKey: String?
@@ -197,6 +271,7 @@ enum ConfigValidationError: Equatable, Hashable {
     case missingAllowedIPs
     case unsupportedDirective(String)
     case controlCharacters
+    case invalidAmneziaValue(String)
 
     var message: String {
         switch self {
@@ -212,6 +287,8 @@ enum ConfigValidationError: Equatable, Hashable {
             return "\(directive) is not supported because it executes commands with root privileges"
         case .controlCharacters:
             return "Configuration contains control characters"
+        case .invalidAmneziaValue(let key):
+            return "The AmneziaWG parameter \(key) has an invalid value"
         }
     }
 }
@@ -277,7 +354,10 @@ final class WireGuardConfigParser {
                 case "dns":
                     config.dns += nonEmptyList(value)
                 case "listenport": config.listenPort = Int(value)
-                default: break
+                default:
+                    if let known = AmneziaWGKeys.interfaceKind(of: key) {
+                        record(known, value: value, peer: false, into: &config)
+                    }
                 }
             } else if currentSection == "[peer]" && peerCount == 1 {
                 switch normalizedKey {
@@ -287,7 +367,10 @@ final class WireGuardConfigParser {
                 case "allowedips":
                     config.allowedIPs += nonEmptyList(value)
                 case "persistentkeepalive": config.persistentKeepalive = Int(value)
-                default: break
+                default:
+                    if let known = AmneziaWGKeys.peerKind(of: key) {
+                        record(known, value: value, peer: true, into: &config)
+                    }
                 }
             }
         }
@@ -307,6 +390,26 @@ final class WireGuardConfigParser {
         if peerCount > 1 { config.warnings.append(.multiplePeers) }
 
         return config
+    }
+
+    /// awg strips everything from the first "#" (a trailing comment) before reading a value,
+    /// so a value is checked and stored the same way.
+    private func record(
+        _ known: (name: String, kind: AmneziaWGKeys.Kind),
+        value: String,
+        peer: Bool,
+        into config: inout ParsedConfig
+    ) {
+        let cleaned = (value.firstIndex(of: "#").map { String(value[..<$0]) } ?? value)
+            .trimmingCharacters(in: .whitespaces)
+        if peer {
+            config.amneziaPeer.append((known.name, cleaned))
+        } else {
+            config.amneziaInterface.append((known.name, cleaned))
+        }
+        if !AmneziaWGKeys.isValid(cleaned, kind: known.kind) {
+            config.validationErrors.append(.invalidAmneziaValue(known.name))
+        }
     }
 
     private func nonEmpty(_ value: String) -> String? {

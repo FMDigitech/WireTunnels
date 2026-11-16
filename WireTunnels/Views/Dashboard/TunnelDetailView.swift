@@ -53,6 +53,13 @@ private let tunnelRelativeDateFormatter: RelativeDateTimeFormatter = {
     return formatter
 }()
 
+/// The tabs of the tunnel detail pane. The full-details page opens the right one from its summary rows.
+enum TunnelDetailTab: String, CaseIterable, Identifiable {
+    case overview = "Overview", sharing = "Sharing", network = "Network"
+    case onDemand = "On-Demand", safety = "Safety", config = "Config"
+    var id: String { rawValue }
+}
+
 // MARK: - Detail View
 
 struct TunnelDetailView: View {
@@ -72,6 +79,15 @@ struct TunnelDetailView: View {
     @State private var isLoadingConnectedUsers = false
     @State private var connectedUsers: [ManagedTunnelUserSession] = []
     @State private var errorMessage: String? = nil
+    @State private var tab: TunnelDetailTab
+    /// Opens the full-width details page; nil hides the button.
+    var onFullDetails: (() -> Void)?
+
+    init(tunnel: Tunnel, initialTab: TunnelDetailTab = .overview, onFullDetails: (() -> Void)? = nil) {
+        self.tunnel = tunnel
+        self.onFullDetails = onFullDetails
+        _tab = State(initialValue: initialTab)
+    }
 
     // On-Demand state — mirrors live.autoConnectRule, saved immediately on change.
     // Connect and disconnect are independent halves so a tunnel can e.g. connect
@@ -109,6 +125,43 @@ struct TunnelDetailView: View {
     @State private var showSplitDNSReconnectPrompt = false
 
     // Always read live data from TunnelManager so stats update in real-time
+    /// The engine this tunnel runs on. For your own tunnels it is a menu: Automatic lets the config
+    /// decide, the other two force the choice (WireGuard is refused for configs with AmneziaWG keys).
+    @ViewBuilder
+    private var engineBadge: some View {
+        let manual = live.enginePreference != nil
+        let label = Label(manual ? "\(live.engine.displayName) (chosen)" : live.engine.displayName,
+                          systemImage: live.engine == .amneziaWG ? "eye.slash" : "lock.shield")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        if isManaged {
+            label.help("Shared tunnels use the engine their configuration needs.")
+        } else {
+            Menu {
+                Picker("Engine", selection: Binding<TunnelEngine?>(
+                    get: { live.enginePreference },
+                    set: { choice in
+                        if let message = tunnelManager.setEnginePreference(choice, for: live) { errorMessage = message }
+                    }
+                )) {
+                    Text("Automatic (from the config)").tag(TunnelEngine?.none)
+                    Text("WireGuard").tag(TunnelEngine?.some(.wireGuard))
+                    Text("AmneziaWG").tag(TunnelEngine?.some(.amneziaWG))
+                }
+                .pickerStyle(.inline)
+            } label: {
+                label
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
+            .fixedSize()
+            .disabled(live.isActive || isProcessing)
+            .help(live.isActive
+                  ? "Disconnect the tunnel to change its engine."
+                  : "Engine: Automatic picks AmneziaWG when the config has AmneziaWG parameters and WireGuard otherwise.")
+        }
+    }
+
     private var live: Tunnel {
         tunnelManager.tunnels.first(where: { $0.id == tunnel.id }) ?? tunnel
     }
@@ -158,12 +211,20 @@ struct TunnelDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Header
                 headerSection
+                tabBar
 
-                Divider()
+                if tab == .overview {
+                    TunnelOverviewTab(tunnel: live)
+                }
+                if tab == .sharing {
+                    TunnelSharingTab(tunnel: live,
+                                     canShare: !live.isActive && !isSharingTunnel && !isManaged,
+                                     onMakeShared: makeShared)
+                }
 
                 // Interface details
+                if tab == .network {
                 DetailSection(title: "Interface") {
                     if let iface = live.interfaceName {
                         DetailRow(label: "Interface", value: iface)
@@ -187,22 +248,14 @@ struct TunnelDetailView: View {
                         DetailRow(label: "Public Key", value: pubKey, monospace: true)
                     }
                 }
-
-                Divider()
-
-                // Runtime stats
                 if !isManaged {
                     InventorySettingsView(tunnel: live)
-                    Divider()
                 }
-                DetailSection(title: "Status") {
-                    if let connectedAt = live.connectedAt {
-                        DetailRow(label: "Connected for", value: formatDuration(since: connectedAt))
-                    }
-                    DetailRow(label: "Last Handshake", value: formatHandshake(live.lastHandshake))
-                    DetailRow(label: "Received", value: formatBytes(live.rxBytes))
-                    DetailRow(label: "Sent", value: formatBytes(live.txBytes))
+                }
 
+                // Runtime stats: the figures live in the Overview tab; the active checks stay here.
+                if tab == .overview {
+                DetailSection(title: "Checks") {
                     HStack(spacing: 10) {
                         Button {
                             testConnection()
@@ -241,44 +294,38 @@ struct TunnelDetailView: View {
                     }
                 }
 
-                if isManaged && tunnelManager.currentUserIsAdministrator {
-                    Divider()
+                }
+
+                if tab == .sharing && isManaged && tunnelManager.currentUserIsAdministrator {
                     connectedUsersSection
-                    Divider()
                     accessControlSection
                 }
 
                 // Traffic charts — only when active and samples exist
                 let samples = tunnelManager.trafficHistory[live.id] ?? []
-                if live.isActive && !samples.isEmpty {
-                    Divider()
+                if tab == .overview && live.isActive && !samples.isEmpty {
                     TrafficChartsView(tunnel: live, samples: samples)
                 }
 
-                Divider()
+                if tab == .onDemand {
+                    onDemandSection
+                }
 
-                // On-Demand (Auto-Connect)
-                onDemandSection
+                if tab == .safety {
+                    killSwitchSection
+                }
 
-                Divider()
-
-                // Kill Switch
-                killSwitchSection
-
-                if !isManaged {
-                    Divider()
-
+                if tab == .network && !isManaged {
                     // Split Tunnel Exclusions
                     splitTunnelSection
                 }
 
-                Divider()
+                if tab == .network {
+                    // Split DNS (personal tunnels, or shared ones with admin-only editing)
+                    splitDNSSection
+                }
 
-                // Split DNS (personal tunnels, or shared ones with admin-only editing)
-                splitDNSSection
-
-                Divider()
-
+                if tab == .config {
                 // Config path
                 DetailSection(title: "Configuration") {
                     if isManaged {
@@ -295,10 +342,9 @@ struct TunnelDetailView: View {
                     DetailRow(label: "Updated", value: live.updatedAt.formatted(date: .abbreviated, time: .shortened))
                 }
 
-                Divider()
-
                 // Actions
                 actionsSection
+                }
             }
             .padding(20)
         }
@@ -374,61 +420,81 @@ struct TunnelDetailView: View {
     // MARK: Sections
 
     private var headerSection: some View {
-        HStack(alignment: .center, spacing: 14) {
-            // Status badge
-            ZStack {
-                Circle()
-                    .fill(live.isActive ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
-                    .frame(width: 52, height: 52)
-
-                Image(systemName: live.isActive ? "network" : "network.slash")
-                    .font(.title2)
-                    .foregroundStyle(live.isActive ? .green : .secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(live.name)
-                    .font(.title2.bold())
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(live.isActive ? Color.green : Color.secondary)
-                        .frame(width: 8, height: 8)
-                    Text(live.isActive ? "Connected" : "Disconnected")
-                        .font(.subheadline)
-                        .foregroundStyle(live.isActive ? .green : .secondary)
-
-                    if live.isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.caption)
-                            .foregroundStyle(.yellow)
-                    }
-
-                    if isManaged {
-                        Label("Shared for All Users", systemImage: "lock.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Spacer()
-
-            HStack(spacing: 8) {
-                if isProcessing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-
-                Toggle(isOn: connectionBinding) {
-                    Text("Connection")
-                }
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(connectionDisabled)
-                .accessibilityLabel("Connection for \(live.name)")
-            }
+        let chain = tunnelManager.hopChains.first { $0.hopTunnelID == live.id || $0.exitTunnelID == live.id }
+        let connection = tunnelManager.connectionStatus(for: live)
+        let info = VStack(alignment: .leading, spacing: 4) {
+            Text(live.name).font(.title2.bold()).lineLimit(2)
+            Text("\(live.engine.displayName)\(live.endpoint.map { " · \($0)" } ?? "")")
+                .font(.callout).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
         }
+        let pills = FlowLayout {
+            switch connection {
+            case .connecting: StatusPill(text: "Connecting…", tone: .info)
+            case .reconnecting: StatusPill(text: "Reconnecting…", tone: .warn)
+            case .connectionLost: StatusPill(text: "Connection lost", tone: .bad)
+            default:
+                StatusPill(text: live.isActive ? "Connected" : "Not connected", tone: live.isActive ? .good : .neutral)
+            }
+            if live.isActive, let connectedAt = live.connectedAt {
+                Text(Format.duration(since: connectedAt)).font(.caption).foregroundStyle(.secondary)
+            }
+            if isManaged {
+                StatusPill(text: "Shared for all users", tone: .info, showsIcon: false)
+            }
+            if let chain {
+                StatusPill(text: chain.hopTunnelID == live.id ? "Chain · entry" : "Chain · exit", tone: .info, showsIcon: false)
+            }
+            engineBadge
+        }
+        // Name and actions share a row when there is room, otherwise the actions drop below.
+        return VStack(alignment: .leading, spacing: 10) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    info
+                    Spacer(minLength: 12)
+                    headerActions
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    info
+                    headerActions
+                }
+            }
+            pills
+        }
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: 8) {
+                if isProcessing { ProgressView().controlSize(.small) }
+                if let onFullDetails {
+                    Button("Full details →", action: onFullDetails)
+                        .buttonStyle(.link)
+                        .help("Open this tunnel as a full-width page")
+                }
+                Button {
+                    connectionBinding.wrappedValue = !live.isActive
+                } label: {
+                    Text(live.isActive ? "Disconnect" : "Connect").frame(minWidth: 70)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(live.isActive ? Color.red : Color.accentColor)
+                .disabled(connectionDisabled)
+                .accessibilityLabel("\(live.isActive ? "Disconnect" : "Connect") \(live.name)")
+                if !isManaged {
+                    Button {
+                        tunnelManager.toggleFavorite(live)
+                    } label: {
+                        Image(systemName: live.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(live.isFavorite ? Color.yellow : Color.secondary)
+                    }
+                    .buttonStyle(.bordered)
+                    .help(live.isFavorite ? "Remove from favorites" : "Add to favorites")
+                }
+        }
+    }
+
+    private var tabBar: some View {
+        TabStrip(tabs: TunnelDetailTab.allCases, selection: $tab)
     }
 
     // MARK: On-Demand Section
@@ -1158,6 +1224,10 @@ private struct ConfigEditorSheetView: View {
     @State private var endpoint: String = ""
     @State private var allowedIPs: String = ""
     @State private var persistentKeepalive: String = ""
+    // AmneziaWG-only keys have no fields in the basic form; they are carried through unchanged
+    // so saving from it cannot silently turn the tunnel into plain WireGuard.
+    @State private var amneziaInterface: [(name: String, value: String)] = []
+    @State private var amneziaPeer: [(name: String, value: String)] = []
     // Advanced editor
     @State private var advancedContent: String = ""
 
@@ -1169,17 +1239,23 @@ private struct ConfigEditorSheetView: View {
         WireGuardDNS.compose(servers: dns, searchDomains: searchDomains)
     }
 
+    private var usesAmneziaWG: Bool { !amneziaInterface.isEmpty || !amneziaPeer.isEmpty }
+
+    private func keyLines(_ entries: [(name: String, value: String)]) -> String {
+        entries.map { "\($0.name) = \($0.value)" }.joined(separator: "\n")
+    }
+
     private var generatedConfig: String {
         """
         [Interface]
         PrivateKey = \(privateKey)
         Address = \(address)
-        \(dnsComposition.line.isEmpty ? "" : "DNS = \(dnsComposition.line)\n")
+        \(dnsComposition.line.isEmpty ? "" : "DNS = \(dnsComposition.line)\n")\(keyLines(amneziaInterface))
         [Peer]
         PublicKey = \(peerPublicKey)
         \(presharedKey.isEmpty ? "" : "PresharedKey = \(presharedKey)\n")Endpoint = \(endpoint)
         AllowedIPs = \(allowedIPs)
-        \(persistentKeepalive.isEmpty ? "" : "PersistentKeepalive = \(persistentKeepalive)\n")
+        \(persistentKeepalive.isEmpty ? "" : "PersistentKeepalive = \(persistentKeepalive)\n")\(keyLines(amneziaPeer))
         """
     }
 
@@ -1249,7 +1325,7 @@ private struct ConfigEditorSheetView: View {
             }
             .padding()
         }
-        .frame(width: 560, height: 600)
+        .sheetFrame(width: 560, height: 600)
         .task { await loadFields() }
         .alert("Save Error", isPresented: .init(
             get: { error != nil },
@@ -1271,6 +1347,14 @@ private struct ConfigEditorSheetView: View {
                     }
                 }
                 FormSection(title: "Interface") {
+                    FormRow(label: "Engine") {
+                        Text(usesAmneziaWG
+                             ? "AmneziaWG: its parameters are kept as they are. Edit them in the Advanced Editor."
+                             : "Chosen with the engine menu at the top of the tunnel (Automatic by default). Adding AmneziaWG parameters (Jc, S1, H1 …) in the Advanced Editor switches this tunnel to AmneziaWG.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     FormRow(label: "Private Key") {
                         SecureField("Base64 encoded key", text: $privateKey)
                             .textFieldStyle(.roundedBorder)
@@ -1370,6 +1454,8 @@ private struct ConfigEditorSheetView: View {
         endpoint = parsed.endpoint ?? ""
         allowedIPs = parsed.allowedIPs.joined(separator: ", ")
         persistentKeepalive = parsed.persistentKeepalive.map { String($0) } ?? ""
+        amneziaInterface = parsed.amneziaInterface
+        amneziaPeer = parsed.amneziaPeer
     }
 
     private func save() {

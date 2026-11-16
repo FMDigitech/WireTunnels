@@ -35,7 +35,8 @@ enum WireGuardManifestError: LocalizedError {
         switch self {
         case .missingManifest: return "WireGuard runtime manifest is missing"
         case .unsupportedSchema(let version): return "Unsupported runtime manifest schema \(version)"
-        case .invalidArtifactSet: return "Runtime manifest must contain exactly wg, wg-quick, and wireguard-go"
+        case .invalidArtifactSet:
+            return "Runtime manifest must contain exactly wg, wg-quick, wireguard-go, awg, awg-quick, and amneziawg-go"
         case .unsafeArtifactName(let name): return "Unsafe runtime artifact name: \(name)"
         case .missingArtifact(let name): return "Runtime artifact is missing: \(name)"
         case .invalidArtifactType(let name): return "Runtime artifact is not a regular file: \(name)"
@@ -44,7 +45,9 @@ enum WireGuardManifestError: LocalizedError {
 }
 
 struct WireGuardManifestVerifier {
-    static let expectedArtifactNames: Set<String> = ["wg", "wg-quick", "wireguard-go"]
+    static let expectedArtifactNames: Set<String> = [
+        "wg", "wg-quick", "wireguard-go", "awg", "awg-quick", "amneziawg-go",
+    ]
 
     private let iso8601 = ISO8601DateFormatter()
 

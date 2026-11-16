@@ -2,28 +2,32 @@ import Darwin
 import Foundation
 
 private final class FakeDNSNetwork: DNSRecoveryNetwork {
-    var values: [String: DNSSettings] = ["service-1": DNSSettings(dns: ["192.0.2.53"], search: ["original.example"])]
+    var values: [String: DNSSettings] = [
+        "service-1": DNSSettings(dns: ["192.0.2.53"], search: ["original.example"]),
+        "service-2": DNSSettings(dns: ["198.51.100.53"], search: []),
+    ]
+    private func key(_ service: String) -> String { service == "Ethernet" ? "service-2" : "service-1" }
     var live: Set<String> = []
     var writeCount = 0
     var failField: DNSField?
     var afterWrite: (() -> Void)?
     var expireAfterFirstCheck = false
     var aliveChecks = 0
-    func serviceID(named name: String) throws -> String { "service-1" }
-    func serviceName(for id: String) throws -> String? { id == "service-1" ? "Wi-Fi" : nil }
+    func serviceID(named name: String) throws -> String { key(name) }
+    func serviceName(for id: String) throws -> String? { id == "service-1" ? "Wi-Fi" : id == "service-2" ? "Ethernet" : nil }
     func isAlive(_ owner: DNSOwnerIdentity) -> Bool {
         aliveChecks += 1
         if expireAfterFirstCheck && aliveChecks > 1 { return false }
         return live.contains(owner.token + ":" + String(owner.inode))
     }
     func read(service: String, field: DNSField) throws -> [String] {
-        field == .dns ? values["service-1"]!.dns : values["service-1"]!.search
+        field == .dns ? values[key(service)]!.dns : values[key(service)]!.search
     }
     func write(service: String, field: DNSField, values newValues: [String]) throws {
         if failField == field { throw NSError(domain: "fixture", code: 1) }
         writeCount += 1
-        if field == .dns { values["service-1"]!.dns = newValues }
-        else { values["service-1"]!.search = newValues }
+        if field == .dns { values[key(service)]!.dns = newValues }
+        else { values[key(service)]!.search = newValues }
         afterWrite?()
     }
 }
@@ -238,6 +242,15 @@ struct DNSRecoveryTests {
             let a = DNSOwnerIdentity(token: UUID().uuidString, alias: "fixture", interface: "utun99", device: UInt64(UInt32(bitPattern: attributes.st_dev)), inode: UInt64(attributes.st_ino))
             let network = SystemDNSRecoveryNetwork(runtimeDirectory: runtime, expectedUID: getuid())
             precondition(network.isAlive(a), "Listening UAPI fixture was rejected")
+            // A tunnel's marker and socket live in its own engine's directory (wg-quick vs awg-quick):
+            // any directory in the list can prove ownership, and one that does not hold the tunnel cannot.
+            let otherEngine = URL(fileURLWithPath: "/tmp/wiretunnels-dns-other-" + String(UUID().uuidString.prefix(8)))
+            try FileManager.default.createDirectory(at: otherEngine, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            defer { try? FileManager.default.removeItem(at: otherEngine) }
+            precondition(SystemDNSRecoveryNetwork(runtimeDirectories: [otherEngine, runtime], expectedUID: getuid()).isAlive(a),
+                         "A tunnel in the second engine's directory was not recognised as alive")
+            precondition(!SystemDNSRecoveryNetwork(runtimeDirectories: [otherEngine], expectedUID: getuid()).isAlive(a),
+                         "A directory without the tunnel's marker must not vouch for it")
             close(server)
             precondition(FileManager.default.fileExists(atPath: path), "Fixture unexpectedly removed stale socket pathname")
             let started = ProcessInfo.processInfo.systemUptime
@@ -257,6 +270,45 @@ struct DNSRecoveryTests {
             precondition(unchanged == "unchanged", "Journal symlink modified another file")
             _ = network
         }
+        // A network profile sets DNS servers only, yields to a tunnel, follows the primary service and can be reapplied.
+        do {
+            let (network, service) = fixture("profile")
+            let profile = DNSOwnerIdentity.profileOwner(boot: 42)
+            network.live.insert(profile.token + ":1")
+            let profileDNS = DNSSettings(dns: ["9.9.9.9", "149.112.112.112"], search: [])
+            let profileOnWiFi = DNSSettings(dns: profileDNS.dns, search: original.search)
+            try service.set(owner: profile, service: "Wi-Fi", settings: profileDNS, exclusive: true)
+            precondition(network.values["service-1"] == profileOnWiFi, "Profile missed its DNS or changed the search domains")
+            let tunnel = owner()
+            try connect(network, service, tunnel, aValues)
+            precondition(network.values["service-1"] == aValues, "A profile beat a tunnel's DNS")
+            try service.set(owner: profile, service: "Wi-Fi", settings: profileDNS, exclusive: true)
+            precondition(network.values["service-1"] == aValues, "A reapplied profile took DNS from a tunnel")
+            try service.release(token: tunnel.token)
+            precondition(network.values["service-1"] == profileOnWiFi, "The profile's DNS was lost after the tunnel left")
+            try service.set(owner: profile, service: "Ethernet", settings: profileDNS, exclusive: true)
+            precondition(network.values["service-1"] == original, "A profile left DNS behind on the old service")
+            precondition(network.values["service-2"]!.dns == profileDNS.dns, "A profile did not move to the new service")
+            try service.release(token: profile.token)
+            precondition(network.values["service-2"] == DNSSettings(dns: ["198.51.100.53"], search: []), "Releasing a profile did not restore DNS")
+            try service.set(owner: profile, service: "Wi-Fi", settings: profileDNS, exclusive: true)
+            precondition(network.values["service-1"] == profileOnWiFi, "A released profile could not be applied again")
+            network.live.removeAll()
+            try service.recover()
+            precondition(network.values["service-1"] == original, "A profile whose boot ended kept its DNS")
+        }
+        // The real liveness check ties the profile owner to this boot and rejects forged owners.
+        do {
+            let real = SystemDNSRecoveryNetwork(runtimeDirectory: root, expectedUID: getuid())
+            let boot = SystemDNSRecoveryNetwork.bootTimeSeconds
+            precondition(boot > 0, "Boot time is unreadable")
+            precondition(real.isAlive(.profileOwner(boot: boot)), "The current boot's profile owner was rejected")
+            precondition(!real.isAlive(.profileOwner(boot: boot - 1)), "A profile owner from another boot stayed alive")
+            let forged = DNSOwnerIdentity(token: DNSOwnerIdentity.profileToken, alias: "fixture", interface: "profile",
+                                          device: boot, inode: 1, profile: true)
+            precondition(!real.isAlive(forged), "A forged profile owner was accepted")
+        }
         print("PASS: persistent DNS recovery preserves baselines, live owners, retries and manual settings")
+        print("PASS: network profile DNS yields to tunnels, follows the primary service and ends with the boot")
     }
 }

@@ -30,7 +30,7 @@ grep -Fq 'keyGenerationTimeoutNanoseconds' "$COMMAND_SERVICE" ||
     fail "key generation must have a bounded timeout"
 grep -Fq 'remoteObjectProxyWithErrorHandler' "$COMMAND_SERVICE" ||
     fail "key generation must resume when the XPC connection is interrupted"
-grep -Fq 'expectedHelperVersion = "1.0"' "$COMMAND_SERVICE" ||
+grep -Eq 'expectedHelperVersion = "1\.[0-9]+(\.[0-9]+)*"' "$COMMAND_SERVICE" ||
     fail "app must require the helper version that supports key generation"
 
 grep -Fq 'func generateKeyPair(reply: @escaping (String?, String?, String?) -> Void)' "$HELPER" ||
@@ -49,11 +49,11 @@ grep -Fq 'guard !privateKey.isEmpty' "$HELPER" ||
     fail "helper must reject an empty private key"
 grep -Fq 'guard !publicKey.isEmpty' "$HELPER" ||
     fail "helper must reject an empty public key"
-grep -Fq 'standardInput: String?' "$HELPER" ||
+grep -Fq 'standardInput: String?' "$ROOT_DIR/WireTunnelsHelper/CommandRunner.swift" ||
     fail "command runner must support stdin"
-grep -Fq 'process.standardInput = stdinPipe' "$HELPER" ||
+grep -Fq 'process.standardInput = stdinPipe' "$ROOT_DIR/WireTunnelsHelper/CommandRunner.swift" ||
     fail "command runner must connect stdin to the child process"
-grep -Fq 'helperVersionNumber = "1.0"' "$HELPER" ||
+grep -Eq 'helperVersionNumber = "1\.[0-9]+(\.[0-9]+)*"' "$HELPER" ||
     fail "helper version must advance for the new XPC protocol"
 
 echo "Privileged key generation requirements are implemented"

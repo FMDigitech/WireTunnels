@@ -1,0 +1,41 @@
+--- darwin.bash
++++ darwin.bash
+@@ -29,6 +29,9 @@
+ PROGRAM="${0##*/}"
+ ARGS=( "$@" )
+ 
++# awg-quick calls `wg`; WireTunnels ships WireGuard's wg beside awg, so send those calls to awg.
++wg() { awg "$@"; }
++
+ cmd() {
+ 	echo "[#] $*" >&2
+ 	"$@"
+@@ -113,7 +116,7 @@
+ 	[[ -f "/var/run/amneziawg/$INTERFACE.name" ]] || return 1
+ 	interface="$(< "/var/run/amneziawg/$INTERFACE.name")"
+ 	[[ -n $interface && -S "/var/run/amneziawg/$interface.sock" ]] || return 1
+-	diff=$(( $(stat -f %m "/var/run/amneziawg/$interface.sock" 2>/dev/null || echo 200) - $(stat -f %m "/var/run/wireguard/$INTERFACE.name" 2>/dev/null || echo 100) ))
++	diff=$(( $(stat -f %m "/var/run/amneziawg/$interface.sock" 2>/dev/null || echo 200) - $(stat -f %m "/var/run/amneziawg/$INTERFACE.name" 2>/dev/null || echo 100) ))
+ 	[[ $diff -ge 2 || $diff -le -2 ]] && return 1
+ 	REAL_INTERFACE="$interface"
+ 	echo "[+] Interface for $INTERFACE is $REAL_INTERFACE" >&2
+@@ -155,8 +158,8 @@
+ }
+ 
+ del_if() {
+-	[[ -z $REAL_INTERFACE ]] || cmd rm -f "/var/run/wireguard/$REAL_INTERFACE.sock"
+-	cmd rm -f "/var/run/wireguard/$INTERFACE.name"
++	[[ -z $REAL_INTERFACE ]] || cmd rm -f "/var/run/amneziawg/$REAL_INTERFACE.sock"
++	cmd rm -f "/var/run/amneziawg/$INTERFACE.name"
+ }
+ 
+ up_if() {
+@@ -452,7 +455,7 @@
+ 		[[ -n ${WIRETUNNELS_DNS_TOKEN:-} ]] || return 1
+ 		# Capture socket identity once; inherited monitors must not adopt a reused utun.
+ 		if [[ -z ${WIRETUNNELS_DNS_SOCKET_ID:-} ]]; then
+-			WIRETUNNELS_DNS_SOCKET_ID="$(stat -f '%d:%i' "/var/run/wireguard/$REAL_INTERFACE.sock")" || return $?
++			WIRETUNNELS_DNS_SOCKET_ID="$(stat -f '%d:%i' "/var/run/amneziawg/$REAL_INTERFACE.sock")" || return $?
+ 		fi
+ 		collect_active_dns_services
+ 		{ read -r _ && while read -r service; do

@@ -5,102 +5,119 @@ struct NewTunnelView: View {
     @EnvironmentObject var tunnelManager: TunnelManager
     @Environment(\.dismiss) var dismiss
 
-    @State private var selectedTab = 0
+    private enum Mode { case basic, advanced }
+    private typealias Field = TunnelFormChecks.Field
 
-    // Basic form fields
-    @State private var tunnelName: String = ""
-    @State private var privateKey: String = ""
-    @State private var address: String = ""
-    @State private var dns: String = ""
-    @State private var searchDomains: String = ""
-    @State private var peerPublicKey: String = ""
-    @State private var presharedKey: String = ""
-    @State private var endpoint: String = ""
-    @State private var allowedIPs: String = ""
-    @State private var persistentKeepalive: String = ""
-
-    // Advanced editor
-    @State private var advancedContent: String = ""
+    @State private var mode: Mode
+    @State private var fields: TunnelFormFields
+    @State private var advancedContent: String
+    @State private var touched: Set<Field> = []
+    @FocusState private var focus: Field?
 
     // UI state
     @State private var isSaving = false
     @State private var isConnecting = false
     @State private var error: String? = nil
+    @State private var switchRefusal: String? = nil
+    @State private var revealLine: Int? = nil
     @State private var generatedPublicKey: String = ""
     @State private var generatedPrivateKey: String = ""
     @State private var isGeneratingKeys = false
     @State private var showPrivateKey = false
 
-    private var dnsComposition: (line: String, invalidDomains: [String]) {
-        WireGuardDNS.compose(servers: dns, searchDomains: searchDomains)
+    /// `initialConfig` opens the Advanced Editor with that text, e.g. from "Fix in the Advanced Editor" in Import Config.
+    init(initialConfig: String? = nil, initialName: String = "") {
+        _mode = State(initialValue: initialConfig == nil ? .basic : .advanced)
+        _advancedContent = State(initialValue: initialConfig ?? "")
+        var fields = TunnelFormFields()
+        fields.name = initialName
+        _fields = State(initialValue: fields)
     }
 
-    private var generatedConfig: String {
-        """
-        [Interface]
-        PrivateKey = \(privateKey)
-        Address = \(address)
-        \(dnsComposition.line.isEmpty ? "" : "DNS = \(dnsComposition.line)\n")
-        [Peer]
-        PublicKey = \(peerPublicKey)
-        \(presharedKey.isEmpty ? "" : "PresharedKey = \(presharedKey)\n")Endpoint = \(endpoint)
-        AllowedIPs = \(allowedIPs)
-        \(persistentKeepalive.isEmpty ? "" : "PersistentKeepalive = \(persistentKeepalive)\n")
-        """
-    }
+    // MARK: Derived state
 
-    private var effectiveConfig: String {
-        selectedTab == 0 ? generatedConfig : advancedContent
+    private var existingNames: [String] { tunnelManager.tunnels.map(\.name) }
+    private var otherFullTunnels: [String] {
+        tunnelManager.tunnels.filter { $0.isActive && $0.allowedIPs.contains("0.0.0.0/0") }.map(\.name)
     }
+    private var checks: TunnelFormChecks { TunnelFormChecks(fields, existingNames: existingNames, otherFullTunnels: otherFullTunnels) }
+    private var reading: ConfigReading { ConfigDiagnostics.read(advancedContent) }
+    private var advancedNameProblem: String? { TunnelFormChecks.nameProblem(fields.name, existing: existingNames) }
+
+    private var effectiveConfig: String { mode == .basic ? fields.config() : advancedContent }
 
     private var canSave: Bool {
-        let name = tunnelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if selectedTab == 0 {
-            return !name.isEmpty && !privateKey.isEmpty && !address.isEmpty && dnsComposition.invalidDomains.isEmpty
-        } else {
-            return !name.isEmpty && !advancedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        mode == .basic ? checks.canSave : advancedNameProblem == nil && reading.errors.isEmpty
+    }
+    private var canConnect: Bool {
+        mode == .basic ? checks.canConnect : canSave && !reading.hasMissingEndpoint
+    }
+    private var isBusy: Bool { isSaving || isConnecting }
+
+    /// Why Save or Save & Connect is off, said next to the buttons.
+    private var disabledReason: String {
+        if mode == .basic {
+            if !checks.canSave { return "Complete the name, keys, address and allowed IPs to save." }
+        } else if fields.name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "Give the tunnel a name to save."
+        } else if let problem = advancedNameProblem {
+            return problem
+        } else if !reading.errors.isEmpty {
+            return "Fix \(reading.errors.count) error\(reading.errors.count == 1 ? "" : "s") to save."
         }
+        if !canConnect { return "Save & Connect needs an endpoint." }
+        return tunnelManager.connectionUnavailableReason ?? ""
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title
-            HStack {
+            HStack(spacing: 12) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.title2)
+                    .font(.title)
                     .foregroundStyle(.tint)
-                Text("New Tunnel")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New Tunnel").font(.title3.bold())
+                    Text(mode == .basic
+                         ? "Fill in the form and WireTunnels writes the WireGuard configuration for you."
+                         : "Write or paste a WireGuard config. WireTunnels reads it as you type and points to any line that needs attention.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
                 Spacer()
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
 
-            Divider()
-
-            // Tab picker
-            Picker("", selection: $selectedTab) {
-                Text("Basic Form").tag(0)
-                Text("Advanced Editor").tag(1)
+            Picker("How to create", selection: modeBinding) {
+                Text("Basic Form").tag(Mode.basic)
+                Text("Advanced Editor").tag(Mode.advanced)
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 10)
+            .labelsHidden()
+            .frame(width: 300)
+            .padding(.bottom, 10)
 
-            Divider()
-
-            // Content
-            if selectedTab == 0 {
-                basicFormView
-            } else {
-                advancedEditorView
+            if let reason = switchRefusal {
+                HStack(alignment: .top) {
+                    Notice(tone: .warn, title: "Can't switch to the Basic Form",
+                           message: "\(reason) Your editor content is kept; the form would lose it.")
+                    Button("Dismiss") { switchRefusal = nil }.buttonStyle(.bordered).controlSize(.small)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
             }
 
             Divider()
 
-            // Bottom buttons
-            bottomButtons
+            if mode == .basic { basicForm } else { advancedEditor }
+
+            Divider()
+            footer
         }
-        .frame(width: 560, height: 640)
+        .sheetFrame(width: 960, height: 720)
+        .onChange(of: focus) { old, _ in
+            if let old { touched.insert(old) }
+        }
+        .onChange(of: advancedContent) { _, _ in switchRefusal = nil }
         .alert("Error", isPresented: .init(
             get: { error != nil },
             set: { if !$0 { error = nil } }
@@ -111,204 +128,306 @@ struct NewTunnelView: View {
         }
     }
 
+    // MARK: - Tabs
+
+    private var modeBinding: Binding<Mode> {
+        Binding(get: { mode }, set: { switchMode(to: $0) })
+    }
+
+    private func switchMode(to newMode: Mode) {
+        guard newMode != mode else { return }
+        if newMode == .advanced {
+            advancedContent = fields.config()
+            switchRefusal = nil
+            mode = .advanced
+            return
+        }
+        // Back to the form: only when nothing typed in the editor would be lost.
+        if advancedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || advancedContent == fields.config() {
+            mode = .basic
+            return
+        }
+        switch TunnelFormFields.read(config: advancedContent) {
+        case .success(var read):
+            read.name = fields.name
+            fields = read
+            switchRefusal = nil
+            mode = .basic
+        case .failure(let failure):
+            switchRefusal = failure.reason
+        }
+    }
+
     // MARK: - Basic Form
 
-    private var basicFormView: some View {
+    private var basicForm: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-
-                FormSection(title: "General") {
-                    FormRow(label: "Tunnel Name") {
-                        TextField("My VPN", text: $tunnelName)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-
-                FormSection(title: "Interface") {
-                    FormRow(label: "Private Key") {
-                        HStack {
-                            Group {
-                                if showPrivateKey {
-                                    TextField("Base64 encoded key", text: $privateKey)
-                                        .font(.system(.body, design: .monospaced))
-                                } else {
-                                    SecureField("Base64 encoded key", text: $privateKey)
-                                        .font(.system(.body, design: .monospaced))
-                                }
-                            }
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: privateKey) { _, newValue in
-                                if !generatedPrivateKey.isEmpty && newValue != generatedPrivateKey {
-                                    generatedPrivateKey = ""
-                                    generatedPublicKey = ""
-                                }
-                            }
-                            Button {
-                                showPrivateKey.toggle()
-                            } label: {
-                                Image(systemName: showPrivateKey ? "eye.slash" : "eye")
-                            }
-                            .buttonStyle(.bordered)
-                            .help(showPrivateKey ? "Hide private key" : "Show private key")
-                            Button {
-                                generateKeyPair()
-                            } label: {
-                                if isGeneratingKeys {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "key.fill")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isGeneratingKeys)
-                            .help("Generate a WireGuard private/public key pair")
-                        }
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
+                    FormSection(title: "General") {
+                        textField("Tunnel name", .name, "My VPN", mono: false, required: true)
                     }
 
-                    if !generatedPublicKey.isEmpty {
-                        FormRow(label: "Your Public Key") {
+                    FormSection(title: "Interface") {
+                        privateKeyField
+                        if !generatedPublicKey.isEmpty { publicKeyNotice }
+                        textField("Address", .address, "10.0.0.2/24", required: true)
+                        textField("DNS", .dns, "1.1.1.1", optional: true)
+                        textField("Search domains", .searchDomains, "office.lan, corp.lan", optional: true)
+                    }
+
+                    FormSection(title: "Peer (the server)") {
+                        textField("Public key", .peerPublicKey, "Server public key", required: true)
+                        textField("Preshared key", .presharedKey, "Optional", optional: true)
+                        textField("Endpoint", .endpoint, "vpn.example.com:51820", optional: true)
+                        VStack(alignment: .leading, spacing: 6) {
+                            textField("Allowed IPs", .allowedIPs, "0.0.0.0/0", required: true)
                             HStack {
-                                Text(generatedPublicKey)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                                Button("Copy") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(generatedPublicKey, forType: .string)
-                                }
-                                .buttonStyle(.bordered)
+                                Button("All traffic (0.0.0.0/0, ::/0)") { fields.allowedIPs = "0.0.0.0/0, ::/0" }
+                                    .buttonStyle(.bordered).controlSize(.small)
+                                Text("or list only the networks to reach, such as 10.0.0.0/24")
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                    }
-
-                    FormRow(label: "Address") {
-                        TextField("10.0.0.2/24", text: $address)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    FormRow(label: "DNS") {
-                        TextField("1.1.1.1", text: $dns)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    FormRow(label: "Search Domains") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("office.lan, corp.lan", text: $searchDomains)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.body, design: .monospaced))
-                            if !dnsComposition.invalidDomains.isEmpty {
-                                Text("Not a valid domain: \(dnsComposition.invalidDomains.joined(separator: ", "))")
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-                        }
+                        textField("Keepalive (seconds)", .keepalive, "25", optional: true, width: 140)
                     }
                 }
+                .frame(maxWidth: .infinity)
 
-                FormSection(title: "Peer") {
-                    FormRow(label: "Public Key") {
-                        TextField("Server public key", text: $peerPublicKey)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
+                VStack(alignment: .leading, spacing: 16) {
+                    configurationCheck
+                    ForEach(checks.warnings, id: \.self) { Notice(tone: .warn, title: $0) }
+                    if checks.canSave && checks.endpointMissing {
+                        Notice(tone: .info, title: "No endpoint",
+                               message: "You can save, but the tunnel cannot connect until you add one (host:port).")
                     }
+                    preview
+                }
+                .frame(width: 330)
+            }
+            .padding(20)
+        }
+    }
 
-                    FormRow(label: "Preshared Key") {
-                        TextField("Optional", text: $presharedKey)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
+    private var privateKeyField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            labelRow("Private key", required: true)
+            HStack {
+                Group {
+                    if showPrivateKey {
+                        TextField("Base64 encoded key", text: $fields.privateKey)
+                    } else {
+                        SecureField("Base64 encoded key", text: $fields.privateKey)
                     }
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .focused($focus, equals: .privateKey)
+                .onChange(of: fields.privateKey) { _, newValue in
+                    if !generatedPrivateKey.isEmpty && newValue != generatedPrivateKey {
+                        generatedPrivateKey = ""
+                        generatedPublicKey = ""
+                    }
+                }
+                Button(showPrivateKey ? "Hide" : "Show") { showPrivateKey.toggle() }
+                    .buttonStyle(.bordered)
+                    .help(showPrivateKey ? "Hide private key" : "Show private key")
+                Button {
+                    generateKeyPair()
+                } label: {
+                    if isGeneratingKeys { ProgressView().controlSize(.small) } else { Text("Generate") }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isGeneratingKeys)
+                .help("Generate a WireGuard private/public key pair")
+            }
+            problemText(.privateKey)
+            Text("Stays on this Mac. It is masked here and hidden in every log and preview.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
 
-                    FormRow(label: "Endpoint") {
-                        TextField("vpn.example.com:51820", text: $endpoint)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
+    private var publicKeyNotice: some View {
+        Notice(tone: .info, title: "Your public key — give it to the server admin", message: generatedPublicKey)
+            .overlay(alignment: .topTrailing) {
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(generatedPublicKey, forType: .string)
+                }
+                .buttonStyle(.bordered).controlSize(.small).padding(8)
+            }
+    }
 
-                    FormRow(label: "Allowed IPs") {
-                        TextField("0.0.0.0/0", text: $allowedIPs)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
+    private func labelRow(_ label: String, required: Bool = false, optional: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.subheadline.weight(.medium))
+            if required { Text("*").foregroundStyle(.secondary).accessibilityHidden(true) }
+            if optional { Text("(optional)").font(.caption).foregroundStyle(.secondary) }
+        }
+    }
 
-                    FormRow(label: "Keepalive") {
-                        TextField("25", text: $persistentKeepalive)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 100)
-                    }
+    private func textField(_ label: String, _ field: Field, _ placeholder: String, mono: Bool = true,
+                           required: Bool = false, optional: Bool = false, width: CGFloat? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            labelRow(label, required: required, optional: optional)
+            TextField(placeholder, text: $fields[dynamicMember: path(field)])
+                .textFieldStyle(.roundedBorder)
+                .font(mono ? .system(.body, design: .monospaced) : .body)
+                .focused($focus, equals: field)
+                .frame(maxWidth: width)
+                .disableAutocorrection(true)
+            problemText(field)
+        }
+    }
+
+    /// A field's problem, shown once the field has been visited, with an icon and words.
+    @ViewBuilder
+    private func problemText(_ field: Field) -> some View {
+        if touched.contains(field), let message = checks.problems[field] {
+            Label(message, systemImage: StatusTone.bad.icon).font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    private func path(_ field: Field) -> WritableKeyPath<TunnelFormFields, String> {
+        switch field {
+        case .name: return \.name
+        case .privateKey: return \.privateKey
+        case .address: return \.address
+        case .dns: return \.dns
+        case .searchDomains: return \.searchDomains
+        case .peerPublicKey: return \.peerPublicKey
+        case .presharedKey: return \.presharedKey
+        case .endpoint: return \.endpoint
+        case .allowedIPs: return \.allowedIPs
+        case .keepalive: return \.keepalive
+        }
+    }
+
+    // MARK: Right column
+
+    private var configurationCheck: some View {
+        let always: [(Field, String)] = [(.name, "Tunnel name"), (.privateKey, "Private key"), (.address, "Address"),
+                                         (.peerPublicKey, "Peer public key"), (.allowedIPs, "Allowed IPs")]
+        let whenFilled: [(Field, String)] = [(.dns, "DNS servers"), (.searchDomains, "Search domains"),
+                                             (.presharedKey, "Preshared key"), (.keepalive, "Keepalive")]
+            .filter { !fields[keyPath: path($0.0)].trimmingCharacters(in: .whitespaces).isEmpty }
+        let toSave = always + whenFilled
+        let done = toSave.filter { checks.problems[$0.0] == nil }.count
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Configuration check").font(.headline)
+                Spacer()
+                Text("\(done) of \(toSave.count) needed to save").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(toSave, id: \.0) { field, label in checkRow(field, label, toConnect: false) }
+            checkRow(.endpoint, "Endpoint", toConnect: true)
+        }
+    }
+
+    private func checkRow(_ field: Field, _ label: String, toConnect: Bool) -> some View {
+        let value = fields[keyPath: path(field)].trimmingCharacters(in: .whitespaces)
+        let problem = checks.problems[field]
+        let pending = (problem != nil && value.isEmpty && !touched.contains(field)) || (toConnect && value.isEmpty)
+        let tone: StatusTone = pending ? .neutral : problem == nil ? .good : .bad
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: pending ? "circle" : tone.icon).foregroundStyle(tone.color).font(.callout)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(label).font(.callout.weight(.medium))
+                    if toConnect { Text("(to connect)").font(.caption).foregroundStyle(.secondary) }
+                }
+                if toConnect && value.isEmpty {
+                    Text("Add host:port, such as vpn.example.com:51820.").font(.caption).foregroundStyle(.secondary)
+                } else if let problem {
+                    Text(problem).font(.caption).foregroundStyle(.secondary)
+                    Button("Go to field") { focus = field }.buttonStyle(.link).font(.caption)
+                } else {
+                    Text("Looks valid").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .padding()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("What will be written").font(.headline)
+            StatusPill(text: "Preview · keys hidden", tone: .neutral, showsIcon: false)
+            Text(fields.config(maskingKeys: true))
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            Text("Valid fields are a syntax check, not a connection test. Quality and traffic appear after the first connection.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     // MARK: - Advanced Editor
 
-    private var advancedEditorView: some View {
-        VStack(spacing: 0) {
-            // Name field — visible in both tabs
-            HStack(alignment: .center, spacing: 12) {
-                Text("Tunnel Name")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .trailing)
-                TextField("my_vpn", text: $tunnelName)
-                    .textFieldStyle(.roundedBorder)
+    private var advancedEditor: some View {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    labelRow("Tunnel name", required: true)
+                    TextField("my_vpn", text: $fields.name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focus, equals: .name)
+                        .frame(maxWidth: 420)
+                    if touched.contains(.name), let problem = advancedNameProblem {
+                        Label(problem, systemImage: StatusTone.bad.icon).font(.caption).foregroundStyle(.red)
+                    }
+                }
+                ConfigEditorView(content: $advancedContent, revealLine: $revealLine)
+                    .frame(minHeight: 260, maxHeight: .infinity)
+                Text("Private and preshared keys are masked in the editor and hidden in every preview and log.")
+                    .font(.caption).foregroundStyle(.secondary)
+                ConfigDiagnosticsList(diagnostics: reading.diagnostics, onJump: { revealLine = $0 })
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
 
-            Divider()
-
-            ConfigEditorView(content: $advancedContent)
-                .padding(8)
-        }
-        .onAppear {
-            if advancedContent.isEmpty {
-                advancedContent = generatedConfig
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("What was read").font(.headline)
+                    StatusPill(text: "Parsed outline", tone: .neutral, showsIcon: false)
+                    ConfigOutline(reading: reading)
+                    Text("After the first connection you will see traffic, latency and loss for this tunnel. Nothing is measured before that.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(width: 290)
         }
+        .padding(20)
     }
 
-    // MARK: - Bottom Buttons
+    // MARK: - Footer
 
-    private var bottomButtons: some View {
+    private var footer: some View {
         HStack(spacing: 10) {
-            Button("Cancel") {
-                dismiss()
-            }
-            .keyboardShortcut(.cancelAction)
-
+            Text(disabledReason).font(.caption).foregroundStyle(.secondary)
             Spacer()
-
-            Button("Save") {
-                save(andConnect: false)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!canSave || isSaving || isConnecting)
-
-            Button("Save & Connect") {
-                save(andConnect: true)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canSave || isSaving || isConnecting || !tunnelManager.canConnectTunnels)
-            .help(tunnelManager.connectionUnavailableReason ?? "Save the tunnel and connect")
-            .keyboardShortcut(.defaultAction)
-
-            if isSaving || isConnecting {
-                ProgressView()
-                    .controlSize(.small)
-            }
+            if isBusy { ProgressView().controlSize(.small) }
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button("Save") { save(andConnect: false) }
+                .buttonStyle(.bordered)
+                .disabled(!canSave || isBusy)
+            Button("Save & Connect") { save(andConnect: true) }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canConnect || isBusy || !tunnelManager.canConnectTunnels)
+                .help(tunnelManager.connectionUnavailableReason ?? "Save the tunnel and connect")
+                .keyboardShortcut(.defaultAction)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Actions
 
     private func save(andConnect: Bool) {
-        let displayName = ConfigStorageService.displayName(for: tunnelName)
+        let displayName = ConfigStorageService.displayName(for: fields.name)
 
         isSaving = true
         Task {
@@ -340,7 +459,7 @@ struct NewTunnelView: View {
             do {
                 let keys = try await tunnelManager.generateKeyPair()
                 generatedPrivateKey = keys.privateKey
-                privateKey = keys.privateKey
+                fields.privateKey = keys.privateKey
                 generatedPublicKey = keys.publicKey
             } catch {
                 self.error = error.localizedDescription

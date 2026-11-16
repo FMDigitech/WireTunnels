@@ -6,6 +6,7 @@ enum TunnelWarning: Identifiable, Equatable {
     case conflictingDNS([String])            // active tunnels with different DNS
     case killSwitchBlocking(String)          // tunnel dropped unexpectedly, kill switch is blocking traffic
     case ipFamilyLeak(String, IPFamilyLeak)  // route-all tunnel lets one IP family reach the physical network
+    case noHandshake(String, TunnelEngine)   // tunnel is up and sending, but the server never answers
 
     var id: String {
         switch self {
@@ -14,6 +15,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .conflictingDNS(let names): return "conflictingDNS-\(names.joined())"
         case .killSwitchBlocking(let name): return "killSwitchBlocking-\(name)"
         case .ipFamilyLeak(let name, let leak): return "ipFamilyLeak-\(name)-\(leak.family.rawValue)"
+        case .noHandshake(let name, _): return "noHandshake-\(name)"
         }
     }
 
@@ -24,6 +26,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .conflictingDNS: return "DNS Conflict"
         case .killSwitchBlocking: return "Kill Switch Active"
         case .ipFamilyLeak(_, let leak): return "\(leak.family.displayName) Leak"
+        case .noHandshake: return "No Answer From Server"
         }
     }
 
@@ -39,6 +42,11 @@ enum TunnelWarning: Identifiable, Equatable {
             return "\"\(name)\" dropped unexpectedly. All non-tunnel traffic is blocked until it reconnects or you disable its kill switch."
         case .ipFamilyLeak(let name, let leak):
             return "\"\(name)\": \(leak.problem)" + (leak.fixDescription == nil ? "" : " Use the menu bar menu to fix it.")
+        case .noHandshake(let name, let engine):
+            let hint = engine == .amneziaWG
+                ? " Also check that the server uses the same AmneziaWG parameters (Jc, S1, H1 and the others)."
+                : ""
+            return "\"\(name)\" is connected and sending, but the server has never answered. Check the endpoint address and port, that the keys match on both sides, and that the network lets UDP through.\(hint)"
         }
     }
 
@@ -49,6 +57,7 @@ enum TunnelWarning: Identifiable, Equatable {
         case .conflictingDNS: return .info
         case .killSwitchBlocking: return .error
         case .ipFamilyLeak: return .warning
+        case .noHandshake: return .warning
         }
     }
 }

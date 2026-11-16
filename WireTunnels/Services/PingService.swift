@@ -13,10 +13,14 @@ enum PingService {
     /// Round-trip times in milliseconds for each reply received; empty if the
     /// host was unreachable or every request timed out. Blocking — call from a
     /// background task, not the main actor.
-    nonisolated static func measureLatency(host: String) -> [Double] {
+    nonisolated static func measureLatency(host: String, count: Int = 3, timeoutSeconds: Int = 2,
+                                           boundInterface: String? = nil) -> [Double] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-        process.arguments = ["-c", "3", "-t", "2", host]
+        var arguments = ["-c", String(count), "-t", String(timeoutSeconds)]
+        // -b sends the probe out of one interface, so a monitor probe really crosses that tunnel.
+        if let boundInterface { arguments += ["-b", boundInterface] }
+        process.arguments = arguments + [host]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()

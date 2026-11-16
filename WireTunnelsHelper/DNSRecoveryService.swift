@@ -15,6 +15,15 @@ struct DNSOwnerIdentity: Codable, Equatable {
     let interface: String
     let device: UInt64
     let inode: UInt64
+    /// A network profile rather than a tunnel. Optional so journals written before profiles still decode.
+    var profile: Bool? = nil
+
+    var isProfile: Bool { profile == true }
+    /// One profile owner per boot: `device` carries the boot time, so the claim dies with the boot.
+    static let profileToken = "A7C4F1B2-5D3E-4F60-9A18-2B7E6C0D4E91"
+    static func profileOwner(boot: UInt64) -> DNSOwnerIdentity {
+        DNSOwnerIdentity(token: profileToken, alias: "profile", interface: "profile", device: boot, inode: 1, profile: true)
+    }
 }
 
 protocol DNSRecoveryNetwork {
@@ -78,7 +87,9 @@ struct DNSRecoveryService {
         var services: [ServiceState] = []
     }
 
-    func set(owner: DNSOwnerIdentity, service: String, settings: DNSSettings) throws {
+    /// `exclusive` drops the owner's claims on every other service first, so a profile
+    /// follows the primary service instead of leaving DNS behind on the old one.
+    func set(owner: DNSOwnerIdentity, service: String, settings: DNSSettings, exclusive: Bool = false) throws {
         try Self.validate(owner: owner)
         try Self.validate(settings: settings)
         guard Self.safeText(service, limit: 1024), network.isAlive(owner) else { throw DNSRecoveryError.staleOwner }
@@ -87,17 +98,25 @@ struct DNSRecoveryService {
             try save(state, directoryFD: descriptor)
             try reconcile(&state, directoryFD: descriptor)
             guard network.isAlive(owner) else { throw DNSRecoveryError.staleOwner }
-            if let existing = state.owners.first(where: { $0.identity.token == owner.token }) {
+            // The profile owner is reused for every network it matches, so its release is not final.
+            if let existing = state.owners.first(where: { $0.identity.token == owner.token }),
+               !(existing.released && owner.isProfile) {
                 guard existing.identity == owner else { throw DNSRecoveryError.staleOwner }
                 // A delayed route-monitor callback must not recreate released ownership.
                 if existing.released { return }
             } else {
+                state.owners.removeAll { $0.identity.token == owner.token }
                 guard state.owners.count < 256, state.nextSequence < UInt64.max else { throw DNSRecoveryError.invalidJournal }
                 state.owners.append(Owner(identity: owner, sequence: state.nextSequence))
                 state.nextSequence += 1
             }
             let id = try network.serviceID(named: service)
             guard Self.safeText(id, limit: 1024) else { throw DNSRecoveryError.invalidInput }
+            if exclusive {
+                for other in state.services.indices where state.services[other].id != id {
+                    state.services[other].claims.removeAll { $0.token == owner.token }
+                }
+            }
             var index = state.services.firstIndex(where: { $0.id == id })
             if index == nil {
                 guard state.services.count < 512 else { throw DNSRecoveryError.invalidJournal }
@@ -164,17 +183,22 @@ struct DNSRecoveryService {
                 continue
             }
             let claims = state.services[i].claims
-            let latest = claims.max { lhs, rhs in
-                let a = state.owners.first { $0.identity.token == lhs.token }!.sequence
-                let b = state.owners.first { $0.identity.token == rhs.token }!.sequence
-                return a < b
+            // A tunnel's DNS always wins over a profile's; among equals the newest claim wins.
+            func rank(_ claim: Claim) -> (Int, UInt64) {
+                let owner = state.owners.first { $0.identity.token == claim.token }!
+                return (owner.identity.isProfile ? 0 : 1, owner.sequence)
             }
+            let latest = claims.max { rank($0) < rank($1) }
+            let latestIsProfile = latest.map { rank($0).0 == 0 } ?? false
             for field in [DNSField.dns, .search] {
                 var value = field == .dns ? state.services[i].dns : state.services[i].search
                 if value.finished && latest == nil { continue }
                 let current = try network.read(service: name, field: field)
                 try Self.validate(values: current, field: field)
-                let target = latest.map { field == .dns ? $0.settings.dns : $0.settings.search } ?? value.baseline
+                // A profile only sets DNS servers; the user's search domains stay as they were.
+                let target = latestIsProfile && field == .search
+                    ? value.baseline
+                    : latest.map { field == .dns ? $0.settings.dns : $0.settings.search } ?? value.baseline
                 if current != value.expected && current != value.pending {
                     // Record an external override, rather than later treating a
                     // coincidentally matching old setting as ours again.
@@ -308,6 +332,11 @@ struct DNSRecoveryService {
     }
 
     static func validate(owner: DNSOwnerIdentity) throws {
+        if owner.isProfile {
+            guard owner.token == DNSOwnerIdentity.profileToken, owner.alias == "profile",
+                  owner.interface == "profile", owner.inode == 1 else { throw DNSRecoveryError.invalidInput }
+            return
+        }
         guard UUID(uuidString: owner.token) != nil,
               owner.alias.range(of: "^[a-zA-Z0-9_=+.-]{1,15}$", options: .regularExpression) != nil,
               owner.alias != ".", owner.alias != "..",
@@ -338,12 +367,18 @@ struct DNSRecoveryService {
 }
 
 struct SystemDNSRecoveryNetwork: DNSRecoveryNetwork {
-    private let runtimeDirectory: URL
+    /// One directory per engine: a tunnel's alias marker and socket live in the directory of the
+    /// engine that runs it (wg-quick: /var/run/wireguard, awg-quick: /var/run/amneziawg).
+    private let runtimeDirectories: [URL]
     private let expectedUID: uid_t
 
-    init(runtimeDirectory: URL = URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true), expectedUID: uid_t = 0) {
-        self.runtimeDirectory = runtimeDirectory
+    init(runtimeDirectories: [URL] = RuntimeEngine.runtimeDirectories, expectedUID: uid_t = 0) {
+        self.runtimeDirectories = runtimeDirectories
         self.expectedUID = expectedUID
+    }
+
+    init(runtimeDirectory: URL, expectedUID: uid_t = 0) {
+        self.init(runtimeDirectories: [runtimeDirectory], expectedUID: expectedUID)
     }
 
     private func services() throws -> [String: String] {
@@ -365,8 +400,32 @@ struct SystemDNSRecoveryNetwork: DNSRecoveryNetwork {
 
     func serviceName(for id: String) throws -> String? { try services()[id] }
 
+    static var bootTimeSeconds: UInt64 {
+        var boot = timeval(), size = MemoryLayout<timeval>.stride
+        var name: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        return sysctl(&name, 2, &boot, &size, nil, 0) == 0 ? UInt64(boot.tv_sec) : 0
+    }
+
+    /// The service that carries the default route, which is where a profile's DNS applies.
+    func primaryServiceName() throws -> String {
+        let key = SCDynamicStoreKeyCreateNetworkGlobalEntity(nil, kSCDynamicStoreDomainState, kSCEntNetIPv4)
+        guard let store = SCDynamicStoreCreate(nil, "WireTunnels DNS profile" as CFString, nil, nil),
+              let state = SCDynamicStoreCopyValue(store, key) as? [String: Any],
+              let id = state[kSCDynamicStorePropNetPrimaryService as String] as? String,
+              let name = try serviceName(for: id) else { throw DNSRecoveryError.unavailableService }
+        return name
+    }
+
     func isAlive(_ owner: DNSOwnerIdentity) -> Bool {
         guard (try? DNSRecoveryService.validate(owner: owner)) != nil else { return false }
+        if owner.isProfile { return owner.device != 0 && owner.device == Self.bootTimeSeconds }
+        // The owner is alive if its own engine's directory proves it: marker, socket identity
+        // (inode and device) and a live listener must all match, so another engine's directory
+        // can never vouch for it.
+        return runtimeDirectories.contains { isAlive(owner, in: $0) }
+    }
+
+    private func isAlive(_ owner: DNSOwnerIdentity, in runtimeDirectory: URL) -> Bool {
         let marker = runtimeDirectory.appendingPathComponent(owner.alias + ".name")
         var markerAttributes = stat()
         guard lstat(marker.path, &markerAttributes) == 0, markerAttributes.st_mode & S_IFMT == S_IFREG,
@@ -528,6 +587,16 @@ enum DNSRecoveryCLI {
             let owner = DNSOwnerIdentity(token: arguments[1], alias: arguments[2], interface: arguments[3], device: device, inode: inode)
             let settings = DNSSettings(dns: Array(arguments[7..<(7 + dnsCount)]), search: Array(arguments[(8 + dnsCount)..<arguments.count]))
             try service.set(owner: owner, service: arguments[5], settings: settings)
+        case "--dns-profile-set":
+            // --dns-profile-set <count> <server>...: DNS for the primary service; search domains stay as they are.
+            guard arguments.count >= 2, let count = Int(arguments[1]), (1...8).contains(count),
+                  arguments.count == 2 + count else { throw DNSRecoveryError.invalidInput }
+            try service.set(owner: .profileOwner(boot: SystemDNSRecoveryNetwork.bootTimeSeconds),
+                            service: try network.primaryServiceName(),
+                            settings: DNSSettings(dns: Array(arguments[2...]), search: []), exclusive: true)
+        case "--dns-profile-release":
+            guard arguments.count == 1 else { throw DNSRecoveryError.invalidInput }
+            try service.release(token: DNSOwnerIdentity.profileToken)
         default: throw DNSRecoveryError.invalidInput
         }
     }

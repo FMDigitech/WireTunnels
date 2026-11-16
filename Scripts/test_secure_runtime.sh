@@ -94,8 +94,13 @@ grep -q 'certificate leaf\[subject.OU\] = \\"\\(applicationTeamIdentifier)\\"' "
     fail "tool signatures must be pinned to the app's team"
 grep -q 'sha256(ToolAnchors.wgQuickSHA256)' "$HELPER" ||
     fail "helper must check wg-quick against its compiled-in hash"
-grep -q 'toolInstaller.ensureInstalled(name == "wg-quick" ? nil : \[name\])' "$HELPER" ||
-    fail "helper must verify the tools a command runs right before launching it (all three for wg-quick)"
+grep -Fq 'toolInstaller.ensureInstalled(["wg-quick", "awg-quick"].contains(name) ? nil : [name])' "$HELPER" ||
+    fail "helper must verify the tools a command runs right before launching it (every tool for wg-quick and awg-quick)"
+grep -q 'codeSignature(requirement: toolRequirement("awg"))' "$HELPER" &&
+    grep -q 'codeSignature(requirement: toolRequirement("amneziawg-go"))' "$HELPER" ||
+    fail "helper must check awg and amneziawg-go by code signature"
+grep -q 'sha256(ToolAnchors.awgQuickSHA256)' "$HELPER" ||
+    fail "helper must check awg-quick against its compiled-in hash"
 ! grep -q 'isExecutableFile(atPath: wg.path)' "$HELPER" ||
     fail "helper must verify wg instead of only checking that it exists"
 grep -q 'requireRegularFile(destination' "$TOOL_INSTALLER" ||
@@ -109,8 +114,9 @@ grep -q -- '--prepare-wg-quick' "$ANCHOR_SCRIPT" ||
     fail "anchor generator must reuse the build script's wg-quick patch chain"
 grep -q 'generate_tool_anchors.sh' "$PROJECT" ||
     fail "helper target must generate its tool anchors before compiling"
-grep -q 'Bundled wg-quick does not match the hash compiled into the helper' "$BUILD_SCRIPT" ||
-    fail "app build must check the bundled wg-quick against the helper's hash"
+grep -q 'does not match the hash compiled into the helper' "$BUILD_SCRIPT" &&
+    grep -q 'wg-quick:"\$TOOL_ANCHOR" awg-quick:"\$AWG_TOOL_ANCHOR"' "$BUILD_SCRIPT" ||
+    fail "app build must check the bundled wg-quick and awg-quick against the helper's hashes"
 grep -q -- '--identifier "$(basename "$path")"' "$BUILD_SCRIPT" ||
     fail "tools must be signed with the identifier the helper requires"
 
@@ -129,8 +135,12 @@ grep -q 'refreshToolStatus()' <<<"$initialize_body" ||
     fail "initialization must wait for the helper's tool status"
 grep -q 'expectedHelperVersion' "$COMMAND_SERVICE" ||
     fail "command service must publish the bundled helper version"
-grep -q 'version != WireGuardCommandService.expectedHelperVersion' "$MANAGER" ||
+grep -q 'helperNeedsReplacement(version: version)' <<<"$initialize_body" ||
     fail "initialization must replace a reachable but stale helper"
+grep -q 'guard version == WireGuardCommandService.expectedHelperVersion else { return true }' "$MANAGER" ||
+    fail "a helper with an unexpected version must be replaced"
+grep -q 'revision != WireGuardCommandService.expectedHelperProtocolRevision' "$MANAGER" ||
+    fail "a helper with an unexpected protocol revision must be replaced"
 ! grep -Eq 'Install Tools|Reinstall Tools' "$SETTINGS" ||
     fail "settings must not offer a manual tool installation"
 grep -qi 'no download' "$SETTINGS" ||

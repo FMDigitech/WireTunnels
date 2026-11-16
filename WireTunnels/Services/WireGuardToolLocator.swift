@@ -18,6 +18,15 @@ final class WireGuardToolLocator {
         if fm.isExecutableFile(atPath: AppPaths.wireguardGoPath) {
             env.wireguardGoPath = AppPaths.wireguardGoPath
         }
+        if fm.isExecutableFile(atPath: AppPaths.awgPath) {
+            env.awgPath = AppPaths.awgPath
+        }
+        if fm.isExecutableFile(atPath: AppPaths.awgQuickPath) {
+            env.awgQuickPath = AppPaths.awgQuickPath
+        }
+        if fm.isExecutableFile(atPath: AppPaths.amneziawgGoPath) {
+            env.amneziawgGoPath = AppPaths.amneziawgGoPath
+        }
 
         return env
     }

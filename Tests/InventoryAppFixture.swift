@@ -75,6 +75,22 @@ final class InventoryHelperFixture: NSObject, WireguardHelperProtocol {
     func syncSplitDNS(entries: Data, reply: @escaping (Bool, String?) -> Void) {
         events.append("dns"); reply(true, nil)
     }
+    func applyProfileDNS(servers: Data, reply: @escaping (Bool, String?) -> Void) {
+        preconditionFailure("Unexpected helper call: applyProfileDNS")
+    }
+    func releaseProfileDNS(reply: @escaping (Bool, String?) -> Void) {
+        preconditionFailure("Unexpected helper call: releaseProfileDNS")
+    }
+    func applyProfileProxy(settings: Data, reply: @escaping (Bool, String?) -> Void) {
+        preconditionFailure("Unexpected helper call: applyProfileProxy")
+    }
+    func releaseProfileProxy(reply: @escaping (Bool, String?) -> Void) {
+        // The app asks once at start, so a proxy left by a crashed run is put back. Nothing to restore here.
+        reply(true, nil)
+    }
+    func flushDNSCache(reply: @escaping (Bool, String?) -> Void) {
+        preconditionFailure("Unexpected helper call: flushDNSCache")
+    }
     func syncRoutes(ownerId: String, entries: Data, reply: @escaping (Bool, String?) -> Void) {
         preconditionFailure("Unexpected helper call: syncRoutes")
     }

@@ -22,7 +22,7 @@
 <p align="center">
   <a href="#download">Download</a> ·
   <a href="#features">Features</a> ·
-  <a href="#whats-new-in-109">What's new</a> ·
+  <a href="#whats-new-in-110">What's new</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#security--privacy">Security & Privacy</a> ·
   <a href="#installation">Installation</a> ·
@@ -138,14 +138,20 @@ WireTunnels is distributed as a signed and notarized macOS `.dmg` disk image, an
 
 ---
 
-## What's new in 1.0.9
+## What's new in 1.1.0
 
-* **IPv6/IPv4 leak warning** — a full tunnel that lets one IP family out over the physical network is now flagged in the menu bar and dashboard, with a *Disable IPv6* shortcut.
-* **Routing-loop guard** — a firewall rule and a safer route order stop the tunnel's own packets from looping back into it.
-* **Stronger helper security** — peer preshared keys are no longer sent to the app, the helper no longer allows unsigned libraries, and users can no longer remove each other's routes.
-* **Fixed** the WireGuard tools list in Settings for builds made from Terminal with Homebrew coreutils.
+* **Redesigned dashboard** — one clear look across every screen, with a tunnel Overview (live speed, verdict, recent activity), tabs for Sharing, Network, On-Demand, Safety and Config, and a full-details page.
+* **Link quality monitoring** (optional, off by default) — Good / Fair / Poor, latency, packet loss and a latency chart for connected tunnels, with limits you can change.
+* **AmneziaWG tunnels** — bundled and checked by the helper like the WireGuard tools; the engine is shown in each tunnel and can be chosen (Automatic, WireGuard, AmneziaWG).
+* **Network Profiles** — per Wi-Fi network or Ethernet subnet: DNS (with a latency test and automatic restore), a proxy (manual or PAC), connect or disconnect tunnels, run a Shortcut. Flush the DNS cache from one button.
+* **Network Doctor and Mesh VPNs** — spot conflicting VPNs, routes and DNS; see and control Tailscale and NetBird.
+* **Developer Tools** — SSH port forwards (local, remote, SOCKS5) that reconnect by themselves, and Wake-on-LAN.
+* **Notch view** (optional) — tunnel state and live speeds next to the notch.
+* **Config checks, Warnings and Log** — the editor and import point out problems line by line; Warnings explains each one with a next step; the Log can be searched and filtered.
+* **Warning when a server never answers** — a connected tunnel that sends data and never gets a reply is flagged after 25 seconds.
+* **More visible menu bar icon** — the connected icon is a coloured badge, readable on any menu bar. IPv6-only hostnames now resolve through full IPv6 tunnels, and the *Disconnect* button is red.
 
-Earlier highlights (1.0.x): helper-installed tools, Ethernet rules by subnet, working kill switch, inventory AllowedIPs, Search Domains, duplicate tunnel, split DNS, long tunnel names, shared tunnel access control, start in background, multi-hop chains, Shortcuts/Siri support, split-tunnel exclusions, throughput speed test, DHCP/sleep/DDNS auto-recovery, editable shared tunnels, notarized DMG distribution and in-app updates.
+Earlier highlights (1.0.x): IPv6/IPv4 leak warning, routing-loop guard, stronger helper security, helper-installed tools, Ethernet rules by subnet, working kill switch, inventory AllowedIPs, Search Domains, duplicate tunnel, split DNS, long tunnel names, shared tunnel access control, start in background, multi-hop chains, Shortcuts/Siri support, split-tunnel exclusions, throughput speed test, DHCP/sleep/DDNS auto-recovery, editable shared tunnels, notarized DMG distribution and in-app updates.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full technical detail.
 
@@ -155,7 +161,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full technical detail.
 
 ### Native macOS experience
 
-A real macOS app: menu bar controller, desktop dashboard (All Tunnels, Active, Shared, Favorites, Multi-Hop, Warnings, Settings, Log), notifications, optional Dock icon hiding and start-in-background mode.
+A real macOS app: menu bar controller, desktop dashboard (All Tunnels, Active, Shared, Favorites, Multi-Hop, Network Profiles, Network Doctor, Mesh VPNs, Developer Tools, Warnings, Settings, Log), notifications, optional Dock icon hiding and start-in-background mode.
 
 ### Multi-tunnel control
 
@@ -175,6 +181,22 @@ Personal tunnels can run a local command after connecting to discover additional
 IPs/CIDRs, append them to the static AllowedIPs, and install their routes. The last
 successful inventory is cached; static and cached destinations remain protected
 when disconnected. See [setup, Python example, and limitations](Scripts/INVENTORY.md).
+
+### Link quality monitoring
+
+Optional and off by default. When on, small pings run while a tunnel is connected and the dashboard shows Good, Fair or Poor, typical latency, packet loss and a latency chart. You choose the target (the tunnel's own server or a host of yours), how often to probe, how long to keep history and where Fair and Poor start; Settings shows the estimated traffic and memory first. Speed and last handshake never need it.
+
+### Network Profiles, DNS and proxy
+
+A profile applies on a Wi-Fi network or an Ethernet subnet: set DNS (Cloudflare, Quad9, Google or your own, with a latency test and automatic restore if none answers), set a manual or PAC proxy, connect or disconnect tunnels and run a Shortcut. Your own settings are restored when the profile ends or the app quits.
+
+### AmneziaWG
+
+Tunnels with AmneziaWG parameters run on the bundled AmneziaWG tools, installed and verified by the helper. The engine is shown in the tunnel header and can be set to Automatic, WireGuard or AmneziaWG.
+
+### Network Doctor, Mesh VPNs and Developer Tools
+
+Network Doctor flags other VPNs and conflicting routes or DNS. Mesh VPNs shows and controls Tailscale and NetBird. Developer Tools holds SSH port forwards (local, remote, SOCKS5) that reconnect by themselves, and Wake-on-LAN.
 
 ### Multi-hop chains
 

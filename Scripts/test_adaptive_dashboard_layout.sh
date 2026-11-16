@@ -6,9 +6,9 @@ DASHBOARD="$ROOT_DIR/WireTunnels/Views/Dashboard/MainDashboardView.swift"
 
 grep -q 'var usesTunnelDetail: Bool' "$DASHBOARD" ||
     { echo "Sidebar sections must classify tunnel-detail usage" >&2; exit 1; }
-grep -q 'case \.all, \.active, \.favorites:' "$DASHBOARD" ||
+grep -q 'case \.all, \.active, \.shared, \.favorites:' "$DASHBOARD" ||
     { echo "Tunnel sections must retain the detail column" >&2; exit 1; }
-grep -q 'case \.warnings, \.settings, \.log:' "$DASHBOARD" ||
+grep -q 'case \.multiHop, \.profiles, \.doctor, \.mesh, \.devTools, \.warnings, \.settings, \.log:' "$DASHBOARD" ||
     { echo "Global sections must omit the detail column" >&2; exit 1; }
 test "$(grep -c 'NavigationSplitView {' "$DASHBOARD")" -eq 1 ||
     { echo "Dashboard must keep one persistent navigation split view" >&2; exit 1; }

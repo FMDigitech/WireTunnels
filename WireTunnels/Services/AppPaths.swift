@@ -67,6 +67,9 @@ enum AppPaths {
     static let wgPath = "/Library/Application Support/WireTunnels/bin/wg"
     static let wgQuickPath = "/Library/Application Support/WireTunnels/bin/wg-quick"
     static let wireguardGoPath = "/Library/Application Support/WireTunnels/bin/wireguard-go"
+    static let awgPath = "/Library/Application Support/WireTunnels/bin/awg"
+    static let awgQuickPath = "/Library/Application Support/WireTunnels/bin/awg-quick"
+    static let amneziawgGoPath = "/Library/Application Support/WireTunnels/bin/amneziawg-go"
 
     /// Path inside app bundle where binaries are embedded at build time
     static var bundledBinariesDir: URL? {

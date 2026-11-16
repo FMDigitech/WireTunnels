@@ -15,11 +15,19 @@ defer { try? FileManager.default.removeItem(at: root) }
 
 let storage = ConfigStorageService(configDirectory: root)
 
-guard ConfigStorageService.sanitize(name: "Office VPN") == "Office_VPN" else {
-    fatalError("spaces must be sanitized")
+let allowedFileNameScalars = CharacterSet(
+    charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_=+.-"
+)
+let spacedName = ConfigStorageService.fileBaseName(for: "Office VPN")
+guard spacedName != "Office VPN",
+      spacedName.unicodeScalars.allSatisfy({ allowedFileNameScalars.contains($0) }),
+      spacedName.utf8.count <= ConfigStorageService.maxInterfaceNameLength,
+      ConfigStorageService.fileBaseName(for: "Office VPN") == spacedName else {
+    fatalError("spaces must be converted to a safe, deterministic file name")
 }
-let traversalName = ConfigStorageService.sanitize(name: "../../escape")
-guard !traversalName.contains("/"), !traversalName.contains("..") else {
+let traversalName = ConfigStorageService.fileBaseName(for: "../../escape")
+guard !traversalName.contains("/"), !traversalName.contains(".."),
+      traversalName.utf8.count <= ConfigStorageService.maxInterfaceNameLength else {
     fatalError("path separators and traversal markers must be sanitized")
 }
 

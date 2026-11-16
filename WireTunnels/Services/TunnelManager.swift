@@ -11,6 +11,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             if oldValue.map(\.id) != tunnels.map(\.id) {
                 connectionFeedback.retain(tunnelIDs: Set(tunnels.map(\.id)))
             }
+            monitor.observe(tunnels)
         }
     }
     @Published var environment: WireGuardEnvironment = WireGuardEnvironment()
@@ -43,6 +44,11 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     let networkMonitor: NetworkMonitorService
     private let repository: TunnelRepository
     private let hopChainRepository = HopChainRepository()
+    let networkProfiles: NetworkProfileManager
+    let networkDoctor = NetworkDoctor()
+    let meshVPNs = MeshVPNManager()
+    let monitor = LinkQualityMonitor()
+    let devTools = DevToolsManager()
     private let configStorage: ConfigStorageService
     private let parser = WireGuardConfigParser()
     private let toolLocator = WireGuardToolLocator()
@@ -101,13 +107,17 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
          repository: TunnelRepository? = nil, configStorage: ConfigStorageService? = nil,
          log: LogService? = nil, notificationService: NotificationService? = nil,
          automaticallyInitialize: Bool = true) {
-        self.commandService = commandService ?? WireGuardCommandService()
-        self.networkMonitor = networkMonitor ?? NetworkMonitorService()
+        let commandService = commandService ?? WireGuardCommandService()
+        let networkMonitor = networkMonitor ?? NetworkMonitorService()
+        self.commandService = commandService
+        self.networkMonitor = networkMonitor
         self.repository = repository ?? TunnelRepository()
         self.configStorage = configStorage ?? ConfigStorageService()
         self.log = log ?? .shared
         self.notificationService = notificationService ?? .shared
+        self.networkProfiles = NetworkProfileManager(commandService: commandService, networkMonitor: networkMonitor)
         guard automaticallyInitialize else { return }
+        monitor.attach { [weak self] in self?.tunnels.filter(\.isActive) ?? [] }
         // Relay networkMonitor changes so views observing TunnelManager redraw on network state changes
         networkCancellable = self.networkMonitor.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
@@ -146,6 +156,22 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         }
         log.info("Loaded \(tunnels.count) tunnels from storage")
 
+        networkProfiles.load()
+        devTools.load()
+        networkProfiles.performTunnelAction = { [weak self] action in
+            guard let self, let tunnel = self.tunnels.first(where: { $0.id == action.tunnelID }) else { return }
+            switch action.kind {
+            case .connect:
+                guard !tunnel.isActive, !self.connectingTunnels.contains(tunnel.id) else { return }
+                self.log.info("Network profile connects \(tunnel.name)")
+                await self.connectTunnel(tunnel, isAutoConnect: true)
+            case .disconnect:
+                guard tunnel.isActive else { return }
+                self.log.info("Network profile disconnects \(tunnel.name)")
+                _ = await self.disconnectTunnel(tunnel)
+            }
+        }
+
         do {
             hopChains = try hopChainRepository.load()
             if let warning = hopChainRepository.recoveryWarning { reportStorageIssue(warning) }
@@ -168,6 +194,16 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 if tunnels[index].localPublicKey == nil,
                    let key = parsed.privateKey.flatMap({ WireGuardKey.publicKey(fromPrivateKey: $0) }) {
                     tunnels[index].localPublicKey = key
+                    needsSave = true
+                }
+            }
+        }
+        // Configs imported before AmneziaWG keys were recognised: the file says which engine it needs.
+        for index in tunnels.indices where tunnels[index].scope == .personal {
+            if let parsed = try? parser.parse(contentsOf: URL(fileURLWithPath: tunnels[index].configPath)) {
+                let engine = TunnelEngine.resolve(preference: tunnels[index].enginePreference, usesAmneziaWG: parsed.usesAmneziaWG)
+                if tunnels[index].engine != engine {
+                    tunnels[index].engine = engine
                     needsSave = true
                 }
             }
@@ -501,6 +537,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     }
 
     private func reportTunnelFailure(_ tunnel: Tunnel, message: String, automatic: Bool) async {
+        monitor.recordError(tunnel, message: message)
         if let alert = connectionFeedback.failed(tunnel.id, message: message, automatic: automatic) {
             errorMessage = alert
             try? await notificationService.postError(tunnelName: tunnel.name, message: message)
@@ -585,7 +622,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 }
                 defer { if let dnsStrippedTempURL { try? FileManager.default.removeItem(at: dnsStrippedTempURL) } }
                 try await log.timed("Connect \(liveTunnel.name): staging personal config") {
-                    try await self.commandService.copyConfig(from: sourcePath, to: runtimePath)
+                    try await self.commandService.copyConfig(from: sourcePath, to: runtimePath, engine: liveTunnel.engine)
                 }
                 stagedRuntimePath = runtimePath
             }
@@ -759,6 +796,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         tunnel.endpoint = parsed.endpoint
         tunnel.publicKey = parsed.peerPublicKey
         tunnel.localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
+        tunnel.engine = TunnelEngine.resolve(preference: tunnel.enginePreference, usesAmneziaWG: parsed.usesAmneziaWG)
 
         try appendPersonalTunnel(tunnel)
         updateWarnings()
@@ -824,6 +862,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         tunnel.endpoint = parsed.endpoint
         tunnel.publicKey = parsed.peerPublicKey
         tunnel.localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
+        tunnel.engine = TunnelEngine.resolve(preference: tunnel.enginePreference, usesAmneziaWG: parsed.usesAmneziaWG)
 
         try appendPersonalTunnel(tunnel)
         log.info("Created tunnel: \(storedName)")
@@ -883,6 +922,8 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         updatedTunnels[index].endpoint = parsed.endpoint
         updatedTunnels[index].publicKey = parsed.peerPublicKey
         updatedTunnels[index].localPublicKey = parsed.privateKey.flatMap { WireGuardKey.publicKey(fromPrivateKey: $0) }
+        updatedTunnels[index].engine = TunnelEngine.resolve(preference: updatedTunnels[index].enginePreference,
+                                                            usesAmneziaWG: parsed.usesAmneziaWG)
         updatedTunnels[index].updatedAt = Date()
         do {
             try persistPersonalTunnels(updatedTunnels)
@@ -971,6 +1012,32 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         guard tunnels[index].scope == .personal else { return }
         tunnels[index].isFavorite.toggle()
         savePersonalTunnelsOnly()
+    }
+
+    /// Chooses the engine for a personal tunnel: nil lets the config decide. Returns a message when
+    /// the choice cannot be applied, nil when it was.
+    func setEnginePreference(_ preference: TunnelEngine?, for tunnel: Tunnel) -> String? {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }), tunnels[index].scope == .personal else {
+            return "Only your own tunnels can change engine."
+        }
+        guard !tunnels[index].isActive, !isTunnelBusy(tunnel.id) else {
+            return "Disconnect \(tunnels[index].name) before changing its engine."
+        }
+        let usesAmneziaWG: Bool
+        do {
+            usesAmneziaWG = try parser.parse(contentsOf: URL(fileURLWithPath: tunnels[index].configPath)).usesAmneziaWG
+        } catch {
+            return "The configuration could not be read: \(error.localizedDescription)"
+        }
+        if preference == .wireGuard, usesAmneziaWG {
+            return "This configuration has AmneziaWG parameters, which WireGuard cannot read. Remove them in the Advanced Editor first."
+        }
+        tunnels[index].enginePreference = preference
+        tunnels[index].engine = TunnelEngine.resolve(preference: preference, usesAmneziaWG: usesAmneziaWG)
+        tunnels[index].updatedAt = Date()
+        savePersonalTunnelsOnly()
+        log.info("Engine for \(tunnels[index].name): \(tunnels[index].engine.displayName) (\(preference == nil ? "automatic" : "chosen"))")
+        return nil
     }
 
     /// Sets the user-chosen speed-test URL. Pass nil/empty to disable the throughput
@@ -1236,6 +1303,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
                 }
             }
         }
+        await networkProfiles.evaluate()
     }
 
     /// Restarts every active tunnel's interface after the system wakes from sleep,
@@ -2062,6 +2130,13 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         return String(cString: buffer)
     }
 
+    // MARK: - Network doctor
+
+    /// Scans routes, DNS and other VPN software for conflicts with the active tunnels.
+    func scanNetwork() async {
+        await networkDoctor.scan(tunnels: tunnels, killSwitchArmed: killSwitchArmedTunnelIDs)
+    }
+
     // MARK: - Warnings
 
     private func updateWarnings() {
@@ -2106,6 +2181,13 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             for leak in leakWarnings[tunnel.id] ?? [] {
                 warnings.append(.ipFamilyLeak(tunnel.name, leak))
             }
+        }
+
+        let now = Date()
+        for tunnel in active where HandshakeHealth.isUnanswered(
+            isActive: tunnel.isActive, connectedAt: tunnel.connectedAt, lastHandshake: tunnel.lastHandshake,
+            rxBytes: tunnel.rxBytes, txBytes: tunnel.txBytes, now: now) {
+            warnings.append(.noHandshake(tunnel.name, tunnel.engine))
         }
 
         if activeWarnings != warnings {
@@ -2279,13 +2361,16 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
     var quitFailureReason: String? { shutdownCoordinator.failureReason }
 
     func prepareForQuit() async -> Bool {
-        await shutdownCoordinator.prepare(using: self)
+        let ready = await shutdownCoordinator.prepare(using: self)
+        if ready { await networkProfiles.releaseOnQuit() }
+        return ready
     }
 
     func beginShutdown() {
         isShuttingDown = true
         stopPolling()
         networkChangeScheduler.cancel()
+        devTools.stopAll()
         for tunnel in tunnels { networkMonitor.userDidDisconnect(tunnel.id) }
         log.info("Quit: waiting for pending operations before disconnecting tunnels")
     }
@@ -2323,8 +2408,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
             environment.helperInstalled = false
         }
         guard environment.helperInstalled else {
-            let clean = !hasActiveTunnels && TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence(
-                in: URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true))
+            let clean = !hasActiveTunnels && TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence()
             if !clean { errorMessage = "Enable the privileged helper in Settings to confirm and stop existing tunnels before quitting." }
             return clean
         }
@@ -2369,6 +2453,27 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
 
     var hasActiveTunnels: Bool { tunnels.contains { $0.isActive } }
     var activeTunnelCount: Int { tunnels.filter { $0.isActive }.count }
+
+    /// Total speed of the connected tunnels in Mbps, nil when none is connected. The exit leg of an
+    /// active chain is left out: its traffic already travels inside the entry tunnel, so adding both
+    /// would count it twice.
+    var totalSpeedMbps: (down: Double, up: Double)? {
+        let active = tunnels.filter(\.isActive)
+        guard !active.isEmpty else { return nil }
+        let exits = Set(hopChains.filter { chain in
+            active.contains { $0.id == chain.hopTunnelID } && active.contains { $0.id == chain.exitTunnelID }
+        }.map(\.exitTunnelID))
+        var down = 0.0, up = 0.0
+        for tunnel in active where !exits.contains(tunnel.id) {
+            guard let last = trafficHistory[tunnel.id]?.last else { continue }
+            down += last.rxRate * 8 / 1_000_000
+            up += last.txRate * 8 / 1_000_000
+        }
+        return (down, up)
+    }
+
+    /// Warnings worth a different colour. A note (severity info, e.g. different DNS servers) is not one.
+    var hasAttentionWarnings: Bool { activeWarnings.contains { $0.severity != .info } }
     var sharedTunnels: [Tunnel] { tunnels.filter { $0.scope == .managed } }
     var favoriteTunnels: [Tunnel] { tunnels.filter { $0.isFavorite && $0.scope == .personal } }
 
@@ -2496,6 +2601,7 @@ final class TunnelManager: ObservableObject, TunnelShutdownClient {
         let rxRate = max(0, Double(rx - prev.rx) / dt)
         let txRate = max(0, Double(tx - prev.tx) / dt)
         let sample = TrafficSample(timestamp: now, rxRate: rxRate, txRate: txRate)
+        monitor.recordTraffic(tunnelID: tunnelId, rxBytesPerSecond: rxRate, txBytesPerSecond: txRate, at: now)
 
         var samples = trafficHistory[tunnelId, default: []]
         samples.append(sample)

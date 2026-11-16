@@ -11,7 +11,7 @@ import Foundation
 
 @MainActor
 final class WireGuardCommandService {
-    func getWgShowOutput() async throws -> String {
+    func getRuntimeStatusSnapshot() async throws -> WireGuardStatusSnapshot {
         fatalError("The injected output provider should be used")
     }
 }

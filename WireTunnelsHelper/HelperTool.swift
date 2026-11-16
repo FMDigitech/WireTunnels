@@ -3,8 +3,8 @@ import Darwin.membership
 import Foundation
 import Security
 
-private let helperVersionNumber = "1.0.9"
-private let helperProtocolRevisionValue = "ethernet-subnets-v1-helper-tools"
+private let helperVersionNumber = "1.1.0"
+private let helperProtocolRevisionValue = "ethernet-subnets-v1-helper-tools-profile-dns-awg-engine-marker-proxy-flush"
 private let applicationIdentifier = "com.fmdigitech.WireTunnels"
 private let applicationTeamIdentifier = "48W4Z4X56T"
 private let clientCodeRequirement = """
@@ -34,7 +34,12 @@ private let toolInstaller = ToolInstaller(
     tools: [
         ToolInstaller.Tool(name: "wg", check: .codeSignature(requirement: toolRequirement("wg"))),
         ToolInstaller.Tool(name: "wireguard-go", check: .codeSignature(requirement: toolRequirement("wireguard-go"))),
-        ToolInstaller.Tool(name: "wg-quick", check: .sha256(ToolAnchors.wgQuickSHA256))
+        ToolInstaller.Tool(name: "wg-quick", check: .sha256(ToolAnchors.wgQuickSHA256)),
+        // The AmneziaWG counterparts: same checks, so awg-quick is pinned to its patched hash
+        // and the Mach-O tools to the team's signature under their own identifier.
+        ToolInstaller.Tool(name: "awg", check: .codeSignature(requirement: toolRequirement("awg"))),
+        ToolInstaller.Tool(name: "amneziawg-go", check: .codeSignature(requirement: toolRequirement("amneziawg-go"))),
+        ToolInstaller.Tool(name: "awg-quick", check: .sha256(ToolAnchors.awgQuickSHA256))
     ],
     source: { try ToolInstaller.bundledToolsDirectory() },
     binDirectory: systemBinDir,
@@ -260,6 +265,9 @@ private struct ManagedTunnelRecord: Codable, Equatable, Identifiable {
     var updatedAt: Date
     var scope: String
     var managedPolicy: ManagedTunnelPolicy?
+    /// "wireguard" or "amneziawg", worked out from the root-owned config. Records written before
+    /// the field existed have none and are filled in when listed.
+    var engine: String?
 }
 
 private struct ManagedTunnelUserSession: Codable, Equatable {
@@ -275,6 +283,7 @@ private struct SanitizedConfigMetadata {
     var endpoint: String?
     var publicKey: String?
     var localPublicKey: String?
+    var usesAmneziaWG: Bool = false
 }
 
 private struct ClientUser {
@@ -520,6 +529,11 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                     if let denial = self.runtimeAccessDenial(for: config, action: .connect) {
                         throw InventoryError.operation(denial)
                     }
+                    // It edits the interface through wg and reads wg's runtime directory.
+                    if let text = try? String(contentsOf: config, encoding: .utf8),
+                       RuntimeEngine.engine(forConfig: text) == .amneziaWG {
+                        throw InventoryError.operation("Inventory protection does not support AmneziaWG tunnels")
+                    }
                 }
                 try self.inventoryService.perform(request, uid: uid_t(self.clientUser.uid))
                 reply(true, nil)
@@ -602,18 +616,21 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             return
         }
 
+        // The engine follows the config the helper validated and staged: no client picks which
+        // root tool runs.
+        let engine = RuntimeEngine.engine(forConfig: (try? String(contentsOf: configURL, encoding: .utf8)) ?? "")
         let alreadyRunning = (try? RuntimeConfigLocator.configPaths(
-            in: URL(fileURLWithPath: "/var/run/wireguard"),
+            inAll: RuntimeEngine.runtimeDirectories,
             resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
         ))?.values.contains(configURL.path) == true
 
-        let environment = wireGuardEnvironment()
+        let environment = wireGuardEnvironment(for: engine)
         guard recoverDNS().exitCode == 0 else {
             reply(false, "Unable to recover DNS from a previous tunnel operation")
             return
         }
         let result = runCommand(
-            executable: systemBinDir.appendingPathComponent("wg-quick"),
+            executable: systemBinDir.appendingPathComponent(engine.quickTool),
             arguments: ["up", configURL.path],
             environment: environment,
             timeout: 20
@@ -626,10 +643,10 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             // Never stop an interface that was already running before the call.
             if !alreadyRunning {
                 let alias = configURL.deletingPathExtension().lastPathComponent
-                let marker = URL(fileURLWithPath: "/var/run/wireguard/\(alias).name")
+                let marker = engine.runtimeDirectory.appendingPathComponent("\(alias).name")
                 if fileManager.fileExists(atPath: marker.path) {
                     _ = runCommand(
-                        executable: systemBinDir.appendingPathComponent("wg-quick"),
+                        executable: systemBinDir.appendingPathComponent(engine.quickTool),
                         arguments: ["down", configURL.path],
                         environment: environment,
                         timeout: 1
@@ -655,10 +672,14 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             return
         }
 
+        // A running tunnel is stopped by the engine that started it, found by the directory that
+        // holds its alias; its config may have changed since.
+        let engine = RuntimeEngine.engine(runningAlias: configURL.deletingPathExtension().lastPathComponent)
+            ?? RuntimeEngine.engine(forConfig: (try? String(contentsOf: configURL, encoding: .utf8)) ?? "")
         let result = runCommand(
-            executable: systemBinDir.appendingPathComponent("wg-quick"),
+            executable: systemBinDir.appendingPathComponent(engine.quickTool),
             arguments: ["down", configURL.path],
-            environment: wireGuardEnvironment()
+            environment: wireGuardEnvironment(for: engine)
         )
         let recovery = recoverDNS()
         reconcileIPv6Services()
@@ -670,60 +691,65 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    /// `wg show all dump` prints each interface's private key in the second column of its
-    /// 5-field interface line, and each peer's preshared key in the third column of its
-    /// 9-field peer line. The app needs neither, and shared tunnels' keys must stay
-    /// root-only, so never send them over XPC.
-    private static func redactingPrivateKeys(in dump: String) -> String {
-        dump.components(separatedBy: "\n").map { line in
-            var fields = line.components(separatedBy: "\t")
-            if fields.count == 5 { fields[1] = "(hidden)" }
-            if fields.count == 9, fields[2] != "(none)" { fields[2] = "(hidden)" }
-            return fields.joined(separator: "\t")
-        }.joined(separator: "\n")
+    /// One status dump for every engine that has tunnels up, in the shape the app reads, with
+    /// every key already removed (see RuntimeStatusDump). wg always answers; awg is asked only
+    /// when its runtime directory holds a socket, so a Mac without AmneziaWG tunnels never
+    /// depends on awg. If it does hold one and awg cannot answer, the status is an error
+    /// rather than a partial list that would hide a running tunnel.
+    private func statusDump() -> (output: String?, error: String?) {
+        let wg = runCommand(
+            executable: systemBinDir.appendingPathComponent(RuntimeEngine.wireGuard.showTool),
+            arguments: ["show", "all", "dump"]
+        )
+        guard wg.exitCode == 0 else {
+            return (nil, wg.stderr.isEmpty ? "wg show failed" : wg.stderr)
+        }
+        var output = RuntimeStatusDump.redactedWireGuard(wg.stdout)
+        // An unreadable directory counts as occupied: fail closed.
+        if (try? RuntimeConfigLocator.hasUserspaceSockets(in: RuntimeEngine.amneziaWG.runtimeDirectory)) ?? true {
+            let awg = runCommand(
+                executable: systemBinDir.appendingPathComponent(RuntimeEngine.amneziaWG.showTool),
+                arguments: ["show", "all", "dump"]
+            )
+            guard awg.exitCode == 0 else {
+                return (nil, awg.stderr.isEmpty ? "awg show failed" : awg.stderr)
+            }
+            output += RuntimeStatusDump.redactedAmnezia(awg.stdout)
+        }
+        return (output, nil)
     }
 
     func runWgShow(reply: @escaping (String?, String?) -> Void) {
-        let result = runCommand(
-            executable: systemBinDir.appendingPathComponent("wg"),
-            arguments: ["show", "all", "dump"]
-        )
-        if result.exitCode == 0 {
-            reply(Self.redactingPrivateKeys(in: result.stdout), nil)
-        } else {
-            reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
-        }
+        let dump = statusDump()
+        reply(dump.output, dump.error)
     }
 
     func runtimeStatusSnapshot(reply: @escaping (Data?, String?) -> Void) {
         do {
-            let directory = URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true)
             let paths = try RuntimeConfigLocator.configPaths(
-                in: directory,
+                inAll: RuntimeEngine.runtimeDirectories,
                 resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
             )
             struct Snapshot: Encodable {
                 let output: String
                 let configPaths: [String: String]
             }
-            let wg = systemBinDir.appendingPathComponent("wg")
             if (try? toolInstaller.ensureInstalled(["wg"])) == nil {
                 // Allow quitting while the tools are unavailable. A surviving
                 // userspace socket requires real status confirmation instead.
-                guard try !RuntimeConfigLocator.hasUserspaceSockets(in: directory) else {
+                guard try !RuntimeConfigLocator.hasUserspaceSockets(inAny: RuntimeEngine.runtimeDirectories) else {
                     reply(nil, "The WireGuard tools are unavailable, so existing tunnels can't be confirmed and stopped before quitting.")
                     return
                 }
                 reply(try JSONEncoder().encode(Snapshot(output: "", configPaths: [:])), nil)
                 return
             }
-            let result = runCommand(executable: wg, arguments: ["show", "all", "dump"])
-            guard result.exitCode == 0 else {
-                reply(nil, result.stderr.isEmpty ? "wg show failed" : result.stderr)
+            let dump = statusDump()
+            guard let output = dump.output else {
+                reply(nil, dump.error ?? "wg show failed")
                 return
             }
-            let snapshot = Snapshot(output: Self.redactingPrivateKeys(in: result.stdout), configPaths: paths)
-            reply(try JSONEncoder().encode(snapshot), nil)
+            reply(try JSONEncoder().encode(Snapshot(output: output, configPaths: paths)), nil)
         } catch {
             reply(nil, "Unable to resolve active tunnel configurations: \(error.localizedDescription)")
         }
@@ -1101,6 +1127,14 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                     backfilled = true
                 }
             }
+            for index in records.indices where records[index].engine == nil {
+                let url = URL(fileURLWithPath: records[index].configPath)
+                if (try? validateManagedConfigFile(url)) != nil,
+                   let text = try? String(contentsOf: url, encoding: .utf8) {
+                    records[index].engine = RuntimeEngine.engine(forConfig: text) == .amneziaWG ? "amneziawg" : "wireguard"
+                    backfilled = true
+                }
+            }
             if backfilled { try? saveManagedRecords(records) }
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -1183,7 +1217,8 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 createdAt: now,
                 updatedAt: now,
                 scope: "managed",
-                managedPolicy: ManagedTunnelPolicy()
+                managedPolicy: ManagedTunnelPolicy(),
+                engine: metadata.usesAmneziaWG ? "amneziawg" : "wireguard"
             ))
             try saveManagedRecords(records)
             reply(true, nil)
@@ -1266,6 +1301,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
                 records[index].endpoint = metadata.endpoint
                 records[index].publicKey = metadata.publicKey
                 records[index].localPublicKey = metadata.localPublicKey
+                records[index].engine = metadata.usesAmneziaWG ? "amneziawg" : "wireguard"
             }
             records[index].updatedAt = Date()
             try saveManagedRecords(records)
@@ -1714,7 +1750,8 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
             dns: dns,
             endpoint: endpoint,
             publicKey: publicKey,
-            localPublicKey: localPublicKey
+            localPublicKey: localPublicKey,
+            usesAmneziaWG: RuntimeEngine.engine(forConfig: text) == .amneziaWG
         )
     }
 
@@ -1801,7 +1838,7 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
     /// Publishes macOS IPv6 service state for running full IPv6 tunnels and drops it for the rest.
     func reconcileIPv6Services() {
         guard let paths = try? RuntimeConfigLocator.configPaths(
-            in: URL(fileURLWithPath: "/var/run/wireguard"),
+            inAll: RuntimeEngine.runtimeDirectories,
             resolveConfig: { self.validatedRuntimeConfig(named: $0, allowLegacy: true) }
         ) else { return }
         IPv6ServiceRegistrar.shared.reconcile(configPaths: paths)
@@ -1811,6 +1848,89 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         guard let executable = Bundle.main.executableURL else { return ("", "DNS recovery helper is unavailable", -1) }
         return runCommand(executable: executable,
                           arguments: token.map { ["--dns-release", $0] } ?? ["--dns-recover"], timeout: 15)
+    }
+
+    /// Sets DNS servers for the active network profile on the primary network service. Administrators
+    /// only: it changes DNS for the whole Mac, and a password prompt cannot fit a network change.
+    func applyProfileDNS(servers: Data, reply: @escaping (Bool, String?) -> Void) {
+        guard callerIsAdministrator else {
+            reply(false, "Only administrators can change DNS for a network profile")
+            return
+        }
+        guard let list = try? JSONDecoder().decode([String].self, from: servers),
+              (1...8).contains(list.count), list.allSatisfy(Self.isValidIPLiteral) else {
+            reply(false, "Invalid DNS servers for a network profile")
+            return
+        }
+        runProfileDNS(["--dns-profile-set", String(list.count)] + list, reply: reply)
+    }
+
+    func releaseProfileDNS(reply: @escaping (Bool, String?) -> Void) {
+        guard callerIsAdministrator else {
+            reply(false, "Only administrators can change DNS for a network profile")
+            return
+        }
+        runProfileDNS(["--dns-profile-release"], reply: reply)
+    }
+
+    /// Sets the proxy of the primary network service for the active network profile. Administrators
+    /// only, for the same reason as DNS: it changes how the whole Mac reaches the network. The
+    /// settings are checked again here, whatever the app already did.
+    func applyProfileProxy(settings: Data, reply: @escaping (Bool, String?) -> Void) {
+        guard callerIsAdministrator else {
+            reply(false, "Only administrators can change the proxy for a network profile")
+            return
+        }
+        guard let proxy = try? JSONDecoder().decode(ProxySettings.self, from: settings) else {
+            reply(false, "Invalid proxy settings for a network profile")
+            return
+        }
+        if let problem = proxy.problem {
+            reply(false, problem)
+            return
+        }
+        do {
+            try ProxyProfileService.shared.apply(proxy)
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    func releaseProfileProxy(reply: @escaping (Bool, String?) -> Void) {
+        guard callerIsAdministrator else {
+            reply(false, "Only administrators can change the proxy for a network profile")
+            return
+        }
+        do {
+            try ProxyProfileService.shared.release()
+            reply(true, nil)
+        } catch {
+            reply(false, error.localizedDescription)
+        }
+    }
+
+    /// Empties the system's DNS cache so answers from the previous resolvers are not reused.
+    /// Open to every user of the app: it changes nothing but what the Mac has cached.
+    func flushDNSCache(reply: @escaping (Bool, String?) -> Void) {
+        let flush = runCommand(executable: URL(fileURLWithPath: "/usr/bin/dscacheutil"), arguments: ["-flushcache"], timeout: 10)
+        guard flush.exitCode == 0 else {
+            reply(false, commandError(flush, fallback: "Unable to flush the DNS cache"))
+            return
+        }
+        let signal = runCommand(executable: URL(fileURLWithPath: "/usr/bin/killall"), arguments: ["-HUP", "mDNSResponder"], timeout: 10)
+        reply(signal.exitCode == 0,
+              signal.exitCode == 0 ? nil : commandError(signal, fallback: "Unable to restart the DNS responder"))
+    }
+
+    private func runProfileDNS(_ arguments: [String], reply: @escaping (Bool, String?) -> Void) {
+        guard let executable = Bundle.main.executableURL else {
+            reply(false, "DNS recovery helper is unavailable")
+            return
+        }
+        let result = runCommand(executable: executable, arguments: arguments, timeout: 15)
+        reply(result.exitCode == 0,
+              result.exitCode == 0 ? nil : commandError(result, fallback: "Unable to update DNS for the network profile"))
     }
 
     func recoverDNSState(reply: @escaping (Bool, String?) -> Void) {
@@ -1853,10 +1973,10 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         }
     }
 
-    private func wireGuardEnvironment() -> [String: String] {
+    private func wireGuardEnvironment(for engine: RuntimeEngine = .wireGuard) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         environment["WG_QUICK_USERSPACE_IMPLEMENTATION"] =
-            systemBinDir.appendingPathComponent("wireguard-go").path
+            systemBinDir.appendingPathComponent(engine.userspaceTool).path
         environment["WG_SUDO"] = "1"
         environment["WIRETUNNELS_DNS_HELPER"] = Bundle.main.executableURL?.path
         environment["WIRETUNNELS_DNS_TOKEN"] = UUID().uuidString
@@ -1877,12 +1997,13 @@ private final class HelperSession: NSObject, WireguardHelperProtocol {
         let operation = arguments.first.flatMap { ["up", "down", "show", "genkey", "pubkey"].contains($0) ? $0 : nil }
         let label = operation.map { "\(name) \($0)" } ?? name
         // Verify the tools this command runs right before launching it, reinstalling them from
-        // the helper's own bundle if needed. wg-quick runs wg and wireguard-go itself.
+        // the helper's own bundle if needed. wg-quick runs wg and wireguard-go itself, and
+        // awg-quick runs awg and amneziawg-go, so the quick scripts verify every tool.
         if executable.deletingLastPathComponent().standardizedFileURL == systemBinDir.standardizedFileURL {
-            do { try toolInstaller.ensureInstalled(name == "wg-quick" ? nil : [name]) }
+            do { try toolInstaller.ensureInstalled(["wg-quick", "awg-quick"].contains(name) ? nil : [name]) }
             catch { return ("", error.localizedDescription, -1) }
         }
-        let trace = name == "wg-quick"
+        let trace = ["wg-quick", "awg-quick"].contains(name)
         var lastStage = "starting command"
         if trace {
             HelperCommandLog.shared.record(commandID: commandID, command: label, stage: lastStage, elapsed: 0)

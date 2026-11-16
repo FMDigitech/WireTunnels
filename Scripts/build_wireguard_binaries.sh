@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # build_wireguard_binaries.sh
-# Xcode build phase script: builds and bundles wg, wg-quick, wireguard-go
+# Xcode build phase script: builds and bundles wg, wg-quick, wireguard-go and their
+# AmneziaWG counterparts awg, awg-quick, amneziawg-go
 # as universal binaries (arm64 + x86_64) into the app bundle Resources/wireguard/
 #
-# --prepare-wg-quick only produces the patched wg-quick in the cache. The helper
-# target runs it through generate_tool_anchors.sh before compiling, so the hash
-# compiled into the helper comes from the same patch chain as the bundled script.
+# --prepare-wg-quick only produces the patched wg-quick and awg-quick in the cache.
+# The helper target runs it through generate_tool_anchors.sh before compiling, so the
+# hashes compiled into the helper come from the same patch chain as the bundled scripts.
 
 set -euo pipefail
 
@@ -25,9 +26,12 @@ echo_error()   { echo -e "${RED}[WG-BUILD] ERROR:${NC} $*" >&2; }
 SRCROOT="${SRCROOT:-.}"
 OUTPUT_DIR="${BUILT_PRODUCTS_DIR:-}/${CONTENTS_FOLDER_PATH:-}/Resources/wireguard"
 TOOL_ANCHOR="${BUILT_PRODUCTS_DIR:-}/ToolAnchors/wg-quick.sha256"
+AWG_TOOL_ANCHOR="${BUILT_PRODUCTS_DIR:-}/ToolAnchors/awg-quick.sha256"
 CACHE_DIR="${SRCROOT}/build/wireguard-cache"
 WG_GO_DIR="${CACHE_DIR}/wireguard-go-src"
 WG_TOOLS_DIR="${CACHE_DIR}/wireguard-tools-src"
+AWG_GO_DIR="${CACHE_DIR}/amneziawg-go-src"
+AWG_TOOLS_DIR="${CACHE_DIR}/amneziawg-tools-src"
 VERSION_FILE="${CACHE_DIR}/.built_version"
 WG_QUICK_PATCH="${SRCROOT}/Scripts/wg-quick-bash3.patch"
 WG_QUICK_DNS_PATCH="${SRCROOT}/Scripts/wg-quick-dns-cleanup.patch"
@@ -38,6 +42,9 @@ WG_QUICK_EXTRA_PATCHES=(
     "${SRCROOT}/Scripts/wg-quick-dns-recovery.patch"
     "${SRCROOT}/Scripts/wg-quick-loop-guard.patch"
 )
+# awg-quick gets the same chain, then this one: its own socket directory, and awg for wg.
+AWG_QUICK_PATCH="${SRCROOT}/Scripts/awg-quick-socket-dir.patch"
+BUNDLED_TOOLS=(wg wg-quick wireguard-go awg awg-quick amneziawg-go)
 VERSIONS_FILE="${SRCROOT}/Scripts/wireguard-versions.env"
 
 if [ ! -f "$VERSIONS_FILE" ]; then
@@ -47,6 +54,16 @@ fi
 
 # shellcheck source=wireguard-versions.env
 source "$VERSIONS_FILE"
+
+# Xcode runs script phases with a minimal PATH that leaves out where Go is usually installed
+# (the official installer, Homebrew on Apple silicon and on Intel). Add those places.
+for go_dir in /usr/local/go/bin /opt/homebrew/bin /usr/local/bin; do
+    if [[ -x "$go_dir/go" ]]; then
+        PATH="$go_dir:$PATH"
+        export PATH
+        break
+    fi
+done
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 check_prerequisites() {
@@ -87,12 +104,12 @@ get_versions() {
     dns_hash=$(shasum -a 256 "$WG_QUICK_DNS_PATCH" | awk '{print $1}')
     # The signing scheme and identity are part of the key: the helper rejects tools
     # signed ad-hoc or by another team, so a cache from such a build must not be reused.
-    echo "${WIREGUARD_GO_REVISION}:${WIREGUARD_TOOLS_REVISION}:${bash3_hash}:${dns_hash}:sign-identifier-v1:${EXPANDED_CODE_SIGN_IDENTITY:--}"
+    echo "${WIREGUARD_GO_REVISION}:${WIREGUARD_TOOLS_REVISION}:${bash3_hash}:${dns_hash}:${AMNEZIAWG_GO_REVISION}:${AMNEZIAWG_TOOLS_REVISION}:sign-identifier-v1:${EXPANDED_CODE_SIGN_IDENTITY:--}"
 }
 
 is_cache_valid() {
     # Check all output files exist in cache
-    for f in wg "wg-quick" wireguard-go; do
+    for f in "${BUNDLED_TOOLS[@]}"; do
         [ -f "${CACHE_DIR}/${f}" ] || return 1
     done
     # Check version matches
@@ -210,6 +227,44 @@ build_wireguard_tools() {
 
 }
 
+# ── amneziawg-go + awg build ──────────────────────────────────────────────────
+ensure_amneziawg_tools_source() {
+    if [ "$(git -C "$AWG_TOOLS_DIR" rev-parse HEAD 2>/dev/null)" != "$AMNEZIAWG_TOOLS_REVISION" ] ||
+        [ ! -f "${AWG_TOOLS_DIR}/src/wg-quick/darwin.bash" ]; then
+        checkout_revision "$AMNEZIAWG_TOOLS_REPO" "$AMNEZIAWG_TOOLS_REVISION" "$AWG_TOOLS_DIR"
+    fi
+}
+
+build_amneziawg() {
+    echo_info "Building amneziawg-go..."
+    checkout_revision "$AMNEZIAWG_GO_REPO" "$AMNEZIAWG_GO_REVISION" "$AWG_GO_DIR"
+    (
+        cd "$AWG_GO_DIR"
+        GOOS=darwin GOARCH=arm64 go build -o "${CACHE_DIR}/amneziawg-go-arm64" .
+        GOOS=darwin GOARCH=amd64 go build -o "${CACHE_DIR}/amneziawg-go-amd64" .
+    )
+    lipo -create -output "${CACHE_DIR}/amneziawg-go" \
+        "${CACHE_DIR}/amneziawg-go-arm64" "${CACHE_DIR}/amneziawg-go-amd64"
+    chmod +x "${CACHE_DIR}/amneziawg-go"
+    sign_cached_binary "${CACHE_DIR}/amneziawg-go"
+
+    echo_info "Building awg..."
+    checkout_revision "$AMNEZIAWG_TOOLS_REPO" "$AMNEZIAWG_TOOLS_REVISION" "$AWG_TOOLS_DIR"
+    (
+        cd "${AWG_TOOLS_DIR}/src"
+        # The fork still names its tool target `wg`; it is bundled as `awg`.
+        for arch in arm64 x86_64; do
+            make clean
+            CC="clang" CFLAGS="-target ${arch}-apple-macos13 -O2" LDFLAGS="-target ${arch}-apple-macos13" make wg
+            cp wg "${CACHE_DIR}/awg-${arch}"
+        done
+    )
+    lipo -create -output "${CACHE_DIR}/awg" "${CACHE_DIR}/awg-arm64" "${CACHE_DIR}/awg-x86_64"
+    chmod +x "${CACHE_DIR}/awg"
+    sign_cached_binary "${CACHE_DIR}/awg"
+    echo_success "AmneziaWG built: $(lipo -info "${CACHE_DIR}/awg" 2>&1 | tail -1)"
+}
+
 ensure_wireguard_tools_source() {
     if [ "$(git -C "$WG_TOOLS_DIR" rev-parse HEAD 2>/dev/null)" != "$WIREGUARD_TOOLS_REVISION" ] ||
         [ ! -f "${WG_TOOLS_DIR}/src/wg-quick/darwin.bash" ]; then
@@ -217,49 +272,43 @@ ensure_wireguard_tools_source() {
     fi
 }
 
-prepare_wg_quick() {
-    local WQ_SRC="${WG_TOOLS_DIR}/src/wg-quick/darwin.bash"
-
-    if [ ! -f "$WQ_SRC" ]; then
-        echo_error "wg-quick not found at $WQ_SRC"
+# Applies the shared patch chain, then any extra patches given, to a Darwin quick script
+# and writes the result to $2.
+patch_quick_script() {
+    local source_script="$1" out="$2" patch_file current="$1"
+    shift 2
+    if [ ! -f "$source_script" ]; then
+        echo_error "$(basename "$out") source not found at $source_script"
         exit 1
     fi
-    if [ ! -f "$WG_QUICK_PATCH" ]; then
-        echo_error "wg-quick compatibility patch not found at $WG_QUICK_PATCH"
-        exit 1
-    fi
-    if [ ! -f "$WG_QUICK_DNS_PATCH" ]; then
-        echo_error "wg-quick DNS cleanup patch not found at $WG_QUICK_DNS_PATCH"
-        exit 1
-    fi
-
-    echo_info "Applying macOS Bash 3 compatibility patch to wg-quick..."
-    if ! patch --silent -o "${CACHE_DIR}/wg-quick" "$WQ_SRC" < "$WG_QUICK_PATCH"; then
-        echo_error "The wg-quick Bash 3 compatibility patch no longer applies"
-        exit 1
-    fi
-    echo_info "Applying DNS cleanup patch to wg-quick..."
-    if ! patch --silent -o "${CACHE_DIR}/wg-quick.dns" "${CACHE_DIR}/wg-quick" < "$WG_QUICK_DNS_PATCH"; then
-        echo_error "The wg-quick DNS cleanup patch no longer applies"
-        exit 1
-    fi
-    mv "${CACHE_DIR}/wg-quick.dns" "${CACHE_DIR}/wg-quick"
-    for extra_patch in "${WG_QUICK_EXTRA_PATCHES[@]}"; do
-        if [ ! -f "$extra_patch" ]; then
-            echo_error "wg-quick patch not found at $extra_patch"
+    for patch_file in "$WG_QUICK_PATCH" "$WG_QUICK_DNS_PATCH" "${WG_QUICK_EXTRA_PATCHES[@]}" "$@"; do
+        if [ ! -f "$patch_file" ]; then
+            echo_error "$(basename "$out") patch not found at $patch_file"
             exit 1
         fi
-        echo_info "Applying $(basename "$extra_patch") to wg-quick..."
-        if ! patch --silent -o "${CACHE_DIR}/wg-quick.next" "${CACHE_DIR}/wg-quick" < "$extra_patch"; then
-            echo_error "$(basename "$extra_patch") no longer applies to wg-quick"
+        echo_info "Applying $(basename "$patch_file") to $(basename "$out")..."
+        if ! patch --silent -o "${out}.next" "$current" < "$patch_file"; then
+            echo_error "$(basename "$patch_file") no longer applies to $(basename "$out")"
             exit 1
         fi
-        mv "${CACHE_DIR}/wg-quick.next" "${CACHE_DIR}/wg-quick"
+        mv "${out}.next" "$out"
+        current="$out"
     done
-    /bin/bash -n "${CACHE_DIR}/wg-quick"
-    chmod +x "${CACHE_DIR}/wg-quick"
+    /bin/bash -n "$out"
+    chmod +x "$out"
+}
+
+prepare_wg_quick() {
+    patch_quick_script "${WG_TOOLS_DIR}/src/wg-quick/darwin.bash" "${CACHE_DIR}/wg-quick"
     /bin/bash "${SRCROOT}/Scripts/test_wg_quick_validator_path.sh" "${CACHE_DIR}/wg-quick"
     echo_success "wg-quick prepared for macOS Bash 3"
+}
+
+# shortcut: the wg-quick validators are not run on awg-quick (they assume wg's socket
+# paths); add awg-quick variants of them once its helper tests exist.
+prepare_awg_quick() {
+    patch_quick_script "${AWG_TOOLS_DIR}/src/wg-quick/darwin.bash" "${CACHE_DIR}/awg-quick" "$AWG_QUICK_PATCH"
+    echo_success "awg-quick prepared for macOS Bash 3"
 }
 
 write_manifest() {
@@ -292,18 +341,22 @@ write_manifest() {
         printf '{\n'
         printf '  "schemaVersion": 1,\n'
         printf '  "generatedAt": "%s",\n' "$generated_at"
-        printf '  "source": "official WireGuard source + tracked local patches",\n'
+        printf '  "source": "official WireGuard and AmneziaWG source + tracked local patches",\n'
         printf '  "patches": [\n'
         printf '    {"name":"wg-quick-bash3.patch","sha256":"%s"},\n' "$bash3_hash"
         printf '    {"name":"wg-quick-dns-cleanup.patch","sha256":"%s"}' "$dns_hash"
         for extra_patch in "${WG_QUICK_EXTRA_PATCHES[@]}"; do
             printf ',\n    {"name":"%s","sha256":"%s"}' "$(basename "$extra_patch")" "$(shasum -a 256 "$extra_patch" | awk '{print $1}')"
         done
+        printf ',\n    {"name":"%s","sha256":"%s"}' "$(basename "$AWG_QUICK_PATCH")" "$(shasum -a 256 "$AWG_QUICK_PATCH" | awk '{print $1}')"
         printf '\n  ],\n'
         printf '  "artifacts": [\n'
         printf '    %s,\n' "$(artifact_json wg "$WIREGUARD_TOOLS_REPO" "$WIREGUARD_TOOLS_REVISION" "wireguard-tools@${WIREGUARD_TOOLS_REVISION:0:12}")"
         printf '    %s,\n' "$(artifact_json wg-quick "$WIREGUARD_TOOLS_REPO" "$WIREGUARD_TOOLS_REVISION" "wireguard-tools@${WIREGUARD_TOOLS_REVISION:0:12}+macos-patches")"
-        printf '    %s\n' "$(artifact_json wireguard-go "$WIREGUARD_GO_REPO" "$WIREGUARD_GO_REVISION" "wireguard-go@${WIREGUARD_GO_REVISION:0:12}")"
+        printf '    %s,\n' "$(artifact_json wireguard-go "$WIREGUARD_GO_REPO" "$WIREGUARD_GO_REVISION" "wireguard-go@${WIREGUARD_GO_REVISION:0:12}")"
+        printf '    %s,\n' "$(artifact_json awg "$AMNEZIAWG_TOOLS_REPO" "$AMNEZIAWG_TOOLS_REVISION" "amneziawg-tools@${AMNEZIAWG_TOOLS_REVISION:0:12}")"
+        printf '    %s,\n' "$(artifact_json awg-quick "$AMNEZIAWG_TOOLS_REPO" "$AMNEZIAWG_TOOLS_REVISION" "amneziawg-tools@${AMNEZIAWG_TOOLS_REVISION:0:12}+macos-patches")"
+        printf '    %s\n' "$(artifact_json amneziawg-go "$AMNEZIAWG_GO_REPO" "$AMNEZIAWG_GO_REVISION" "amneziawg-go@${AMNEZIAWG_GO_REVISION:0:12}")"
         printf '  ]\n'
         printf '}\n'
     } > "$manifest"
@@ -316,21 +369,26 @@ copy_to_bundle() {
     echo_info "Copying binaries to app bundle: $OUTPUT_DIR"
     mkdir -p "$OUTPUT_DIR"
 
-    for f in wg "wg-quick" wireguard-go; do
+    for f in "${BUNDLED_TOOLS[@]}"; do
         cp "${CACHE_DIR}/${f}" "${OUTPUT_DIR}/${f}"
         chmod +x "${OUTPUT_DIR}/${f}"
     done
 
     # The helper only installs a wg-quick matching the hash compiled into it
     # (generate_tool_anchors.sh), so fail the build instead of users' installs.
-    if [ ! -f "$TOOL_ANCHOR" ]; then
-        echo_error "Missing $TOOL_ANCHOR; build the WireTunnelsHelper target first"
-        exit 1
-    fi
-    if [ "$(shasum -a 256 "${OUTPUT_DIR}/wg-quick" | awk '{print $1}')" != "$(cat "$TOOL_ANCHOR")" ]; then
-        echo_error "Bundled wg-quick does not match the hash compiled into the helper"
-        exit 1
-    fi
+    local script anchor
+    for script in wg-quick:"$TOOL_ANCHOR" awg-quick:"$AWG_TOOL_ANCHOR"; do
+        anchor="${script#*:}"
+        script="${script%%:*}"
+        if [ ! -f "$anchor" ]; then
+            echo_error "Missing $anchor; build the WireTunnelsHelper target first"
+            exit 1
+        fi
+        if [ "$(shasum -a 256 "${OUTPUT_DIR}/${script}" | awk '{print $1}')" != "$(cat "$anchor")" ]; then
+            echo_error "Bundled ${script} does not match the hash compiled into the helper"
+            exit 1
+        fi
+    done
 
     # wg and wireguard-go are already signed in the cache (see sign_cached_binary,
     # called from build_wireguard_go/build_wireguard_tools) — signing here again
@@ -338,7 +396,7 @@ copy_to_bundle() {
     # sha256) drift on every rebuild despite unchanged pinned revisions.
 
     echo_success "Binaries in bundle:"
-    for f in wg "wg-quick" wireguard-go; do
+    for f in "${BUNDLED_TOOLS[@]}"; do
         if file "${OUTPUT_DIR}/${f}" | grep -q "Mach-O"; then
             echo_success "  ${f}: $(lipo -info "${OUTPUT_DIR}/${f}" 2>&1 | grep -o 'arm64.*' || echo 'binary')"
         else
@@ -354,7 +412,9 @@ main() {
     if [ "${1:-}" = "--prepare-wg-quick" ]; then
         mkdir -p "$CACHE_DIR"
         ensure_wireguard_tools_source
+        ensure_amneziawg_tools_source
         prepare_wg_quick
+        prepare_awg_quick
         return
     fi
 
@@ -372,12 +432,14 @@ main() {
         echo_info "Cache miss — building from source..."
         build_wireguard_go
         build_wireguard_tools
+        build_amneziawg
         # Save version
         get_versions > "$VERSION_FILE"
         echo_success "Build complete"
     fi
 
     prepare_wg_quick
+    prepare_awg_quick
     copy_to_bundle
     echo_success "=== Done ==="
 }

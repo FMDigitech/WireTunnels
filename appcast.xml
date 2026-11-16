@@ -8,6 +8,40 @@
         <description>WireTunnels update feed</description>
         <language>en</language>
         <item>
+            <title>Version 1.1.0</title>
+            <pubDate>Mon, 16 Nov 2026 00:00:00 +0000</pubDate>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <ul>
+                    <li>New: redesigned dashboard with a tunnel Overview, tabs for Sharing, Network, On-Demand, Safety and Config, and a full-details page</li>
+                    <li>New: optional link quality monitoring (Settings &gt; Monitoring, off by default) with Good / Fair / Poor, latency and packet loss</li>
+                    <li>New: AmneziaWG tunnels, with a menu to choose the engine (Automatic, WireGuard, AmneziaWG)</li>
+                    <li>New: Network Profiles that set DNS, a proxy, tunnels and a Shortcut per Wi-Fi network or Ethernet subnet, and a Flush DNS Cache button</li>
+                    <li>New: Network Doctor for conflicting VPNs, routes and DNS, and Mesh VPNs for Tailscale and NetBird</li>
+                    <li>New: Developer Tools with SSH port forwards (local, remote, SOCKS5) and Wake-on-LAN</li>
+                    <li>New: optional Notch view with tunnel state and live speeds</li>
+                    <li>New: config checks in the editor and import, a Warnings screen with next steps, and a searchable Log</li>
+                    <li>New: a warning when a connected tunnel never gets an answer from its server</li>
+                    <li>Fix: IPv6-only hostnames did not resolve through a full IPv6 tunnel on an IPv4-only network</li>
+                    <li>Fix: the menu bar icon is now a coloured badge that stays visible on any menu bar, and sits on the same baseline as other icons</li>
+                    <li>Fix: the Disconnect button is red instead of grey</li>
+                </ul>
+                <p><strong>Notes</strong></p>
+                <ul>
+                    <li>Existing installs will be prompted to approve the updated privileged helper on first launch after upgrading</li>
+                    <li>Applying DNS or proxy from a Network Profile needs an administrator</li>
+                </ul>
+            ]]></description>
+            <enclosure
+                url="https://github.com/FMDigitech/WireTunnels/releases/download/v1.1.0/WireTunnels-1.1.0.dmg"
+                sparkle:edSignature="ZVWIcmvDE55yPkNNPfg60pkgM/JVI7LmwMksVxoJBBh7DZyjnI93CiZKEk71XQbwNe2mKmR1RJpmnvzrCk6BDA=="
+                length="22534736"
+                type="application/octet-stream"
+            />
+        </item>
+        <item>
             <title>Version 1.0.9</title>
             <pubDate>Wed, 04 Nov 2026 00:00:00 +0000</pubDate>
             <sparkle:version>10</sparkle:version>

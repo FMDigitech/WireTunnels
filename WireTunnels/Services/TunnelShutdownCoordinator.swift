@@ -59,6 +59,16 @@ final class TunnelShutdownCoordinator {
 
 /// An unavailable helper is harmless only when no runtime evidence exists.
 enum TunnelShutdownRuntimeProbe {
+    /// Each engine keeps its tunnels' alias and socket files in its own directory.
+    static let engineRuntimeDirectories = [
+        URL(fileURLWithPath: "/var/run/wireguard", isDirectory: true),
+        URL(fileURLWithPath: "/var/run/amneziawg", isDirectory: true)
+    ]
+
+    static func hasNoRuntimeEvidence(inAny directories: [URL] = engineRuntimeDirectories) -> Bool {
+        directories.allSatisfy { hasNoRuntimeEvidence(in: $0) }
+    }
+
     static func hasNoRuntimeEvidence(in directory: URL) -> Bool {
         do {
             let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)

@@ -56,6 +56,7 @@ struct WireTunnelsApp: App {
     @StateObject private var tunnelManager: TunnelManager
     @StateObject private var dashboardNavigation: DashboardNavigation
     @StateObject private var updaterService = UpdaterService()
+    @StateObject private var notchController: NotchController
 
     init() {
         AppMigration.migrateIfNeeded()
@@ -66,6 +67,7 @@ struct WireTunnelsApp: App {
         let manager = TunnelManager()
         _tunnelManager = StateObject(wrappedValue: manager)
         _dashboardNavigation = StateObject(wrappedValue: DashboardNavigation())
+        _notchController = StateObject(wrappedValue: NotchController(tunnelManager: manager))
         AppIntentBridge.tunnelManager = manager
     }
 
@@ -99,6 +101,7 @@ struct WireTunnelsApp: App {
         Settings {
             SettingsView()
                 .environmentObject(tunnelManager)
+                .environmentObject(tunnelManager.monitor)
                 .environmentObject(updaterService)
         }
     }
@@ -144,14 +147,26 @@ private struct MenuBarIconView: View {
     /// symbol in the label sat higher than its neighbours (discussion #44).
     private var statusImage: NSImage {
         let symbol = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) ?? NSImage()
-        var configuration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
-        if let iconColor {
-            configuration = configuration.applying(NSImage.SymbolConfiguration(paletteColors: [iconColor, .labelColor]))
+        let configuration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+        guard let iconColor else {
+            let image = symbol.withSymbolConfiguration(configuration) ?? symbol
+            // A template follows the menu bar's light/dark and highlighted appearance.
+            image.isTemplate = true
+            return image
         }
-        let image = symbol.withSymbolConfiguration(configuration) ?? symbol
-        // A template follows the menu bar's light/dark and highlighted appearance.
-        image.isTemplate = iconColor == nil
-        return image
+        // A status-colored badge with a contrasting glyph stays visible on any menu bar tint,
+        // where a green glyph alone vanished on a green wallpaper.
+        let glyphColor: NSColor = iconColor == .systemYellow ? .black : .white
+        let glyph = symbol.withSymbolConfiguration(
+            configuration.applying(NSImage.SymbolConfiguration(paletteColors: [glyphColor, glyphColor]))) ?? symbol
+        let size = NSSize(width: glyph.size.width + 8, height: 18)
+        return NSImage(size: size, flipped: false) { rect in
+            iconColor.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
+            glyph.draw(in: NSRect(x: (rect.width - glyph.size.width) / 2, y: (rect.height - glyph.size.height) / 2,
+                                  width: glyph.size.width, height: glyph.size.height))
+            return true
+        }
     }
 
     /// Nil draws the icon as a template in the menu bar's own color.

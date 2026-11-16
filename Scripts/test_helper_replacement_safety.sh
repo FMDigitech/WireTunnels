@@ -10,7 +10,7 @@ grep -q 'helperReplacementRequiresInstalledApp' "$SERVICE" ||
     { echo "Unsafe helper replacement needs an actionable error" >&2; exit 1; }
 
 guard_line="$(grep -n 'guard isInstalledApplicationBundle' "$SERVICE" | head -1 | cut -d: -f1)"
-unregister_line="$(grep -n 'try await unregisterHelper' "$SERVICE" | head -1 | cut -d: -f1)"
+unregister_line="$(grep -nE 'try\??  *await unregisterHelper' "$SERVICE" | head -1 | cut -d: -f1)"
 test -n "$guard_line" -a -n "$unregister_line" -a "$guard_line" -lt "$unregister_line" ||
     { echo "The app location must be validated before unregistering the old helper" >&2; exit 1; }
 

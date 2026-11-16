@@ -16,11 +16,11 @@ grep -q 'networkMonitor.onSystemWake = { \[weak self\] in' "$MANAGER" ||
     { echo "TunnelManager must wire onSystemWake in init()" >&2; exit 1; }
 grep -q 'func handleSystemWake() async' "$MANAGER" ||
     { echo "TunnelManager must expose a dedicated system-wake handler" >&2; exit 1; }
-grep -q 'guard !isLoading, !needsSetup else { return }' "$MANAGER" ||
+grep -q 'guard !isShuttingDown, !isLoading, !needsSetup else { return }' "$MANAGER" ||
     { echo "System wake handling must wait until launch setup is complete" >&2; exit 1; }
 grep -q 'func reconnectAfterWake(_ tunnel: Tunnel) async' "$MANAGER" ||
     { echo "TunnelManager must restart each active tunnel's interface on wake" >&2; exit 1; }
-grep -q 'guard !connectingTunnels.contains(liveTunnel.id) else' "$MANAGER" ||
+grep -q 'guard !connectingTunnels.contains(liveTunnel.id), !disconnectingTunnels.contains(liveTunnel.id) else' "$MANAGER" ||
     { echo "Wake reconnect must reuse the connectingTunnels race guard" >&2; exit 1; }
 grep -q 'try await commandService.stopTunnel(configPath: configPath)' "$MANAGER" &&
 grep -q 'try await commandService.startTunnel(configPath: configPath)' "$MANAGER" ||

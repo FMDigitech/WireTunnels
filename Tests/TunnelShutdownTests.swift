@@ -68,6 +68,24 @@ struct TunnelShutdownTests {
             guard !TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence(in: unreadable) else { fatalError("Runtime inspection failure allowed quit") }
         } catch { fatalError("Runtime fixture failed: \(error)") }
 
+        // Every engine keeps its tunnels in its own directory: evidence in any one blocks quitting.
+        do {
+            let wireGuard = directory.appendingPathComponent("engine-wg")
+            let amnezia = directory.appendingPathComponent("engine-awg")
+            try FileManager.default.createDirectory(at: wireGuard, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: amnezia, withIntermediateDirectories: true)
+            guard TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence(inAny: [wireGuard, amnezia]) else {
+                fatalError("Empty engine directories blocked quit")
+            }
+            try Data("utun9\n".utf8).write(to: amnezia.appendingPathComponent("hidden.name"))
+            guard !TunnelShutdownRuntimeProbe.hasNoRuntimeEvidence(inAny: [wireGuard, amnezia]) else {
+                fatalError("An AmneziaWG tunnel alias was hidden by checking only the WireGuard directory")
+            }
+            guard TunnelShutdownRuntimeProbe.engineRuntimeDirectories.map(\.path) == ["/var/run/wireguard", "/var/run/amneziawg"] else {
+                fatalError("The probe must cover both engines' runtime directories")
+            }
+        } catch { fatalError("Engine runtime fixture failed: \(error)") }
+
         let coordinator = TunnelShutdownCoordinator()
         let client = ShutdownFixture()
         client.holdSetup = true

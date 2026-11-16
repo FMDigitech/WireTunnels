@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HELPER="${ROOT_DIR}/WireTunnelsHelper/HelperTool.swift"
 MANAGER="${ROOT_DIR}/WireTunnels/Services/TunnelManager.swift"
 
-grep -q 'ConfigName.sanitize' "$HELPER"
+grep -q 'validatedConfigName' "$HELPER"
 grep -q 'validateConfigContents(contents)' "$HELPER"
 grep -q 'writeManagedConfig' "$HELPER"
 grep -q 'saveManagedRecords' "$HELPER"

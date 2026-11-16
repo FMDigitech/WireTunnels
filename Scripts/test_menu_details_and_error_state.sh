@@ -46,11 +46,11 @@ grep -q 'dashboardNavigation.consumeRequest' "$DASHBOARD" ||
 
 grep -q 'hasError: tunnelManager.errorMessage != nil' "$APP" ||
     { echo "The menu icon must use TunnelManager.errorMessage" >&2; exit 1; }
-grep -q 'if hasError { return .red }' "$APP" ||
+grep -q 'if hasError { return .systemRed }' "$APP" ||
     { echo "Error state must render red with highest precedence" >&2; exit 1; }
-grep -q 'if hasWarnings { return .yellow }' "$APP" ||
+grep -q 'if hasWarnings { return .systemYellow }' "$APP" ||
     { echo "Warning state must render yellow after errors" >&2; exit 1; }
-grep -q 'if hasActive { return .green }' "$APP" ||
+grep -q 'if hasActive { return .systemGreen }' "$APP" ||
     { echo "Active state must render green after errors and warnings" >&2; exit 1; }
 
 echo "Menu details and error icon checks passed"

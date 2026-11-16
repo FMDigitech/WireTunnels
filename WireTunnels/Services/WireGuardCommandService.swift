@@ -23,8 +23,8 @@ struct RouteEntry: Codable, Equatable {
 @MainActor
 final class WireGuardCommandService {
     nonisolated static let helperMachServiceName = "com.fmdigitech.WireTunnels.helper"
-    nonisolated static let expectedHelperVersion = "1.0.9"
-    nonisolated static let expectedHelperProtocolRevision = "ethernet-subnets-v1-helper-tools"
+    nonisolated static let expectedHelperVersion = "1.1.0"
+    nonisolated static let expectedHelperProtocolRevision = "ethernet-subnets-v1-helper-tools-profile-dns-awg-engine-marker-proxy-flush"
     private static let helperCheckTimeoutNanoseconds: UInt64 = 3_000_000_000
     private static let keyGenerationTimeoutNanoseconds: UInt64 = 10_000_000_000
     nonisolated private static let operationTimeoutNanoseconds: UInt64 = 30_000_000_000
@@ -462,6 +462,52 @@ final class WireGuardCommandService {
         }
     }
 
+    /// Sets the system DNS servers for the active network profile; the helper restores the
+    /// previous DNS on `releaseProfileDNS` and lets a connected tunnel's DNS win meanwhile.
+    func applyProfileDNS(_ servers: [String]) async throws {
+        let data = try JSONEncoder().encode(servers)
+        return try await performHelperOperation(timeoutDescription: "Updating profile DNS") { helper, complete in
+            helper.applyProfileDNS(servers: data) { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.profileDNSFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
+    func releaseProfileDNS() async throws {
+        return try await performHelperOperation(timeoutDescription: "Restoring profile DNS") { helper, complete in
+            helper.releaseProfileDNS { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.profileDNSFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
+    /// Sets the proxy for the active network profile on the primary network service. The helper
+    /// keeps what it replaced and puts it back on `releaseProfileProxy`.
+    func applyProfileProxy(_ settings: ProxySettings) async throws {
+        let data = try JSONEncoder().encode(settings)
+        return try await performHelperOperation(timeoutDescription: "Updating profile proxy") { helper, complete in
+            helper.applyProfileProxy(settings: data) { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.profileProxyFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
+    func releaseProfileProxy() async throws {
+        return try await performHelperOperation(timeoutDescription: "Restoring profile proxy") { helper, complete in
+            helper.releaseProfileProxy { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.profileProxyFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
+    func flushDNSCache() async throws {
+        return try await performHelperOperation(timeoutDescription: "Flushing the DNS cache") { helper, complete in
+            helper.flushDNSCache { success, errorMessage in
+                complete(success ? .success(()) : .failure(CommandError.flushDNSFailed(errorMessage ?? "Unknown")))
+            }
+        }
+    }
+
     /// `ownerId` identifies whose routes these are — a tunnel's own UUID for split-
     /// tunnel exclusions, or a `HopChain`'s UUID for the chain's host route. Pass an
     /// empty `entries` array to flush everything previously installed for that owner.
@@ -555,13 +601,20 @@ final class WireGuardCommandService {
         }
     }
 
-    func copyConfig(from sourcePath: String, to destPath: String) async throws {
+    func copyConfig(from sourcePath: String, to destPath: String, engine: TunnelEngine = .wireGuard) async throws {
         let name = URL(fileURLWithPath: destPath).lastPathComponent
-        let contents: Data
+        var contents: Data
         do {
             contents = try Data(contentsOf: URL(fileURLWithPath: sourcePath), options: .mappedIfSafe)
         } catch {
             throw CommandError.copyFailed(error.localizedDescription)
+        }
+        // The helper picks the engine from the staged text; the marker is how a chosen engine reaches it.
+        if engine == .amneziaWG {
+            guard let text = String(data: contents, encoding: .utf8) else {
+                throw CommandError.copyFailed("The configuration is not valid UTF-8 text.")
+            }
+            contents = Data(EngineMarker.addingAmneziaWGMarker(to: text).utf8)
         }
         return try await performHelperOperation(timeoutDescription: "Staging tunnel configuration") { helper, complete in
             helper.stageConfig(named: name, contents: contents) { success, errorMessage in
@@ -799,6 +852,9 @@ enum CommandError: LocalizedError {
     case killSwitchFailed(String)
     case routeSyncFailed(String)
     case splitDNSFailed(String)
+    case profileDNSFailed(String)
+    case profileProxyFailed(String)
+    case flushDNSFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -823,6 +879,9 @@ enum CommandError: LocalizedError {
         case .killSwitchFailed(let msg): return "Kill switch update failed: \(msg)"
         case .routeSyncFailed(let msg): return "Route update failed: \(msg)"
         case .splitDNSFailed(let msg): return "Split DNS update failed: \(msg)"
+        case .profileDNSFailed(let msg): return "Network profile DNS failed: \(msg)"
+        case .profileProxyFailed(let msg): return "Network profile proxy failed: \(msg)"
+        case .flushDNSFailed(let msg): return "Flushing the DNS cache failed: \(msg)"
         }
     }
 }

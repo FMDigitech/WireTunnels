@@ -8,6 +8,12 @@ final class DashboardNavigation: ObservableObject {
         requestedTunnelID = tunnelID
     }
 
+    /// A screen another view wants the dashboard to open (e.g. "Turn on monitoring…" → Settings).
+    @Published private(set) var requestedSidebar: SidebarItem?
+
+    func requestSidebar(_ item: SidebarItem) { requestedSidebar = item }
+    func consumeSidebarRequest() { requestedSidebar = nil }
+
     func consumeRequest(_ tunnelID: UUID) {
         guard requestedTunnelID == tunnelID else { return }
         requestedTunnelID = nil

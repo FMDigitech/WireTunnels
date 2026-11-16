@@ -22,7 +22,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix='wiretunnels-tests-') as temporary:
         directory = Path(temporary)
         status_model = 'WireTunnels/Models/TunnelStatus.swift'
-        run_suite(directory, 'dns-recovery', ['WireTunnelsHelper/DNSRecoveryService.swift', 'Tests/DNSRecoveryTests.swift'])
+        run_suite(directory, 'dns-recovery', ['WireTunnelsHelper/DNSRecoveryService.swift', 'WireTunnelsHelper/RuntimeConfigLocator.swift',
+                                           'Shared/EngineMarker.swift',
+                                           'Tests/DNSRecoveryTests.swift'])
         run_suite(directory, 'wireguard-dns', ['WireTunnels/Services/WireGuardConfigParser.swift', 'Tests/WireGuardDNSTests.swift'])
         run_suite(directory, 'ip-family-routing', ['WireTunnels/Services/WireGuardConfigParser.swift', 'Tests/IPFamilyRoutingTests.swift'])
         run_suite(directory, 'ip-family-leak', ['WireTunnels/Services/WireGuardConfigParser.swift',
@@ -32,7 +34,19 @@ def main():
                   'Tests/IPFamilyLeakFixTests.swift'])
         run_suite(directory, 'route-lookup', ['WireTunnels/Services/WireGuardConfigParser.swift',
                   'WireTunnels/Services/RouteLookupService.swift', 'Tests/RouteLookupTests.swift'])
-        run_suite(directory, 'ipv6-service', ['WireTunnelsHelper/IPv6ServiceRegistrar.swift',
+        run_suite(directory, 'network-conflict', ['WireTunnels/Services/WireGuardConfigParser.swift',
+                  'WireTunnels/Models/NetworkConflict.swift', 'Tests/NetworkConflictTests.swift'])
+        run_suite(directory, 'dns-probe', ['WireTunnels/Models/DNSProbe.swift', 'Tests/DNSProbeTests.swift'])
+        run_suite(directory, 'dev-tools', ['WireTunnels/Models/DevTools.swift', 'Tests/DevToolsTests.swift'])
+        run_suite(directory, 'handshake-health', ['WireTunnels/Models/HandshakeHealth.swift', 'Tests/HandshakeHealthTests.swift'])
+        run_suite(directory, 'proxy-settings', ['Shared/ProxySettings.swift', 'Tests/ProxySettingsTests.swift'])
+        run_suite(directory, 'mesh-vpn', ['WireTunnels/Models/MeshVPN.swift', 'Tests/MeshVPNTests.swift'])
+        runner = (ROOT / 'WireTunnels/Services/MeshVPNService.swift').read_text()
+        runner_fixture = directory / 'MeshVPNRunnerFixture.swift'
+        runner_fixture.write_text('import Foundation\n' + runner[:runner.index('@MainActor')])
+        run_suite(directory, 'mesh-vpn-runner', ['WireTunnels/Models/MeshVPN.swift', str(runner_fixture),
+                  'Tests/MeshVPNRunnerTests.swift'])
+        run_suite(directory, 'ipv6-service',['WireTunnelsHelper/IPv6ServiceRegistrar.swift',
                   'Tests/IPv6ServiceRegistrarTests.swift'])
         run_suite(directory, 'kill-switch-rules', ['Shared/KillSwitchEntry.swift', 'Tests/KillSwitchRulesTests.swift'])
         subprocess.run(['bash', str(ROOT / 'Tests/test_inventory_routing.sh')], check=True)
@@ -41,6 +55,9 @@ def main():
         run_suite(directory, 'ethernet-subnets', ['WireTunnels/Models/AutoConnectRule.swift',
                   'WireTunnels/Models/IPSubnet.swift', 'WireTunnels/Services/AutoConnectNetworkMatcher.swift',
                   'Tests/EthernetSubnetTests.swift'])
+        run_suite(directory, 'network-profiles', ['WireTunnels/Models/AutoConnectRule.swift',
+                  'WireTunnels/Models/IPSubnet.swift', 'WireTunnels/Services/AutoConnectNetworkMatcher.swift',
+                  'WireTunnels/Models/NetworkProfile.swift', 'Shared/ProxySettings.swift', 'Tests/NetworkProfileTests.swift'])
         run_suite(directory, 'interface-addresses', ['WireTunnels/Services/InterfaceAddressCollector.swift',
                   'Tests/InterfaceAddressCollectorTests.swift'])
         helper = (ROOT / 'WireTunnelsHelper/HelperTool.swift').read_text()
@@ -118,7 +135,7 @@ def main():
                 if mode == 'linked':
                     alias.unlink()
                     alias.symlink_to(fixtures / 'full.name')
-            run_suite(directory, 'runtime', ['WireTunnelsHelper/RuntimeConfigLocator.swift',
+            run_suite(directory, 'runtime', ['WireTunnelsHelper/RuntimeConfigLocator.swift', 'Shared/EngineMarker.swift',
                       'Tests/RuntimeConfigLocatorTests.swift'], [fixtures])
         finally:
             for local_socket in sockets:

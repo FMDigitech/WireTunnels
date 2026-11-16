@@ -5,6 +5,32 @@ enum TunnelScope: String, Codable, Hashable {
     case managed
 }
 
+/// Which implementation runs a tunnel. Stored as `engine` in tunnels.json, a file the
+/// Windows app reads and writes too, so the raw values are part of that contract.
+enum TunnelEngine: String, Codable, CaseIterable, Hashable {
+    case wireGuard = "wireguard"
+    case amneziaWG = "amneziawg"
+
+    /// A config that uses any AmneziaWG-only key needs awg; everything else runs on wg.
+    init(usesAmneziaWG: Bool) {
+        self = usesAmneziaWG ? .amneziaWG : .wireGuard
+    }
+
+    /// The engine a tunnel runs on, given the user's choice (nil = from the config) and whether
+    /// the config uses AmneziaWG-only keys. Those keys always win: wg cannot read them, so
+    /// choosing WireGuard for such a config would only make the tunnel fail to start.
+    static func resolve(preference: TunnelEngine?, usesAmneziaWG: Bool) -> TunnelEngine {
+        usesAmneziaWG ? .amneziaWG : (preference ?? .wireGuard)
+    }
+
+    var displayName: String {
+        switch self {
+        case .wireGuard: return "WireGuard"
+        case .amneziaWG: return "AmneziaWG"
+        }
+    }
+}
+
 struct ManagedTunnelPolicy: Codable, Equatable, Hashable {
     var usersCanConnect: Bool
     var usersCanDisconnect: Bool
@@ -88,6 +114,10 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
     var updatedAt: Date
     var scope: TunnelScope
     var managedPolicy: ManagedTunnelPolicy?
+    var engine: TunnelEngine = .wireGuard
+    /// The user's choice of engine. nil means automatic: decided by the config. Optional in
+    /// tunnels.json, so older files and the Windows app (which ignores it) keep working.
+    var enginePreference: TunnelEngine?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -119,6 +149,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         case updatedAt
         case scope
         case managedPolicy
+        case engine
+        case enginePreference
     }
 
     init(name: String, configPath: String) {
@@ -186,6 +218,10 @@ struct Tunnel: Identifiable, Codable, Equatable, Hashable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         scope = try container.decodeIfPresent(TunnelScope.self, forKey: .scope) ?? .personal
         managedPolicy = try container.decodeIfPresent(ManagedTunnelPolicy.self, forKey: .managedPolicy)
+        // Files written before the field existed, or by a newer app with an engine this one
+        // does not know, must still load: one unreadable value must not drop every tunnel.
+        engine = (try? container.decodeIfPresent(TunnelEngine.self, forKey: .engine)) ?? .wireGuard
+        enginePreference = try? container.decodeIfPresent(TunnelEngine.self, forKey: .enginePreference)
     }
 
     /// Whether the kill switch is armed for this tunnel, regardless of scope —

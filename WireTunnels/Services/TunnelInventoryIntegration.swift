@@ -20,6 +20,9 @@ extension TunnelManager {
               !tunnels[index].isActive, !isTunnelBusy(tunnel.id), !refreshingInventories.contains(tunnel.id) else {
             throw InventoryError.operation("Disconnect this personal tunnel before changing its inventory command")
         }
+        if command != nil, tunnels[index].engine == .amneziaWG {
+            throw InventoryError.operation("Inventory protection does not support AmneziaWG tunnels")
+        }
         if let command {
             guard command.executable.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: command.executable),
                   tunnels[index].excludedRoutes.isEmpty,

@@ -20,6 +20,11 @@ final class RecoverableJSONStore<Value: Codable> {
         decoder.dateDecodingStrategy = .iso8601
     }
 
+    // Swift 6.3.2 (Xcode 26.5) crashes in the Release inliner while optimising this generic class's
+    // destructor. Compiling the destructor without optimisation avoids it and costs nothing here.
+    @_optimize(none)
+    deinit {}
+
     func load() throws -> Value {
         recoveryWarning = nil
         let primary: Data?
